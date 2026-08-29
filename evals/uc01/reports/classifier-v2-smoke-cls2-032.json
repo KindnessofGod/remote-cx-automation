@@ -1,0 +1,98 @@
+{
+  "evaluation": {
+    "version": "classifier-v2",
+    "dataset": "uc01-classifier-golden-v2-remote-aligned",
+    "evaluator": "uc01-classifier-evaluator-v2",
+    "mode": "SMOKE",
+    "selectedCase": "cls2-032",
+    "caseCount": 1
+  },
+  "summary": {
+    "exactPasses": 1,
+    "exactFailures": 0,
+    "exactMatchRate": 1
+  },
+  "results": [
+    {
+      "id": "cls2-032",
+      "category": "third_party_form",
+      "grounding": "uc01_safety_extension",
+      "sourceKeys": [
+        "HC_THIRD_PARTY",
+        "HC_FORM",
+        "UC01_EXTERNAL_ARTIFACT"
+      ],
+      "rationale": "Remote documents both direct third-party verification and form completion; this combination is treated as third-party route with artifact risk handled deterministically.",
+      "input": {
+        "text": "This is a lender. We attached our verification form and need Remote to complete it directly for the applicant.",
+        "hasAttachment": true
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": true,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=true; actual=true"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "19e2123f829b3e73"
+    }
+  ]
+}

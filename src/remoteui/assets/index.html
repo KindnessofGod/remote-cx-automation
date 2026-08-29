@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>UC-06 Remote UI Stand-in — Contract Amendment Request</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/remote-ui.css" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="r-app">
+
+  <aside class="r-sidebar">
+    <div class="r-logo">
+      <span class="r-logo-mark" aria-hidden="true">R</span>
+      <span class="r-logo-word">remote</span>
+    </div>
+
+    <!-- Static context, not navigation. The one thing you can switch on this
+         page — the signed-in role — is a tab strip over the content column
+         below, which is where Remote itself puts a tab strip. -->
+    <div class="r-nav">
+      <div class="r-nav-label">Use case</div>
+      <p class="sidebar-fact">UC-06 — Contract amendment</p>
+      <div class="r-nav-label">Payroll</div>
+      <p class="sidebar-fact">Cutoff-gated, dual approval</p>
+    </div>
+
+    <div class="r-spacer"></div>
+
+    <p class="sidebar-foot">
+      Each role is a separate server-authorized session, sent as a header — never
+      a role claimed in the request body. Anything outside a role's authorization
+      is refused server-side.
+    </p>
+  </aside>
+
+  <main class="r-main">
+
+    <header>
+      <h1 class="r-page-title">Contract amendment</h1>
+      <p class="r-page-sub">
+        UC-06 starts with a customer admin requesting an amendment inside Remote's own product,
+        then the employee and the employer consenting to it. Everything after the request is the
+        real thing: the actual UC-06 gates (identity &rarr; employment &rarr; per-country schema
+        &rarr; payroll cutoff) run first, and only then is a Zendesk ticket created — already
+        tagged with the decision and pre-filled with the drafted summary, ready for the two-role
+        approval in the ZAF sidebar.
+      </p>
+    </header>
+
+    <!-- The honesty disclosure. This page is deliberately made to look like it
+         could live inside Remote's product, which makes saying plainly that it
+         is NOT Remote's product more important, not less. It stays at full
+         width, above every form, on every role tab. -->
+    <div class="r-banner r-banner-neutral standin-notice" role="note">
+      <span class="r-banner-icon" aria-hidden="true">ℹ</span>
+      <span>
+        <strong>This is a stand-in, not Remote's real platform.</strong>
+        UC-06's real trigger — a contract amendment requested inside Remote's own product — has no
+        public API, which is the whole reason UC-06's Zendesk intake exists. This page stands in for
+        that one missing surface so the flow can be demonstrated from its true starting point.
+        Nothing on this page is Remote's product, Remote's design, or a Remote endpoint.
+      </span>
+    </div>
+
+    <!-- The three role tabs. Restyled only: the ids, the `active` class app.js
+         toggles, and the `path-<key>` sections it shows are all unchanged, and
+         the role still travels to the server as the session header — the tab
+         is a view switch, never an authorization claim. -->
+    <div class="r-tabs role-tabs" id="role-tabs" role="tablist" aria-label="Signed-in role">
+      <button type="button" class="r-tab active" id="tab-admin" role="tab"
+              aria-selected="true" aria-controls="path-admin">
+        <span class="r-nav-icon" aria-hidden="true">🛠</span>Company admin
+      </button>
+      <button type="button" class="r-tab" id="tab-employer" role="tab"
+              aria-selected="false" aria-controls="path-employer" tabindex="-1">
+        <span class="r-nav-icon" aria-hidden="true">🏢</span>Employer
+      </button>
+      <button type="button" class="r-tab" id="tab-employee" role="tab"
+              aria-selected="false" aria-controls="path-employee" tabindex="-1">
+        <span class="r-nav-icon" aria-hidden="true">👤</span>Employee
+      </button>
+    </div>
+
+    <section id="path-admin" role="tabpanel" aria-labelledby="tab-admin" tabindex="0">
+      <div class="r-card">
+        <div class="r-card-head">
+          <span class="r-tile" aria-hidden="true">🛠</span>
+          <div>
+            <h2 class="r-card-title">Request an amendment</h2>
+            <p class="r-card-note">The customer admin's act — employees and the employer cannot initiate one.</p>
+          </div>
+          <span class="r-spacer"></span>
+          <span class="r-tier r-tier-medium">Medium risk · dual approval</span>
+        </div>
+
+        <div class="r-card-body">
+          <div id="scenario-row" class="scenario-row">
+            <span class="r-label scenario-label">Quick-fill a scenario</span>
+            <div class="r-inline">
+              <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="fill-before-cutoff">Before cutoff</button>
+              <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="fill-within-48h">Within 48h of cutoff</button>
+              <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="fill-after-cutoff">After cutoff</button>
+              <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="fill-terminated">Terminated employee</button>
+              <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="fill-no-form">Country with no form</button>
+            </div>
+          </div>
+
+          <form id="submit-form">
+            <label class="r-field">
+              <span class="r-label">Submitting the amendment for</span>
+              <select id="employee-select" class="r-select"></select>
+            </label>
+
+            <div id="current-employment" class="current-employment"></div>
+
+            <div class="change-block">
+              <h3 class="change-block-title">What changes?</h3>
+
+              <label class="r-field">
+                <span class="r-label">Change type</span>
+                <select id="change-type" class="r-select">
+                  <option value="salary">Salary</option>
+                  <option value="jobTitle">Job title</option>
+                  <option value="weeklyHours">Weekly hours</option>
+                  <option value="composite">Composite (all three)</option>
+                </select>
+              </label>
+
+              <!--
+                Each half of a value pair carries its own aria-label. The
+                <span class="r-label"> above names the PAIR, not either input,
+                so without these a screen reader announced two anonymous number
+                fields — on the one form in this repo where the two numbers are
+                the old and new salary that a payroll write will be built from.
+                The visible caption stays; the aria-label is what a non-visual
+                reader gets instead of the "current"/"new" placeholders, which
+                disappear as soon as either box is typed into.
+              -->
+              <div class="r-field" id="field-salary">
+                <span class="r-label">Salary <span class="r-hint">(current &rarr; new, per year)</span></span>
+                <div class="value-pair">
+                  <input type="number" id="salary-old" class="r-input" step="0.01" placeholder="current" aria-label="Current salary, per year" />
+                  <span class="r-muted" aria-hidden="true">&rarr;</span>
+                  <input type="number" id="salary-new" class="r-input" step="0.01" placeholder="new" aria-label="New salary, per year" />
+                  <span class="r-muted currency" id="salary-currency"></span>
+                </div>
+              </div>
+
+              <div class="r-field" id="field-jobTitle" style="display:none">
+                <span class="r-label">Job title <span class="r-hint">(current &rarr; new)</span></span>
+                <div class="value-pair">
+                  <input type="text" id="title-old" class="r-input" placeholder="current title" aria-label="Current job title" />
+                  <span class="r-muted" aria-hidden="true">&rarr;</span>
+                  <input type="text" id="title-new" class="r-input" placeholder="new title" aria-label="New job title" />
+                </div>
+              </div>
+
+              <div class="r-field" id="field-weeklyHours" style="display:none">
+                <span class="r-label">Weekly hours <span class="r-hint">(current &rarr; new)</span></span>
+                <div class="value-pair">
+                  <input type="number" id="hours-old" class="r-input" step="1" placeholder="current" aria-label="Current weekly hours" />
+                  <span class="r-muted" aria-hidden="true">&rarr;</span>
+                  <input type="number" id="hours-new" class="r-input" step="1" placeholder="new" aria-label="New weekly hours" />
+                </div>
+              </div>
+            </div>
+
+            <label class="r-field">
+              <span class="r-label">Requested effective date</span>
+              <input type="date" id="effective-date" class="r-input" />
+            </label>
+
+            <label class="r-field">
+              <span class="r-label">Reason <span class="r-hint">(optional context — never a source of figures)</span></span>
+              <textarea id="reason-text" class="r-textarea" rows="2" placeholder="e.g. promotion effective with the July payroll cycle"></textarea>
+            </label>
+
+            <button type="submit" class="r-btn r-btn-primary submit-btn" id="submit-btn">Submit amendment request</button>
+          </form>
+
+          <div id="submit-result" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="path-employer" style="display:none" role="tabpanel" aria-labelledby="tab-employer" tabindex="0">
+      <div class="r-card">
+        <div class="r-card-head">
+          <span class="r-tile" aria-hidden="true">🏢</span>
+          <div>
+            <h2 class="r-card-title">Consent as the employer</h2>
+            <p class="r-card-note">On the company's behalf — only for the company's own employees.</p>
+          </div>
+        </div>
+
+        <div class="r-card-body">
+          <!-- The card's own note above says both halves of this ("on the
+               company's behalf — only for the company's own employees") and the
+               sidebar says the refusal is server-side, so the paragraph that
+               stood here was the heading a third time. -->
+
+          <form id="consent-employer-form">
+            <label class="r-field">
+              <span class="r-label">Amendment id<span class="r-req" aria-hidden="true">*</span><span class="r-sr-only">required</span> <span class="r-hint">(from the admin's submission result)</span></span>
+              <input type="text" id="consent-employer-amendment" class="r-input" placeholder="e.g. the UUID the admin's submit returned" />
+            </label>
+
+            <label class="r-field">
+              <span class="r-label">Note <span class="r-hint">(optional context)</span></span>
+              <textarea id="consent-employer-note" class="r-textarea" rows="2" placeholder="e.g. salary committee approved the new figure"></textarea>
+            </label>
+
+            <button type="submit" class="r-btn r-btn-primary submit-btn" id="consent-employer-btn">Consent as the employer</button>
+          </form>
+
+          <div id="consent-employer-result" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="path-employee" style="display:none" role="tabpanel" aria-labelledby="tab-employee" tabindex="0">
+      <div class="r-card">
+        <div class="r-card-head">
+          <span class="r-tile" aria-hidden="true">👤</span>
+          <div>
+            <h2 class="r-card-title">Consent as the employee</h2>
+            <p class="r-card-note">To an amendment of your own contract, and nobody else's.</p>
+          </div>
+        </div>
+
+        <div class="r-card-body">
+          <!-- WHO you are signed in as is the one fact the heading and its
+               note cannot carry, and the form needs it: the amendment id you
+               paste has to belong to this person. The rest of this paragraph
+               was the note again. -->
+          <p class="path-intro">
+            The employee session is Amara Okafor (<span class="r-mono">emp_active_001</span>).
+          </p>
+
+          <form id="consent-employee-form">
+            <label class="r-field">
+              <span class="r-label">Amendment id<span class="r-req" aria-hidden="true">*</span><span class="r-sr-only">required</span> <span class="r-hint">(from the admin's submission result)</span></span>
+              <input type="text" id="consent-employee-amendment" class="r-input" placeholder="e.g. the UUID the admin's submit returned" />
+            </label>
+
+            <label class="r-field">
+              <span class="r-label">Note <span class="r-hint">(optional context)</span></span>
+              <textarea id="consent-employee-note" class="r-textarea" rows="2" placeholder="e.g. I have reviewed the new terms"></textarea>
+            </label>
+
+            <button type="submit" class="r-btn r-btn-primary submit-btn" id="consent-employee-btn">Consent as the employee</button>
+          </form>
+
+          <div id="consent-employee-result" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         TRACK AN AMENDMENT — read-only, on purpose, and shared by all three
+         roles. This is the feedback half of the human gate: whoever filed or
+         signed a change can see what a person decided about it, on the surface
+         they filed it from, instead of having to be told. It offers no approve
+         and no deny — the two approvals happen in the ZAF sidebar, where dual
+         control requires two DIFFERENT people, and a second place to decide
+         would be a second, unaudited place with one signature instead of two.
+         Which amendments a session may see is decided server-side, from the
+         session — not from the id typed below.
+         ===================================================================== -->
+    <section id="track-panel">
+      <div class="r-card">
+        <div class="r-card-head">
+          <span class="r-tile" aria-hidden="true">🔎</span>
+          <div>
+            <h2 class="r-card-title">Track an amendment</h2>
+            <p class="r-card-note">What a person decided about it — read-only, for the role signed in above.</p>
+          </div>
+        </div>
+
+        <div class="r-card-body">
+          <!-- The field below says where the id comes from and the card's note
+               says this is read-only. What survives is the rule a reader cannot
+               see: which amendments each role is allowed to look at, which is
+               why a valid id can still come back as nothing. -->
+          <p class="path-intro">
+            You will see only amendments your signed-in role is party to: the admin sees the ones
+            they requested, the employee sees amendments to their own contract, the employer sees
+            its own company's.
+          </p>
+
+          <form id="track-form">
+            <label class="r-field">
+              <span class="r-label">Amendment id<span class="r-req" aria-hidden="true">*</span><span class="r-sr-only">required</span> <span class="r-hint">(from a submission result)</span></span>
+              <input type="text" id="track-amendment" class="r-input" placeholder="e.g. the UUID the admin's submit returned" />
+            </label>
+
+            <!-- This view POLLS. It cannot be told when an approval happens —
+                 that happens in the ZAF sidebar, in another process entirely —
+                 so it asks, and the copy below says so rather than implying a
+                 push. -->
+            <div class="live-bar">
+              <button type="submit" class="r-btn r-btn-primary submit-btn" id="track-btn">Check status</button>
+              <button type="button" class="live-toggle" id="track-live" aria-pressed="false">Live off</button>
+              <span class="r-muted small" id="track-checked"></span>
+            </div>
+          </form>
+
+          <p class="r-muted small">
+            Turning Live on re-checks every few seconds; it is not a live push, so a decision made in
+            the sidebar can take a moment to appear here. Each check re-reads the record — nothing on
+            this page is remembered between checks.
+          </p>
+
+          <div id="track-result" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

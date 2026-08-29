@@ -1,0 +1,251 @@
+/* ---------------------------------------------------------------------------
+ * style.css — what is specific to the UC-06 Remote UI stand-in
+ * ---------------------------------------------------------------------------
+ * The shell (sidebar + content column), tokens, cards, forms, buttons, badges
+ * and banners all live in the shared src/shared/ui/remote-ui.css, served at
+ * /remote-ui.css. This file owns only what this surface genuinely adds:
+ *
+ *   1. `.r-tab.active` — the role switcher is the shared `.r-tabs`/`.r-tab`
+ *      strip, but app.js toggles the class `active` while the shared system
+ *      ships `.is-active`/[aria-selected]. app.js's role-switching MECHANISM is
+ *      deliberately untouched by the restyle (the ids, the class it toggles and
+ *      the sections it shows are all the same, and authorization is still
+ *      decided server-side from the session header), so the alias lives here.
+ *   2. The amendment form's own furniture: the current-contract readout, the
+ *      dashed "what changes?" block, and the current → new value pairs.
+ *   3. The result box app.js renders: decision badge, flag/tag chips, refusal.
+ *
+ * Every colour is a var(--r-*) token, so both themes work. The decision badge
+ * uses the validated decision palette only — and always alongside the decision
+ * WORD app.js writes, never colour alone.
+ * ------------------------------------------------------------------------- */
+
+/* --- role tabs ------------------------------------------------------------ */
+/* The strip itself is the shared `.r-tabs`; these are the two deltas: the class
+   app.js actually toggles, and the little role glyph inside each tab. */
+.r-tab.active { color: var(--r-brand); border-bottom-color: var(--r-brand); font-weight: 650; }
+.r-nav-icon { font-size: 15px; line-height: 1; margin-right: 7px; }
+
+.role-tabs { margin-bottom: 22px; }
+
+/* --- sidebar -------------------------------------------------------------- */
+/* Static facts about the use case, not links — the only switchable thing on
+   this page is the role, and that is the tab strip above the content. */
+.sidebar-fact {
+  margin: 0 0 4px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  color: var(--r-text-secondary);
+}
+
+.sidebar-foot {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--r-text-muted);
+  padding: 0 8px;
+  margin: 0;
+}
+
+/* --- the stand-in disclosure ----------------------------------------------
+   Sized to be read, not skimmed past: full content width, above every card,
+   present on all three role tabs. The point of the restyle is that this page
+   could pass for product chrome, which is exactly why this must stay loud. */
+.standin-notice { margin-bottom: 22px; max-width: 92ch; }
+
+.path-intro {
+  color: var(--r-text-secondary);
+  font-size: 13.5px;
+  margin: 0 0 16px;
+  max-width: 76ch;
+}
+
+/* --- scenario quick-fills -------------------------------------------------- */
+.scenario-row {
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--r-border);
+}
+.scenario-label { display: block; margin-bottom: 8px; }
+
+/* --- the amendment form ---------------------------------------------------- */
+/* The fact-gathering readout: the CURRENT contract, read from Remote, shown
+   next to the fields that change it. Distinct from an input so nobody reads a
+   fetched fact as something they typed. */
+.current-employment {
+  background: var(--r-surface-subtle);
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  padding: 10px 13px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--r-text-secondary);
+}
+.current-employment:empty { display: none; }
+
+.change-block {
+  border: 1px dashed var(--r-border-strong);
+  border-radius: var(--r-radius);
+  padding: 4px 16px 2px;
+  margin-bottom: 18px;
+  background: var(--r-surface-subtle);
+}
+.change-block-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--r-text-muted);
+  margin: 16px 0 12px;
+}
+
+/* current → new, side by side, so the diff is the shape of the control. */
+.value-pair { display: flex; align-items: center; gap: 9px; }
+.value-pair .r-input { flex: 1 1 0; min-width: 0; }
+.value-pair .currency { flex: none; font-size: 13px; }
+
+.submit-btn { width: 100%; margin-top: 4px; }
+
+/* --- what app.js renders back ---------------------------------------------- */
+.result-box {
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  background: var(--r-surface-subtle);
+  padding: 14px 16px;
+  margin-top: 18px;
+}
+.result-box p { margin: 8px 0 0; }
+.result-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+
+/* Decision badge: dot from the validated palette + the label app.js writes.
+   `dual_approval_required` is the 🟡 outcome that reaches a human gate;
+   `escalate` is the 🔴 one that never gets an execution path. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--r-neutral-subtle);
+  color: var(--r-text);
+}
+.badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--r-dot, var(--r-neutral));
+  flex: none;
+}
+/* State scale, not the chart's categorical palette — see the note in
+   src/portal/assets/style.css and remote-ui.css. A dual approval is waiting on
+   a human; an escalation has left the automation. */
+.badge.decision-dual_approval_required { --r-dot: var(--r-dot-waiting); }
+.badge.decision-escalate { --r-dot: var(--r-dot-stopped); }
+
+.tag-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag-chip {
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-family: var(--r-mono);
+  background: var(--r-surface);
+  color: var(--r-text-secondary);
+  border: 1px solid var(--r-border);
+}
+/* A gate flag is a reason a human is now involved — it reads as a warning and
+   says so in words, the chip's own text. */
+.tag-chip.warn {
+  background: var(--r-warn-subtle);
+  color: var(--r-warn);
+  border-color: transparent;
+}
+
+.action-status {
+  padding: 10px 13px;
+  border-radius: var(--r-radius);
+  font-weight: 600;
+  font-size: 13.5px;
+  margin: 14px 0 0;
+  color: var(--r-text-secondary);
+}
+.action-status.bad { background: var(--r-danger-subtle); color: var(--r-danger); }
+
+.small { font-size: 12.5px; }
+.muted { color: var(--r-text-muted); font-weight: 400; }
+
+/* The server's plain-English account of WHY a refusal happened, set apart from
+   the machine reason above it. Deliberately quiet rather than alarming: it
+   explains a decision, it is not itself a warning, and a refusal that is a
+   permanent property of a country is not an incident. */
+.muted-note {
+  border-left: 3px solid var(--r-border);
+  padding: 2px 0 2px 10px;
+  margin: 10px 0 0;
+  color: var(--r-text-secondary);
+}
+
+/* --- tracking an amendment (read-only) -------------------------------------- */
+
+/* The Live control. Colour is never the only cue: the button's TEXT reads
+   "Live off" or "Live — checking every 5s" and app.js rewrites it, so the
+   styling below is redundant on purpose. */
+.live-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+.live-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--r-border);
+  background: var(--r-surface);
+  color: var(--r-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.live-toggle.is-paused { color: var(--r-text-secondary); }
+
+/* A card a person has finished with. The border weight is the cue on top of
+   the words — the badge, the "Decided by a person" heading and the sentence
+   naming who and when all say it without any colour at all. */
+.result-box.is-decided {
+  border-color: var(--r-border-strong, var(--r-border));
+  border-left-width: 3px;
+}
+
+/* The decision itself, given its own block rather than a line among
+   identifiers: who decided, what they wrote, and whether the write to Remote
+   landed is the only question the requester has. */
+.decision-block {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-radius);
+  border: 1px solid var(--r-border);
+  background: var(--r-surface);
+}
+.decision-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--r-text-secondary);
+}
+
+@media (max-width: 900px) {
+  /* The shared shell folds the sidebar into a top bar. The role tabs are in
+     the content column now, and `.r-tabs` already scrolls horizontally rather
+     than wrapping, so they need nothing here. */
+  .sidebar-fact { display: none; }
+  .value-pair { flex-wrap: wrap; }
+  .value-pair .r-input { flex: 1 1 140px; }
+}

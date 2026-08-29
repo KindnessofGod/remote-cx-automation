@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Audit trail viewer — every decision, every attempt, every alert</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="remote-ui.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="r-app">
+
+  <!-- =====================================================================
+       Sidebar: three views over four tables. The nav is static because the
+       three views ARE the page's structure — unlike the portal's request
+       types, there is no server-side registry for them to drift from.
+       ===================================================================== -->
+  <aside class="r-sidebar">
+    <div class="r-logo">
+      <span class="r-logo-mark" aria-hidden="true">R</span>
+      <span class="r-logo-word">remote</span>
+    </div>
+
+    <nav class="r-nav" aria-label="Views">
+      <div class="r-nav-label">Audit trail</div>
+      <button type="button" class="r-nav-item is-active" id="nav-feed" data-tab="feed">Live feed</button>
+      <!-- Named for what a reader arrives holding — a reference — rather than
+           for the internal word "bug audit", which told nobody what to paste.
+           The id and data-tab stay `bugaudit`: the label is the thing that
+           needed to change, and renaming the hooks would only churn app.js. -->
+      <button type="button" class="r-nav-item" id="nav-bugaudit" data-tab="bugaudit">Trace a reference</button>
+      <button type="button" class="r-nav-item" id="nav-alerts" data-tab="alerts">Ops alerts</button>
+    </nav>
+
+    <div class="r-spacer"></div>
+
+    <!-- Which store this process is reading. Filled by app.js from
+         GET /api/meta — the page asserts nothing about its own data source. -->
+    <div class="mode-box">
+      <span class="r-label">Data source</span>
+      <p class="mode-line" id="mode-line">Connecting…</p>
+    </div>
+
+    <p class="sidebar-foot">
+      Read-only, structurally: the server behind this page has no POST route
+      at all. Every verdict shown — decisions, duplicate flags, alert
+      durability — was computed server-side; this page renders and never
+      re-derives.
+    </p>
+  </aside>
+
+  <main class="r-main">
+
+    <!-- The seeded-mode banner. Hidden unless /api/meta says "seeded". -->
+    <div class="r-banner r-banner-warn" id="seeded-banner" hidden>
+      <span class="r-banner-icon" aria-hidden="true">⚠</span>
+      <span><strong>Seeded demo data.</strong> No Supabase is attached to this
+      process, so every row on this page is a labelled demonstration — not
+      production history. Set <span class="r-mono">SUPABASE_DB_URL</span> for
+      real reads.</span>
+    </div>
+
+    <!-- A read failure renders HERE, loudly — never as an empty list. -->
+    <div class="r-banner r-banner-danger" id="error-banner" hidden>
+      <span class="r-banner-icon" aria-hidden="true">✕</span>
+      <span><strong id="error-title">Read failed.</strong> <span id="error-detail"></span></span>
+    </div>
+
+    <!-- =====================================================================
+         Access gate. Shown only when the server refuses with a 401; renders
+         the server's own words. The page holds no rule about when a key is
+         needed — the same pattern as the portal's gate.
+         ===================================================================== -->
+    <section id="access-gate" hidden>
+      <div class="r-card access-card">
+        <div class="r-card-body">
+          <h2 class="r-card-title">Access key required</h2>
+          <p class="r-card-note" id="access-reason"></p>
+          <p class="access-why" id="access-why"></p>
+          <ol class="access-howto" id="access-howto"></ol>
+          <form id="access-form">
+            <label class="r-field" for="access-key">
+              <span class="r-label">Access key</span>
+              <input type="password" class="r-input" id="access-key" autocomplete="off" />
+            </label>
+            <button type="submit" class="r-btn r-btn-primary">Unlock</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         TAB 1 — the live feed
+         ===================================================================== -->
+    <section id="tab-feed">
+      <header class="feed-head">
+        <div>
+          <h1 class="r-page-title">Live feed</h1>
+          <p class="r-page-sub">Every durable decision, newest first — the
+          <span class="r-mono">audit_log</span> table as it fills. Click a row
+          for the full record and every LLM/API attempt underneath it.</p>
+        </div>
+        <button type="button" class="r-btn r-btn-secondary live-toggle" id="live-toggle" aria-pressed="true">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span id="live-toggle-word">Live</span>
+        </button>
+      </header>
+
+      <div class="feed-filters">
+        <label class="r-field filter-field" for="filter-usecase">
+          <span class="r-label">Use case</span>
+          <select class="r-select" id="filter-usecase">
+            <option value="">All</option>
+            <option>UC-01</option><option>UC-02</option><option>UC-03</option>
+            <option>UC-04</option><option>UC-05</option><option>UC-06</option>
+            <option>UC-07</option><option>UC-08</option><option>UC-09</option>
+          </select>
+        </label>
+        <label class="r-field filter-field" for="filter-action">
+          <span class="r-label">Decision</span>
+          <select class="r-select" id="filter-action">
+            <option value="">All</option>
+            <option>auto_resolve</option><option>auto_approve</option>
+            <option>human_review</option><option>dual_approval_required</option>
+            <option>triple_approval_required</option><option>escalate</option>
+            <option>blocked</option>
+          </select>
+        </label>
+        <label class="r-field filter-field filter-search" for="filter-q">
+          <span class="r-label">Search actor / request reference / reason</span>
+          <input type="search" class="r-input" id="filter-q" placeholder="e.g. tremblay, uc02-20260819104528-11aomw, noMatchingCycle" />
+        </label>
+      </div>
+
+      <!-- An overlay scrollbar is invisible until touched, so the columns past
+           the right edge would be invisible too without saying they are there. -->
+      <p class="scroll-hint">
+        <strong>Kind</strong> says whether a row is a request's decision, the
+        <em>execution</em> that carried it out at Remote, or a follow-up event
+        of one; <strong>Group</strong> is the record id its sibling rows share;
+        <strong>Attempts</strong> is how many <span class="r-mono">audit_trace</span>
+        rows hang off it. Scroll the table sideways for those columns.
+      </p>
+
+      <!-- The feed is WIDE and scrolls sideways inside its own card. A row is
+           what tells a reader which record to open, so it carries the columns
+           that answer that: Kind (decision or follow-up event), Group (the
+           record id its siblings share) and Attempts (how many audit_trace
+           rows hang off it) are all there so a reader stops clicking rows to
+           find out. Only this container scrolls — the page body never does. -->
+      <div class="r-card">
+        <div class="r-table-wrap">
+          <table class="r-table feed-table">
+            <thead>
+              <tr>
+                <th scope="col">When</th>
+                <th scope="col">Kind</th>
+                <th scope="col">Use case</th>
+                <th scope="col">Decision</th>
+                <th scope="col">Tier</th>
+                <th scope="col">Actor</th>
+                <th scope="col">Employment</th>
+                <!-- The reference is the id a person arrives holding, so the
+                     column is named the way they were told to name it, and its
+                     cells are buttons that trace it rather than dead text. -->
+                <th scope="col">Reference</th>
+                <th scope="col">Group</th>
+                <th scope="col">Attempts</th>
+                <th scope="col">Flags</th>
+                <th scope="col">Source</th>
+                <th scope="col">Reason</th>
+              </tr>
+            </thead>
+            <tbody id="feed-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="feed-empty" hidden>No decisions match — either nothing has landed yet, or the filters exclude everything.</p>
+        <!-- SEARCHING FOR A REFERENCE THAT FOUND NOTHING is not the same as an
+             over-tight filter, and the sentence above cannot tell them apart.
+             This feed can only match a reference a decision row actually
+             CARRIES; the ledger may hold it regardless. So when the search box
+             has something in it and the page is empty, offer the lookup that
+             reads the ledger too, rather than leaving "no rows" as the last
+             word on a request that was in fact processed. -->
+        <p class="empty-note" id="feed-empty-trace" hidden>
+          <span id="feed-empty-trace-text"></span>
+          <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="feed-trace-q"></button>
+        </p>
+      </div>
+
+      <!-- =================================================================
+           Pagination. Keyset on (at, id), not offset — `at` is not unique
+           (one submission writes three rows in the same millisecond), so a
+           cursor of `at` alone skips or repeats rows at a page edge. The
+           cursor is the server's; this bar only remembers the stack of pages
+           walked, so "Newer" is a pop rather than a second kind of query.
+           ================================================================= -->
+      <div class="pager" id="pager">
+        <button type="button" class="r-btn r-btn-sm r-btn-secondary" id="page-newer" disabled>← Newer</button>
+        <button type="button" class="r-btn r-btn-sm r-btn-secondary" id="page-older" disabled>Older →</button>
+        <span class="pager-where" id="pager-where"></span>
+        <span class="r-spacer"></span>
+        <label class="r-field pager-size" for="page-size">
+          <span class="r-label">Rows per page</span>
+          <select class="r-select" id="page-size">
+            <option>25</option>
+            <option selected>50</option>
+            <option>100</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- Live tail and history paging are in tension: polling prepends rows
+           while a reader is on page 3. Resolved explicitly — paging away from
+           the newest page pauses the tail and SAYS so, and returning resumes
+           it. Rows never shift under the reader unannounced. -->
+      <p class="pager-paused" id="pager-paused" hidden>
+        Live tail paused while you page through history — new decisions are not
+        being prepended, so nothing shifts under you. Return to the newest page
+        to resume.
+      </p>
+
+      <!-- Drill-down: one decision + its trace. Filled by app.js from
+           GET /api/decisions/:id; the duplicate-vs-retry banner renders the
+           SERVER's redundantCalls verdict (findRedundantCalls, issue #33). -->
+      <section class="r-card drill" id="drill" hidden>
+        <div class="r-card-head">
+          <!-- The heading names what this row IS. It used to read "Decision"
+               for every row, including the follow-up events that are not
+               one — the same conflation the Kind column fixes in the feed. -->
+          <h2 class="r-card-title"><span id="drill-title-word">Audit row</span> <span class="r-id" id="drill-id"></span></h2>
+          <span class="r-spacer"></span>
+          <button type="button" class="r-btn r-btn-sm r-btn-secondary" id="drill-close">Close</button>
+        </div>
+        <div class="r-card-body">
+          <div class="drill-summary" id="drill-summary"></div>
+
+          <!-- WHAT THE STORED REASON MEANS. The slug stays — it is the exact
+               string in audit_log, in the metrics exception ranking and in the
+               n8n ports, so it is what a person greps and what the feed filter
+               matches — and the plain words its own policy engine holds sit
+               beside it (src/auditview/gateMeanings.js). Hidden entirely for a
+               use case with no gate ladder and for a reason no rung matches:
+               no guess, no placeholder prose. -->
+          <div class="reason-explained" id="drill-reason" hidden>
+            <span class="summary-label">Reason</span>
+            <span class="r-mono reason-slug" id="drill-reason-slug"></span>
+            <p class="reason-means-full" id="drill-reason-means"></p>
+            <p class="reason-gate" id="drill-reason-gate"></p>
+          </div>
+
+          <!-- A PERSON'S DECISION, WHEN THIS ROW IS ONE. The 🟡 tier's whole
+               design is that a named human decides, and this row used to render
+               exactly like a tag update: no verdict, no note, no role. Every
+               word below is the server's (src/auditview/humanDecision.js);
+               this block only decides whether it is shown, and it is shown
+               exactly when the server sent a verdict. -->
+          <section class="human" id="drill-human" hidden>
+            <h3 class="drill-h">Human decision</h3>
+            <p class="human-verdict-line" id="drill-human-headline"></p>
+            <ul class="human-facts" id="drill-human-facts"></ul>
+          </section>
+
+          <!-- DID THE WRITE THIS DECISION AUTHORISED ACTUALLY LAND AT REMOTE?
+               Shown for EVERY decision row, not only a human's verdict — a
+               fully automated `auto_resolve`/`auto_approve` row makes exactly
+               the same claim (a letter issued, a claim approved) and deserves
+               exactly the same scrutiny. Suppressing it here on automated rows
+               was the defect (R7-32 / rca-ltja): attempts existing under a row
+               is not evidence an outward write happened, and the fully
+               automated rows are the ones most likely to be trusted without a
+               second look. Every word is the server's
+               (src/auditview/humanDecision.js's writeOutcome()); hidden only
+               when the row is not a decision at all (an execution or a
+               follow-up event, which this question does not apply to). -->
+          <div class="verdict" id="drill-write" hidden>
+            <h3 class="drill-h">Did the write land at Remote?</h3>
+            <p class="verdict-headline" id="drill-write-headline"></p>
+            <p class="verdict-detail" id="drill-write-detail"></p>
+          </div>
+
+          <div class="r-banner r-banner-danger" id="drill-redundant" hidden>
+            <span class="r-banner-icon" aria-hidden="true">⚠</span>
+            <span><strong>Genuine duplicate call detected.</strong>
+            <span id="drill-redundant-detail"></span> Attempt numbers that do
+            not form one clean 1..n sequence are not the retry wrapper's
+            bookkeeping — the same call was issued more than once.</span>
+          </div>
+          <p class="drill-clean" id="drill-clean" hidden>Every multi-attempt
+          group below reads as one clean retry sequence (attempts 1..n) — the
+          retry wrapper's own bookkeeping, not a duplicate.</p>
+
+          <h3 class="drill-h">Attempts (<span class="r-mono">audit_trace</span>)</h3>
+          <p class="drill-clean">"When" is not one clock: below each timestamp,
+          <strong>call time</strong> means the calling code recorded the
+          attempt itself, and <strong>insert time</strong> means the row was
+          written to <span class="r-mono">audit_trace</span> after the
+          decision it belongs to — the n8n path can only report the latter.
+          The two are not comparable across rows without reading which one a
+          given row carries (R7-36).</p>
+          <div class="r-table-wrap">
+            <table class="r-table trace-table">
+              <thead>
+                <tr>
+                  <th scope="col" title="Call time or insert time — see the label under each value.">When</th>
+                  <th scope="col">Call</th>
+                  <th scope="col">Attempt</th>
+                  <th scope="col">Outcome</th>
+                  <th scope="col">Duration</th>
+                  <th scope="col">Error</th>
+                </tr>
+              </thead>
+              <tbody id="drill-trace"></tbody>
+            </table>
+          </div>
+
+          <!-- The empty-attempts verdict. NOT a fixed sentence any more: the
+               server decides WHY the table is empty (src/auditview/traceVerdict.js
+               — sibling carries the attempts / predates tracing / no traceable
+               call was made / genuinely unexplained) and this block renders
+               its words. A "we don't know" verdict stays visible as itself. -->
+          <div class="verdict" id="drill-verdict" hidden>
+            <p class="verdict-headline" id="drill-verdict-headline"></p>
+            <p class="verdict-detail" id="drill-verdict-detail"></p>
+            <ul class="verdict-evidence" id="drill-verdict-evidence"></ul>
+            <button type="button" class="r-btn r-btn-sm r-btn-secondary" id="drill-verdict-open" hidden>
+              Open the row that has them
+            </button>
+          </div>
+
+          <!-- The other audit_log rows on this same RECORD, correlated by the
+               record id they all carry. Not "submission": one record can be
+               submitted more than once, and live one was — a second expense
+               submission joined an existing group two hours later. When the row
+               carries no such id this section says exactly that instead of
+               guessing a grouping from timestamps. -->
+          <h3 class="drill-h">Same record (<span class="r-mono">audit_log</span>)</h3>
+          <p class="drill-note" id="drill-correlation"></p>
+          <div class="r-table-wrap" id="drill-siblings-wrap" hidden>
+            <table class="r-table siblings-table">
+              <thead>
+                <tr>
+                  <th scope="col">When</th>
+                  <th scope="col">Kind</th>
+                  <th scope="col">Action</th>
+                  <th scope="col">Attempts</th>
+                  <th scope="col">Reason</th>
+                </tr>
+              </thead>
+              <tbody id="drill-siblings"></tbody>
+            </table>
+          </div>
+
+          <!-- The full record, as a LABEL/VALUE TABLE rather than a JSON dump.
+               Headers run down the side (scope="row"); money is rendered from
+               the row's own paired currency field; a present-but-empty value
+               keeps its em dash so "blank" and "absent" stay different
+               answers. The raw JSON stays reachable below for debugging. -->
+          <h3 class="drill-h">Full record (<span class="r-mono">audit_log.details</span>)</h3>
+          <div id="drill-details"></div>
+          <p class="empty-note" id="drill-details-empty" hidden>This row's <span class="r-mono">details</span> object is empty.</p>
+          <details class="raw-block">
+            <summary class="raw-summary">Raw JSON (the whole record, unformatted)</summary>
+            <pre class="details-json" id="drill-details-raw"></pre>
+          </details>
+        </div>
+      </section>
+    </section>
+
+    <!-- =====================================================================
+         TAB 2 — bug audit by external ref
+         ===================================================================== -->
+    <section id="tab-bugaudit" hidden>
+      <header>
+        <h1 class="r-page-title">Trace a request</h1>
+        <!-- IT TAKES ANY ID, and saying so is half the fix. A requester
+             pasted the reference the portal had told them to quote, the
+             decision row carried a different one, and the page answered with
+             three empty tables — which reads as "your request was never
+             recorded" when the request had been decided and recorded. The box
+             now tries whatever you hold against every identifier these four
+             tables carry, so nobody has to classify their own id first. -->
+        <p class="r-page-sub"><strong>Paste any id this request carries.</strong>
+        The reference the portal reported
+        (<span class="r-mono">uc02-20260819104528-11aomw</span>), the Zendesk
+        ticket id, the record id a use case's own view shows, the employment
+        id, an audit row's id, or an n8n execution id — this looks in every
+        place each of them can appear, so you do not have to know which kind
+        you are holding. Matches are exact; the feed's free-text filter is the
+        substring tool.</p>
+      </header>
+
+      <form class="ref-form" id="ref-form">
+        <label class="r-field ref-field" for="ref-input">
+          <span class="r-label">Any id from the request</span>
+          <input type="search" class="r-input" id="ref-input" placeholder="reference, ticket id, record id, employment id, audit row id…" autocomplete="off" />
+        </label>
+        <button type="submit" class="r-btn r-btn-primary">Trace it</button>
+      </form>
+
+      <!-- WHAT THIS LOOKUP FOUND, AND WHAT AN EMPTY ANSWER MEANS. Every word
+           is the server's (src/auditview/identifierVerdict.js). The one thing
+           this block must never do is let "nothing found" read as "nothing
+           happened": the verdict distinguishes "no record carries this id"
+           from "this is not an id this viewer can search by" from "we cannot
+           tell which", and when it cannot tell, it says so. -->
+      <div id="lookup-results" hidden>
+        <div class="r-banner" id="lookup-verdict" hidden>
+          <span class="r-banner-icon" id="lookup-verdict-icon" aria-hidden="true"></span>
+          <span>
+            <strong id="lookup-verdict-headline"></strong>
+            <span id="lookup-verdict-detail"></span>
+            <span id="lookup-verdict-notes"></span>
+            <span id="lookup-verdict-shape" class="ref-verdict-note"></span>
+          </span>
+        </div>
+
+        <div class="r-card ref-card" id="lookup-next" hidden>
+          <div class="r-card-head"><h2 class="r-card-title">What to try next</h2></div>
+          <ul class="lookup-list" id="lookup-next-steps"></ul>
+        </div>
+
+        <div class="r-card ref-card" id="lookup-rows-card" hidden>
+          <div class="r-card-head">
+            <h2 class="r-card-title" id="lookup-rows-title">Rows carrying this id</h2>
+            <span class="r-spacer"></span>
+            <span class="r-row-meta" id="lookup-rows-meta"></span>
+          </div>
+          <div class="r-table-wrap">
+            <table class="r-table ref-decisions-table">
+              <thead><tr>
+                <th scope="col">When</th><th scope="col">Kind</th>
+                <th scope="col">Use case</th>
+                <th scope="col">Decision</th><th scope="col">Actor</th>
+                <th scope="col">Matched on</th><th scope="col">Reason</th>
+              </tr></thead>
+              <tbody id="lookup-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="r-card ref-card" id="lookup-traces-card" hidden>
+          <div class="r-card-head"><h2 class="r-card-title">Trace attempts carrying this id (<span class="r-mono">audit_trace</span>)</h2></div>
+          <div class="r-table-wrap">
+            <table class="r-table">
+              <thead><tr>
+                <th scope="col" title="Call time or insert time — see the label under each value (R7-36).">When</th><th scope="col">Call</th>
+                <th scope="col">Attempt</th><th scope="col">OK</th>
+                <th scope="col">Matched on</th>
+              </tr></thead>
+              <tbody id="lookup-traces"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="r-card ref-card" id="lookup-alerts-card" hidden>
+          <div class="r-card-head"><h2 class="r-card-title">Ops alerts carrying this id</h2></div>
+          <div class="r-table-wrap">
+            <table class="r-table">
+              <thead><tr>
+                <th scope="col">When</th><th scope="col">Use case</th>
+                <th scope="col">Failed node</th><th scope="col">Error</th>
+                <th scope="col">Decision durable?</th>
+              </tr></thead>
+              <tbody id="lookup-alerts"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- THE BOUNDARY OF THE SEARCH, always available and open by default
+             when nothing was found. A reader cannot tell "not here" from "not
+             looked for" unless the page shows where it looked. -->
+        <details class="r-card ref-card lookup-scope" id="lookup-scope">
+          <summary><strong>Where this lookup looked</strong> — <span id="lookup-scope-count"></span></summary>
+          <div class="lookup-scope-body">
+            <h3 class="r-card-title">Searched</h3>
+            <ul class="lookup-list" id="lookup-searched"></ul>
+            <h3 class="r-card-title">Not searchable here — so "not found" does not rule these out</h3>
+            <ul class="lookup-list" id="lookup-unsearchable"></ul>
+          </div>
+        </details>
+      </div>
+
+      <div id="ref-results" hidden>
+        <!-- WHAT THIS REFERENCE ACTUALLY LETS YOU TRACE — the server's verdict
+             (src/auditview/refVerdict.js), rendered verbatim. It exists because
+             three empty tables under a claim row read as "your request left no
+             record" when what it really means is that the decision exists and
+             does not carry the reference. The tone class is set from the
+             verdict's own `tone`; this element decides nothing. -->
+        <div class="r-banner" id="ref-verdict" hidden>
+          <span class="r-banner-icon" id="ref-verdict-icon" aria-hidden="true"></span>
+          <span>
+            <strong id="ref-verdict-headline"></strong>
+            <span id="ref-verdict-detail"></span>
+            <span id="ref-verdict-notes"></span>
+          </span>
+        </div>
+
+        <!-- The duplicate-delivery verdict — the server's, rendered verbatim. -->
+        <div class="r-banner r-banner-danger" id="ref-duplicate" hidden>
+          <span class="r-banner-icon" aria-hidden="true">⚠</span>
+          <span><strong>Duplicate delivery.</strong> <span id="ref-duplicate-detail"></span>
+          More than one decision row under one (use case, ref) pair means the
+          same delivery was processed twice — the failure the
+          <span class="r-mono">workflow_claims</span> ledger exists to stop.</span>
+        </div>
+
+        <div class="r-card ref-card">
+          <div class="r-card-head"><h2 class="r-card-title">Claims (<span class="r-mono">workflow_claims</span>)</h2></div>
+          <div class="r-table-wrap">
+            <table class="r-table">
+              <thead><tr>
+                <th scope="col">Use case</th><th scope="col">Claimed at</th>
+                <th scope="col">Decision</th><th scope="col">Note</th>
+              </tr></thead>
+              <tbody id="ref-claims"></tbody>
+            </table>
+          </div>
+          <p class="empty-note" id="ref-claims-empty" hidden>No claim rows. Either this ref was never processed, or it was processed before the exactly-once ledger existed — check the decisions below.</p>
+        </div>
+
+        <div class="r-card ref-card">
+          <div class="r-card-head"><h2 class="r-card-title">Decisions carrying this ref (<span class="r-mono">audit_log</span>)</h2></div>
+          <div class="r-table-wrap">
+            <table class="r-table ref-decisions-table">
+              <thead><tr>
+                <th scope="col">When</th><th scope="col">Kind</th>
+                <th scope="col">Use case</th>
+                <th scope="col">Decision</th><th scope="col">Actor</th>
+                <th scope="col">Attempts</th><th scope="col">Reason</th>
+              </tr></thead>
+              <tbody id="ref-decisions"></tbody>
+            </table>
+          </div>
+          <!-- Deliberately says only what is true of the TABLE. Which of the
+               four situations an empty table means is the banner's job above,
+               and two sentences guessing at it from here would be a second,
+               drifting copy of that judgement. -->
+          <p class="empty-note" id="ref-decisions-empty" hidden>No decision rows carry this reference — see the banner above for what that means here.</p>
+        </div>
+
+        <div class="r-card ref-card">
+          <div class="r-card-head">
+            <h2 class="r-card-title">Ops alerts near in time</h2>
+            <span class="r-spacer"></span>
+            <span class="r-row-meta" id="ref-window"></span>
+          </div>
+          <div class="r-table-wrap">
+            <table class="r-table">
+              <thead><tr>
+                <th scope="col">When</th><th scope="col">Use case</th>
+                <th scope="col">Failed node</th><th scope="col">Error</th>
+                <th scope="col">Decision durable?</th>
+              </tr></thead>
+              <tbody id="ref-alerts"></tbody>
+            </table>
+          </div>
+          <p class="empty-note" id="ref-alerts-empty" hidden>No ops alerts within ±15 minutes of this ref's activity.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         TAB 3 — ops alerts
+         ===================================================================== -->
+    <section id="tab-alerts" hidden>
+      <header>
+        <h1 class="r-page-title">Ops alerts</h1>
+        <p class="r-page-sub">Every automation failure, durably — the
+        <span class="r-mono">ops_alerts</span> row IS the alert; the push
+        channel is a convenience. <strong>Decision durable?</strong> is the
+        column that matters: it answers whether a failure lost a decision, or
+        only lost a Zendesk update.</p>
+      </header>
+
+      <div class="r-card">
+        <div class="r-table-wrap">
+          <table class="r-table alerts-table">
+            <thead>
+              <tr>
+                <th scope="col">When</th>
+                <th scope="col">Use case</th>
+                <th scope="col">Workflow</th>
+                <th scope="col">Failed node</th>
+                <th scope="col">Error</th>
+                <th scope="col">Decision durable?</th>
+                <th scope="col">Execution</th>
+              </tr>
+            </thead>
+            <tbody id="alerts-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty-note" id="alerts-empty" hidden>No alerts recorded — no automation run has failed.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>UC-01 Live Demo — Real Zendesk + n8n</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/remote-ui.css" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<header class="ld-topbar">
+  <div class="r-logo">
+    <span class="r-logo-mark" aria-hidden="true">R</span>
+    <span class="r-logo-word">remote</span>
+  </div>
+  <span class="r-spacer"></span>
+  <span class="r-badge r-badge-warn">Live · real account</span>
+</header>
+
+<main class="r-main ld-main">
+  <div class="ld-col">
+
+    <header>
+      <h1 class="r-page-title">UC-01 Live Demo</h1>
+      <!-- "This is the real thing" is said by the title, the badge in the top
+           bar, the warning banner below and the submit button. The form says
+           what to fill in. What only this paragraph can say is what happens
+           after you press it. -->
+      <p class="r-page-sub">
+        Once a request is sent nobody touches anything: the live n8n workflow classifies the ticket,
+        fetches the real Remote Sandbox employment, runs the identity + policy gates, and either
+        replies and resolves it or flags it for a specialist — completely automatically. This page
+        just watches that same real ticket and shows you what happened.
+      </p>
+    </header>
+
+    <!-- Load-bearing, not decoration: this is the ONE surface in the repo that
+         writes to a real external account on purpose. It must be impossible to
+         click "send" without having seen this. -->
+    <div class="r-banner r-banner-warn ld-warning" role="note">
+      <span class="r-banner-icon" aria-hidden="true">⚠</span>
+      <span>
+        <strong>This touches a real Zendesk account.</strong>
+        Submitting here creates an <strong>actual ticket</strong> in the live Zendesk instance,
+        tagged so the live n8n workflow picks it up and acts on it — a real public reply and a real
+        status change. Nothing here is simulated and nothing is undone afterwards.
+      </span>
+    </div>
+
+    <section class="r-card">
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true">✉</span>
+        <div>
+          <h2 class="r-card-title">Act as the client</h2>
+          <p class="r-card-note">The request an employee would send through support.</p>
+        </div>
+      </div>
+      <div class="r-card-body">
+        <form id="submit-form">
+          <label class="r-field">
+            <span class="r-label">Submitting as</span>
+            <select id="employee-select" class="r-select"></select>
+          </label>
+
+          <!-- THE FOUR THINGS THIS CHANNEL CAN BE ASKED, one button each.
+               Not decoration and not a shortcut for typing: they exist because
+               the request portal has quick-fills and this page did not, so the
+               one surface that writes to a REAL account was also the one where
+               every demonstration had to be typed from memory on camera.
+
+               They are the four outcomes the classifier can reach, and they are
+               written from Remote's own help centre rather than invented:
+                 - standard   — article 4422684040461, the instant templated case
+                 - customized — article 8429086541325, "None of these templates
+                                fits my needs", the branch that produces work
+                 - third party — article 19201215338509, a bank writing in, which
+                                Remote answers only "after receiving permission
+                                from you (the employee)"
+                 - over scope — no article, because Remote's own template does not
+                                contain salary either (article 8429306915085
+                                enumerates what it does contain, and money is not
+                                on the list)
+
+               Each one fills the box and nothing else. There is no persona
+               switch here the way the portal has one: this page submits as the
+               employee chosen above, and which of these four it is gets decided
+               by a real model reading the words, not by which button was
+               pressed. That is the point worth saying out loud while filming —
+               the button writes English, and everything after it is earned. -->
+          <div class="ld-scenarios" id="scenario-row" role="group" aria-label="Example requests"></div>
+
+          <label class="r-field">
+            <span class="r-label">What do you need?</span>
+            <textarea id="request-text" class="r-textarea" rows="3" placeholder="Please send me a standard employment verification letter."></textarea>
+          </label>
+
+          <button type="submit" class="r-btn r-btn-primary ld-submit" id="submit-btn">
+            Send request — creates a real Zendesk ticket
+          </button>
+        </form>
+
+        <div id="submit-result" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="r-card" id="status-section" style="display:none">
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true">⚙</span>
+        <div>
+          <h2 class="r-card-title">What the live pipeline did</h2>
+          <p class="r-card-note">Polled from that same real ticket — no local copy of the decision.</p>
+        </div>
+      </div>
+      <div class="r-card-body">
+        <!-- Repainted on a 3s poll with no focus change and no other event: a
+             live region is the only way a non-sighted user learns the ticket
+             was solved. `polite` because it is a progress report, not an alert. -->
+        <div id="status-panel" aria-live="polite" aria-atomic="false"></div>
+      </div>
+    </section>
+
+    <p class="ld-foot">
+      CX automation layer — a portfolio build against Remote's real API. This is not Remote's product.
+    </p>
+
+  </div>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

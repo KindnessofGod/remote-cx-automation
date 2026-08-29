@@ -1,0 +1,120 @@
+/* ---------------------------------------------------------------------------
+ * style.css — what is specific to the UC-01 chat demo
+ * ---------------------------------------------------------------------------
+ * The tokens, cards, form controls, buttons and banners all live in the shared
+ * src/shared/ui/remote-ui.css, served at /remote-ui.css. index.html uses those
+ * shared classes directly (.r-card, .r-field, .r-select, .r-input, .r-btn),
+ * so this file owns only the two things that are genuinely this surface's own:
+ *
+ *   1. the single centred reading column — a conversation has no second axis
+ *      of navigation, so it takes the design system but not the .r-app sidebar
+ *      shell that the dashboard and playground use;
+ *   2. the transcript itself: the scrolling log, the message bubbles, and the
+ *      pieces app.js builds inside an assistant bubble (decision line, reason,
+ *      flags, letter frame).
+ *
+ * Bubbles stay bespoke on purpose — nothing else in the product is a chat, so
+ * generalising them into the shared sheet would add a component with one user.
+ *
+ * Every rule is built out of the shared --r-* tokens, so both themes follow
+ * automatically; there is not one hard-coded colour in this file. Note the user
+ * bubble uses --r-brand, NOT a decision colour: the three decision colours mean
+ * auto/human/escalate everywhere in this project and are never spent on chrome.
+ * ------------------------------------------------------------------------- */
+
+/* --- the centred column ---------------------------------------------------- */
+.wrap {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 32px 20px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.intro .r-logo { padding: 0; margin-bottom: 16px; }
+.intro .r-page-sub { margin-bottom: 14px; }
+
+/* --- context card ---------------------------------------------------------- */
+.field-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.field-row .r-field { flex: 1; min-width: 200px; }
+
+.checkboxes { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; margin-top: 2px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--r-text-secondary); }
+
+/* --- the transcript -------------------------------------------------------- */
+.chat-card .r-card-body { display: flex; flex-direction: column; gap: 14px; }
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 440px;
+  overflow-y: auto;
+}
+
+.bubble {
+  border-radius: var(--r-radius);
+  padding: 10px 13px;
+  max-width: 88%;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.bubble.user {
+  align-self: flex-end;
+  background: var(--r-brand);
+  color: var(--r-on-brand);
+}
+
+.bubble.assistant {
+  align-self: flex-start;
+  min-width: 0;
+  background: var(--r-surface-subtle);
+  border: 1px solid var(--r-border);
+}
+
+/* The decision is the shared `.r-badge-decision` — the validated auto/human/
+   escalate palette, never re-picked here — and it always carries the decision
+   WORD, so the reply is legible without any colour at all. The caption beside
+   it says what the badge is, which a bare pill in a chat bubble would not. */
+.decision-line { margin: 0 0 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.decision-caption {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--r-text-muted);
+}
+.reason, .reply-text { margin: 0; color: var(--r-text-secondary); }
+
+/* --- flags + the rendered letter -------------------------------------------- */
+.flags { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; }
+.flag {
+  padding: 2px 7px; border-radius: 5px;
+  font-family: var(--r-mono); font-size: 11px;
+  background: var(--r-warn-subtle); color: var(--r-warn);
+}
+
+/* The letter renders its own complete HTML document (which paints its own page
+   background), so this only frames it. */
+.letter-frame {
+  width: 100%; height: 320px; margin-top: 12px;
+  border: 1px solid var(--r-border); border-radius: var(--r-radius);
+  background: var(--r-surface);
+}
+
+/* --- the composer ----------------------------------------------------------- */
+.message-form { display: flex; gap: 10px; }
+.message-form .r-input { flex: 1; }
+
+/* --- small utilities app.js writes ------------------------------------------ */
+/* `.bad` always accompanies an explicit failure sentence, so the colour
+   reinforces the message rather than being the message. */
+.action-status { margin: 0; font-size: 13px; color: var(--r-text-secondary); }
+.action-status.bad { color: var(--r-danger); font-weight: 600; }
+
+.muted { color: var(--r-text-muted); }
+.small { font-size: 12.5px; }
+
+code {
+  background: var(--r-surface-subtle);
+  padding: 2px 5px; border-radius: 4px;
+}

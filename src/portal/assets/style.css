@@ -1,0 +1,1268 @@
+/* ---------------------------------------------------------------------------
+ * style.css — what is specific to the request portal
+ * ---------------------------------------------------------------------------
+ * The shell (sidebar + content column), tokens, cards, forms, buttons, badges,
+ * tables and banners all live in the shared src/shared/ui/remote-ui.css, served
+ * at /remote-ui.css. This file adds only what this surface genuinely needs:
+ *
+ *   1. Nav rows that carry a use-case code next to the label (the sidebar is a
+ *      catalogue of seven request types, not a menu of pages).
+ *   2. The persona picker and its note.
+ *   3. Form furniture the shared system has no opinion on: field grids, the
+ *      grouped sub-blocks UC-07/UC-08 need, checkbox rows, presence-period rows.
+ *   4. The result panel app.js renders back: decision badge, flag chips, the
+ *      label/value detail table, and the refusal state.
+ *
+ * Every colour is a var(--r-*) token, so both themes work and nothing here
+ * re-picks a palette. The decision badge's dot uses the already-validated
+ * decision colours from the shared system, and always sits beside the decision
+ * WORD app.js writes — colour is never the sole carrier of meaning.
+ * ------------------------------------------------------------------------- */
+
+/* --- page-level breathing room ----------------------------------------------
+   Scoped here rather than in the shared remote-ui.css, which six other
+   surfaces depend on and whose spacing was already verified for those. The
+   comparison that prompted this was Remote's own empty-state pages, which
+   give the page title real air before anything else starts — ours had the
+   banner and the first card crowding the title with the system default's
+   26px gap. Widened for this page only. */
+header { margin-bottom: 6px; }
+
+/* --- sidebar --------------------------------------------------------------- */
+/* Two lines per nav row: the use-case code above, the human label below. The
+   code is what a reader matches against the docs; the label is what they
+   recognise. Both come from /api/context, never from this file. */
+.r-nav-item { flex-direction: column; align-items: flex-start; gap: 1px; padding: 7px 10px; position: relative; }
+/* The slot holds an EMOJI now, not a "UC-04" code — 10.5px was sized for a
+   five-character label and renders a pictogram as a speck. Letter-spacing goes
+   with the code it was tracking. */
+.nav-code { font-size: 15px; line-height: 1; color: var(--r-text-muted); }
+.r-nav-item.is-active .nav-code { color: var(--r-brand); }
+.nav-text { font-size: 14px; line-height: 1.35; }
+/* The use-case code under a nav label. A landmark for the person who
+   knows the codes, quiet enough that a requester reads past it. */
+.nav-subcode {
+  display: block;
+  font-size: 10.5px;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  /* --r-text-muted, not an opacity on --r-text: that token is declared in all
+     three theme blocks and its own comment records the contrast ratio it was
+     chosen for (5.28:1 on the darkest ground it lands on). Dimming it further
+     with opacity would quietly undo exactly that. */
+  color: var(--r-text-muted);
+}
+
+/* R7-17: the count that used to exist nowhere. Positioned absolutely rather
+   than with the shared .r-nav-count's `margin-left: auto` — that trick needs
+   a row flex context, and this nav row is a column (code above, label below,
+   see .r-nav-item above), so an auto margin has no horizontal effect here.
+   Same visual language as .r-badge-warn (warn-subtle background, warn text),
+   just placed to fit this layout instead of a table cell. */
+.nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: var(--r-warn-subtle);
+  color: var(--r-warn);
+}
+
+.persona-picker { padding: 0 6px; border-top: 1px solid var(--r-border); padding-top: 14px; }
+.persona-picker .r-field { margin-bottom: 6px; }
+.persona-note {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--r-text-secondary);
+  margin: 0;
+}
+
+.sidebar-foot {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--r-text-muted);
+  padding: 0 8px;
+  margin: 0;
+}
+
+/* --- the honesty disclosure -----------------------------------------------
+   Deliberately loud and full-width. This page is styled to look like it could
+   live inside Remote's product, which makes saying plainly that it does not
+   more important, not less — and the store boundary below it is the line that
+   stops someone concluding the dashboard is broken. */
+/* Round 2, prompted directly by a side-by-side against Remote's own product:
+   the first version was structurally right (one line, collapsed) but still
+   read as a neutral grey box in the same visual layer as the cards below it —
+   nothing told the eye "this is a system message, not content". Remote's own
+   banners are bold, saturated, and unmistakably chrome. This borrows that:
+   the info-subtle/info tokens (already validated elsewhere in this system,
+   not new colours invented for this fix) give it real presence, and a left
+   accent bar plus its own generous margin wall it off from the form below. */
+/* R7-17: the same nudge as the sidebar .nav-badge, louder, on the page every
+   session lands on first. Reuses .r-banner-warn's background token but needs
+   its own alignment (centered, not the shared banner's flex-start) and an
+   explicit warn border, which .r-banner-warn alone does not set — compare
+   .standin-notice below, which sets its own border for the same reason on
+   the info tokens instead. */
+.consent-badge-banner {
+  align-items: center;
+  margin: 0 0 20px;
+  border-color: var(--r-warn);
+}
+.consent-badge-banner button { margin-left: auto; flex: none; }
+
+.standin-notice {
+  /* The markup still carries the shared .r-banner class for its border/
+     radius/font baseline, but .r-banner is `display: flex` — correct for its
+     usual single-row icon+text shape, wrong here where <details> needs its
+     two real children (summary, then the body) to STACK. Without this
+     override the flex context puts them side by side instead: summary on the
+     left, the three paragraphs squeezed into a column on the right. Found by
+     actually opening the disclosure and looking, not by reading the CSS. */
+  display: block;
+  margin: 0 0 32px;
+  max-width: none;
+  padding: 0;
+  background: var(--r-info-subtle);
+  border: 1px solid var(--r-info);
+  border-left-width: 4px;
+  border-radius: var(--r-radius);
+}
+
+/* The summary is the ONLY thing visible by default. It has to read as a
+   complete sentence on its own (a reader who never opens it still learns the
+   one fact that matters — this page is not Remote's product) while staying
+   one line, because it sits above every single card on every single visit. */
+.standin-notice > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 14px 18px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--r-info);
+  font-size: 14px;
+}
+.standin-notice > summary::-webkit-details-marker { display: none; }
+.standin-notice > summary::before {
+  content: "▸";
+  color: var(--r-info);
+  font-size: 11px;
+  margin-right: 2px;
+  transition: transform 0.12s ease;
+}
+.standin-notice[open] > summary::before { transform: rotate(90deg); }
+.disclosure-more {
+  color: var(--r-info);
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 2px;
+  opacity: 0.85;
+}
+.standin-notice-body { padding: 0 18px 16px 40px; color: var(--r-text); }
+.standin-notice-body p { margin: 0 0 10px; }
+.standin-notice-body p:last-child { margin-bottom: 0; }
+
+/* --- cards ----------------------------------------------------------------- */
+.card-head-main { min-width: 0; flex: 1 1 340px; }
+.uc-card + .uc-card { margin-top: 20px; }
+
+/* What the human controls for this tier — the sentence the server sends. It is
+   the point of the card, so it reads as a statement rather than a caption. */
+.human-control {
+  background: var(--r-surface-subtle);
+  border-left: 3px solid var(--r-border-strong);
+  border-radius: 0 var(--r-radius-sm) var(--r-radius-sm) 0;
+  padding: 10px 14px;
+  margin: 0 0 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--r-text-secondary);
+  max-width: 92ch;
+}
+
+/* --- scenario quick-fills --------------------------------------------------- */
+.scenario-row {
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--r-border);
+}
+.scenario-label { display: block; margin-bottom: 8px; }
+
+/* WHICH QUICK-FILL IS LOADED RIGHT NOW.
+   Reported directly: a reader looked at a filled UC-05 form, saw EUR and an
+   hourly rate they did not recognise, and read it as one scenario's values
+   leaking into another. They were in fact looking at the scenario they had
+   actually clicked — nothing on the row said which one that was. So the chosen
+   button now carries the brand border, ground and weight, AND the line beneath
+   the row names it in words: colour is never the only thing carrying this. */
+.r-btn.is-chosen {
+  border-color: var(--r-brand);
+  box-shadow: inset 0 0 0 1px var(--r-brand);
+  background: var(--r-brand-subtle);
+  color: var(--r-brand);
+  font-weight: 600;
+}
+
+/* What was filled in, and why any of it is empty. Written by whichever
+   quick-fill was clicked last; hidden until one is. */
+.scenario-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--r-text-secondary);
+  max-width: 92ch;
+}
+
+/* A scenario that fails a gate is worth finding quickly — it says "refused" in
+   words next to the label, so the marker survives without colour. */
+.scenario-fails { border-color: var(--r-warn); }
+.fails-mark {
+  margin-left: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--r-warn);
+}
+
+/* --- forms ------------------------------------------------------------------ */
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0 16px;
+}
+
+.sub-block {
+  border: 1px dashed var(--r-border-strong);
+  border-radius: var(--r-radius);
+  background: var(--r-surface-subtle);
+  padding: 6px 16px 4px;
+  margin: 0 0 18px;
+}
+.sub-block-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--r-text-muted);
+  padding: 0 4px;
+}
+
+/* --- manual field entry, collapsed by default ------------------------------
+   The same idea as Remote's own record pages collapsing an empty field group
+   ("Show 8 empty fields"): a form with more than a handful of controls does
+   not need every one of them fighting for attention before anyone has done
+   anything. The scenario quick-fills above this (and the submit button below
+   it) are the actual primary path — Phase 2 of the E2E plan is built entirely
+   around clicking a scenario, not typing into these fields — so the raw
+   inputs default closed and open on demand.
+
+   Collapsing changes NOTHING about what gets submitted: a closed <details>
+   still participates in form submission, and applyScenario() in app.js sets
+   values by element id with no visibility check. */
+.manual-fields {
+  margin: 4px 0 18px;
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  background: var(--r-surface-subtle);
+}
+.manual-fields > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--r-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.manual-fields > summary::-webkit-details-marker { display: none; }
+.manual-fields > summary::before {
+  content: "▸";
+  color: var(--r-text-muted);
+  font-size: 11px;
+  transition: transform 0.12s ease;
+}
+.manual-fields[open] > summary::before { transform: rotate(90deg); }
+.manual-fields[open] > summary { border-bottom: 1px solid var(--r-border); }
+.manual-fields-body { padding: 16px 16px 4px; }
+/* Kill the double top-margin that would otherwise stack the wrapper's own
+   padding against the first field's margin. */
+.manual-fields-body > *:first-child { margin-top: 0; }
+
+.checkbox-field {
+  display: flex;
+  /* Explicit: a checkbox-field that ALSO carries .r-field would otherwise
+     inherit that class's column direction (remote-ui.css) and stack the box
+     above its own label — UC-04's "can sign contracts" row did exactly that. */
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+  color: var(--r-text-secondary);
+}
+.checkbox-field input[type="checkbox"] { margin-top: 3px; flex: none; }
+.checkbox-field .r-label { font-weight: 500; color: var(--r-text-secondary); }
+
+.check-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0 18px;
+  margin-top: 10px;
+}
+
+/* The first column used to hold a 90px box somebody typed "ES" into. It now
+   holds a country PICKER, and a select clips its own label rather than
+   wrapping it — at 90px "Bosnia & Herzegovina" reads as "Bosnia &". Widened
+   to fit the long names this list really contains. */
+.period-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.9fr) 1fr 1fr;
+  gap: 9px;
+  margin: 8px 0 0;
+}
+
+/* A note about what a blank field MEANS. These are load-bearing: "left blank"
+   and "confirmed to be zero" are different answers everywhere in this repo. */
+.field-note { display: block; margin: 4px 0 14px; max-width: 84ch; }
+
+.submit-btn { width: 100%; margin-top: 6px; }
+
+/* --- the result panel --------------------------------------------------------
+   The head carries two different things side by side, drawn differently on
+   purpose: the submission's lifecycle STATE as the shared .r-status (a dot
+   beside a plain word) and the gates' DECISION as the mono badge below. A
+   reader should not have to work out which of the two a pill is showing. */
+.result-box {
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  background: var(--r-surface-subtle);
+  padding: 14px 16px;
+  margin-top: 20px;
+}
+.result-box.refused { border-color: var(--r-danger); }
+.result-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.result-head .r-status { font-weight: 600; }
+/* A refusal's code is a tag, not a state, so it keeps the chip treatment — but
+   it is the head's own chip rather than a list item, so it drops the margin. */
+.result-head .tag-chip { margin: 0; }
+.result-reason { margin: 0 0 10px; font-size: 13.5px; color: var(--r-text-secondary); }
+.result-pending { margin: 20px 0 0; font-size: 13px; color: var(--r-text-muted); }
+
+/* THE PLAIN ANSWER — the first thing in the panel, and the largest.
+   ------------------------------------------------------------------------
+   Everything else in a result is machinery a specialist or an auditor reads:
+   the reason, the gate ladder, the facts, the flags. This is the sentence the
+   person who filed the request came for, so it is set above them and set
+   bigger than them — the only type in the panel larger than the body copy.
+
+   IT IS NOT A CARD. A box with a border here would be a second panel inside
+   the panel, and it would compete with the promoted offer that can sit
+   directly beneath it (.continuation-offer.interstitial). A rule down the
+   left, in the same state colour the decision badge already carries, says
+   "this is the lead" without drawing another frame.
+
+   THE COLOUR IS NEVER THE MESSAGE. Every one of these sentences opens with
+   its own word — "Yes", "No", "Not yet", "Not decided here", "Not answered",
+   "This is not a yes or a no" — so the rule down the side is redundant cue,
+   the shared design system's rule 1. A shape this file has no rule for keeps
+   the neutral border rather than being guessed into a colour. */
+.plain-answer {
+  border-left: 3px solid var(--r-neutral);
+  padding-left: 12px;
+  margin: 0 0 14px;
+}
+.plain-answer-lead {
+  margin: 0;
+  font-size: 15.5px;
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--r-text);
+  /* Long country names and long team names both live in these sentences, and a
+     340px viewport is narrower than several of them. */
+  overflow-wrap: break-word;
+}
+.plain-answer-next {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--r-text-secondary);
+}
+.plain-answer.answer-answered { border-left-color: var(--r-dot-settled); }
+.plain-answer.answer-waiting,
+.plain-answer.answer-redirected { border-left-color: var(--r-dot-waiting); }
+.plain-answer.answer-escalated,
+.plain-answer.answer-compiled { border-left-color: var(--r-dot-stopped); }
+.plain-answer.answer-refused { border-left-color: var(--r-danger); }
+
+/* Decision badge: the validated decision colours as a dot, always beside the
+   decision word app.js writes verbatim. An unrecognised decision keeps the
+   neutral dot rather than being guessed into a colour. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--r-mono);
+  background: var(--r-neutral-subtle);
+  color: var(--r-text);
+}
+.badge::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--r-dot, var(--r-neutral));
+  flex: none;
+}
+/* A decision on a badge is STATE, so it wears the state scale — settled /
+   waiting / stopped, in that order of seriousness. These three used to point at
+   --r-decision-* (now --r-series-*), the metrics chart's CATEGORICAL palette,
+   which painted `escalate` aqua-green and `human_review` orange: the most
+   serious outcome read as the reassuring one and the ordinary review path read
+   as a warning. See remote-ui.css's state-scale block. */
+.badge.decision-auto { --r-dot: var(--r-dot-settled); }
+.badge.decision-human { --r-dot: var(--r-dot-waiting); }
+.badge.decision-escalate { --r-dot: var(--r-dot-stopped); }
+.badge.decision-blocked { --r-dot: var(--r-danger); }
+
+/* "My requests" state dots. Same .badge treatment, same validated tokens — NOT
+   a second palette. The word beside each dot always carries the meaning, so a
+   state with no rule here simply keeps the neutral dot rather than being
+   guessed into a colour (src/portal/requestStatus.js's `unknown` is exactly
+   that case, and it must not look like an answer). */
+.badge.state-auto_resolved { --r-dot: var(--r-dot-settled); }
+.badge.state-approved,
+.badge.state-executed { --r-dot: var(--r-ok); }
+.badge.state-awaiting_review,
+.badge.state-on_hold { --r-dot: var(--r-dot-waiting); }
+.badge.state-escalated,
+.badge.state-no_decision_path { --r-dot: var(--r-dot-stopped); }
+.badge.state-declined,
+.badge.state-blocked { --r-dot: var(--r-danger); }
+
+/* =========================================================================
+   MY REQUESTS — one row per request, the card scrolling sideways.
+   =========================================================================
+   This was a column of cards. A card is readable for one request and
+   unreadable for twelve: nothing lines up, so a reader cannot compare "decided
+   at" down a column, and each card's identifier grid pushes the next request a
+   screen further down. This is the same shape as the Execution & Audit Trail
+   viewer's live feed, for the same reason and with the same mechanics — the
+   table is given a floor width and `.r-table-wrap` (shared sheet) scrolls
+   around it, so ONLY this card moves sideways and the page body never does.
+   Without the floor width the browser would honour `width: 100%` instead and
+   crush fourteen columns into one word per line, which is worse than the cards
+   were. */
+.my-requests-table { min-width: 1720px; }
+/* Everything is one line by default; the prose columns opt out below. A
+   wrapping identifier column is what makes rows different heights, and rows of
+   different heights are what made the cards hard to scan in the first place. */
+.my-requests-table td { white-space: nowrap; vertical-align: top; }
+
+/* The prose columns — the sentence that answers the question, and the note a
+   specialist typed. Given a ceiling rather than left to run: a 400-character
+   note on one line would push every identifier column past any reasonable
+   scroll, and the whole point of the sideways scroll is that it stays short
+   enough to be worth doing. */
+.my-requests-table .prose-cell {
+  white-space: normal;
+  max-width: 380px;
+  min-width: 240px;
+  font-size: 13px;
+  color: var(--r-text-secondary);
+}
+.my-requests-table .what-cell { max-width: 420px; }
+.my-requests-table .what-detail { display: block; color: var(--r-text-primary); }
+/* The deciding use case's own settled sentence, verbatim. Set apart from the
+   status detail above it so two sentences in one cell do not read as one
+   run-on. */
+.my-requests-table .what-resolution {
+  display: block;
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--r-border-strong, var(--r-border));
+  color: var(--r-text-primary);
+}
+
+/* The settled decision, drawn as fields rather than as a paragraph. The label
+   is the quiet half and the value is the fact, which is the opposite of how the
+   old run-on read: there, the labels were buried mid-sentence and the reader
+   had to find them. */
+.my-requests-table .resolution-headline {
+  display: block;
+  font-weight: 600;
+  color: var(--r-text-primary);
+}
+.my-requests-table .resolution-fact { display: block; margin-top: 3px; }
+.my-requests-table .resolution-label {
+  color: var(--r-text-muted);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 6px;
+}
+.my-requests-table .resolution-value { color: var(--r-text-primary); }
+/* Whether the decision can still change is a STATE, not a sentence to re-read
+   every time — set apart and quiet, so it is there when asked for and not in
+   the way when it is not. */
+.my-requests-table .resolution-finality {
+  display: block;
+  margin-top: 5px;
+  color: var(--r-text-muted);
+  font-size: 12px;
+}
+
+.my-requests-table .record-label-cell { font-weight: 600; }
+.my-requests-table .reason-cell { font-size: 12px; }
+
+/* A timestamp is two facts stacked: the absolute local time a requester can
+   quote, and how long ago it was — which is what answers "did my approval just
+   land?", the question this page is actually open for. The raw ISO stays in
+   the `title`, so formatting never destroys the value the record holds. */
+.my-requests-table .when-cell time { display: block; }
+.my-requests-table .when-ago {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--r-text-muted);
+}
+
+/* A row a person has finished with. The accent is a CUE, NOT THE MESSAGE —
+   the Status cell carries the word ("Approved", "Declined", "Paid"), the
+   Decided by and Decided at cells carry who and when. Remove every colour from
+   this file and the row still says all of it. */
+.my-requests-table .my-request-row.is-decided td { background: var(--r-surface-subtle); }
+.my-requests-table .my-request-row.is-decided td:first-child {
+  box-shadow: inset 3px 0 0 var(--r-border-strong, var(--r-border));
+}
+
+/* R7-40: REFERENCE is the one column this page's own copy tells a requester
+   to quote on a phone call, and at normal window width it sat past the
+   sideways scroll with nothing on screen to say it was there. Pinned to the
+   right edge of the scrolling card — `.r-table-wrap` still owns the overflow,
+   so every other column keeps the floor width that makes it readable, but
+   Reference itself is visible the moment the panel opens. The background has
+   to be restated per row state or the pinned cell would show the page behind
+   it while the rest of the row scrolls underneath. */
+.my-requests-table th:nth-last-child(2),
+.my-requests-table td.reference-cell {
+  position: sticky;
+  right: 0;
+  background: var(--r-surface);
+  box-shadow: -6px 0 6px -6px rgba(0, 0, 0, 0.25);
+}
+.my-requests-table tbody tr:hover td.reference-cell { background: var(--r-surface-hover); }
+.my-requests-table .my-request-row.is-decided td.reference-cell { background: var(--r-surface-subtle); }
+
+/* The one line under the table: reading…, nothing filed yet, or why neither.
+   Hidden when empty — an always-present empty paragraph reads as a heading for
+   a section that is not there. */
+.empty-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--r-text-secondary);
+}
+
+/* The use cases this listing could not read, named rather than silently
+   missing. See renderMyRequestsUnavailable() for why an unnamed gap is the
+   dangerous one. */
+#my-requests-unavailable { margin-top: 12px; }
+/* The shared banner lays its children out in a row (it is built for an icon
+   beside a sentence); here every child is a sentence, so they stack. */
+#my-requests-unavailable .r-banner { display: block; }
+#my-requests-unavailable p { margin: 0 0 6px; }
+#my-requests-unavailable p:last-child { margin-bottom: 0; }
+
+/* One line above the list: how many of these a person has finished with. The
+   list itself stays in filing order, so this is what stops a decision being
+   scrolled past. */
+.decided-summary {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-radius);
+  border: 1px solid var(--r-border-strong, var(--r-border));
+  background: var(--r-surface, transparent);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--r-text-primary);
+}
+
+/* The live control. Colour is never the only cue — the button's TEXT says
+   "Live" or "Paused" and app.js rewrites it, so the dot is redundant on
+   purpose (the design system's rule 1). */
+.live-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.live-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--r-border);
+  background: var(--r-surface);
+  color: var(--r-text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.live-toggle::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--r-ok);
+  flex: none;
+}
+.live-toggle.is-paused { color: var(--r-text-secondary); }
+.live-toggle.is-paused::before { background: var(--r-neutral); }
+
+/* The two-way reference choice. Its explanation is long on purpose: a repeated
+   reference being refused is a real behaviour of the system, and a control
+   that produced it without saying why would read as a bug. */
+.ref-control { margin: 0 0 6px; }
+.ref-hint { display: block; margin: 2px 0 8px; }
+.ref-choices { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.ref-choice { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; }
+.ref-used { margin: 0 0 12px; }
+.ref-sent { display: block; margin: 0 0 8px; }
+/* The machine-readable reason, beside the sentence that explains it. Quieter
+   than the prose it follows — the words are the answer, the slug is the handle
+   you search `audit_log` and the metrics ranking by. */
+.reason-slug { margin-left: 8px; vertical-align: middle; }
+.ref-sent .tag-chip { margin: 0 2px; }
+.ref-used .tag-chip { margin: 0 2px; }
+
+/* The reference in "My requests", shown WHOLE. It is the one value on the row
+   a person copies out, so it may not wrap mid-string and may not be elided —
+   the card already scrolls sideways, which is what buys the width. */
+.reference-cell { white-space: nowrap; }
+.reference-cell .tag-chip { margin: 0; user-select: all; }
+
+/* R7-40: a Copy control beside a shortened or hard-to-select identifier —
+   `idCell`'s tooltip shows the full value but a `title` attribute cannot be
+   selected in most browsers, and `.reference-cell`'s `user-select: all` needs
+   a mouse drag most readers do not know is there. */
+.copy-btn {
+  margin-left: 6px;
+  padding: 1px 7px;
+  font-size: 11px;
+  line-height: 1.6;
+  font-family: var(--r-font, inherit);
+  border: 1px solid var(--r-border-strong, var(--r-border));
+  border-radius: var(--r-radius-sm, 4px);
+  background: var(--r-surface);
+  color: var(--r-text-secondary);
+  cursor: pointer;
+}
+.copy-btn:hover { background: var(--r-surface-hover); }
+.copy-btn:disabled { cursor: default; opacity: 0.8; }
+
+/* "Already processed" — an exactly-once refusal, NOT a policy refusal. It gets
+   the warning tone and its own box so it can never be mistaken for the red
+   .result-box.refused a gate produces. */
+.duplicate-notice {
+  border-left: 3px solid var(--r-warn);
+  background: var(--r-warn-subtle);
+  border-radius: var(--r-radius-sm);
+  padding: 10px 12px;
+  margin: 0 0 12px;
+}
+.duplicate-notice .result-reason { margin: 6px 0 0; }
+
+/* "What actually decided this." Quiet, not alarming — it is an explanation of
+   a decision already shown above, not a second verdict. */
+.gate-note {
+  border-left: 3px solid var(--r-border-strong);
+  background: var(--r-surface);
+  border-radius: var(--r-radius-sm);
+  padding: 9px 12px;
+  margin: 0 0 12px;
+}
+.gate-note p { margin: 6px 0 0; }
+
+/* The full gate ladder, inside the gate note. Collapsed by default: the rung
+   that decided is already stated above it, so this answers the second question
+   ("what else was there") rather than repeating the first.
+
+   The numbers are PRINTED, not generated by the list marker — the ladder starts
+   at gate 0 (the upstream read, which is not a policy question) and a browser's
+   own numbering would silently renumber it from 1, putting every gate one out
+   of step with the number the decision itself quotes. */
+.gate-ladder { margin: 10px 0 0; }
+.gate-ladder > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--r-text-secondary);
+  padding: 2px 0;
+}
+.gate-ladder > summary:hover { color: var(--r-text); }
+.gate-ladder > p { margin: 6px 0 8px; }
+.gate-ladder-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.gate-rung {
+  border-left: 2px solid var(--r-border);
+  padding: 4px 0 4px 10px;
+}
+.gate-rung p { margin: 2px 0 0; }
+.gate-rung-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.gate-rung-no {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--r-text-secondary);
+  min-width: 1.4em;
+}
+.gate-rung-name { font-size: 13px; font-weight: 600; }
+.gate-rung-status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--r-text-secondary);
+}
+.gate-rung .tag-list { margin-top: 6px; }
+/* The rung that decided is the only one that earns colour. "Passed" and "not
+   reached" are both ordinary outcomes and neither should pull the eye. */
+.gate-rung.is-decided { border-left-color: var(--r-warn); }
+.gate-rung.is-decided .gate-rung-status { color: var(--r-warn); }
+.gate-rung.is-not_reached { opacity: 0.62; }
+
+/* The Zendesk hand-off line: raised, or the reason none was. */
+.ticket-note {
+  border-top: 1px solid var(--r-border);
+  margin-top: 12px;
+  padding-top: 10px;
+}
+.ticket-note .tag-list { margin-top: 8px; margin-bottom: 0; }
+
+.tag-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tag-chip {
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-family: var(--r-mono);
+  background: var(--r-surface);
+  color: var(--r-text-secondary);
+  border: 1px solid var(--r-border);
+}
+/* A gate flag is a reason a human is now involved. It reads as a warning and
+   says which gate in its own text — the chip is never colour alone. */
+.tag-chip.warn {
+  background: var(--r-warn-subtle);
+  color: var(--r-warn);
+  border-color: transparent;
+}
+
+/* The detail table is a label/value list, not a grid of records — the label
+   column is fixed and quiet so the values line up and read down. */
+.detail-table { background: var(--r-surface); border-radius: var(--r-radius-sm); }
+.detail-table .detail-label {
+  width: 210px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--r-text-muted);
+  vertical-align: top;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--r-border);
+  background: none;
+  white-space: normal;
+}
+.detail-table td { font-size: 13px; }
+.detail-table tbody tr:last-child th { border-bottom: 0; }
+
+.next-step {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--r-border);
+  color: var(--r-text-secondary);
+  line-height: 1.6;
+  max-width: 92ch;
+}
+.next-step strong { color: var(--r-text); font-weight: 600; }
+
+/* The route to "My requests" from a result. `next-step-awaiting` is the case
+   where a person still has to decide — the one the requester was previously
+   left with no route for — so it reads as the live thread rather than as a
+   footnote. It is a POINTER: `r-link-button` is a button styled as a link
+   because it opens an existing in-page view, and there is deliberately no
+   control anywhere near it that could decide a request. */
+.next-step-awaiting { color: var(--r-text); }
+
+.r-link-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--r-brand);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.r-link-button:hover { text-decoration: none; }
+.r-link-button:focus-visible { outline: 2px solid var(--r-brand); outline-offset: 2px; }
+
+.action-status {
+  padding: 10px 13px;
+  border-radius: var(--r-radius);
+  font-weight: 600;
+  font-size: 13.5px;
+  margin: 0;
+  color: var(--r-text-secondary);
+}
+.action-status.bad { background: var(--r-danger-subtle); color: var(--r-danger); }
+/* The one confirmation on this page that reports a DECISION having been
+   recorded (the travel-letter offer being accepted). It had no rule at all, so
+   a successful accept rendered in the same muted grey as "Requesting…" — the
+   two states a person most needs told apart. */
+.action-status.ok { background: var(--r-ok-subtle); color: var(--r-ok); }
+
+.small { font-size: 12.5px; }
+
+@media (max-width: 900px) {
+  /* The shared shell folds the sidebar into a top bar; the nav rows come with
+     it, so they need to sit in a row and keep both of their lines. */
+  .r-nav-item { flex: none; }
+  .persona-picker { border-top: 0; padding-top: 0; min-width: 220px; }
+  .sidebar-foot { display: none; }
+  .field-grid, .check-grid { grid-template-columns: 1fr; }
+  .period-row { grid-template-columns: 1fr; }
+  .detail-table .detail-label { width: auto; }
+  /* The lead stays the largest thing in the panel on a phone, but it stops
+     being a headline: 15.5px over a 340px column runs to five or six words a
+     line, and the indent that made it read as the lead on a wide screen is
+     just lost width here. */
+  .plain-answer { padding-left: 10px; }
+  .plain-answer-lead { font-size: 14.5px; }
+}
+
+/* --- home panel + request-type tiles ---------------------------------------
+   Prompted directly: the disclosure and the generic page framing used to sit
+   above every single card, on every visit, regardless of which use case was
+   open. Home is now its own view — shown on load, hidden the instant a
+   request type activates — so a use case's own page is that use case's page,
+   not this page with a card taped underneath it. */
+#home-panel { max-width: 1100px; }
+
+.home-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+.home-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+  padding: 16px;
+  background: var(--r-surface);
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.home-tile:hover, .home-tile:focus-visible {
+  border-color: var(--r-brand);
+  box-shadow: 0 0 0 1px var(--r-brand);
+  outline: none;
+}
+.home-tile-body { min-width: 0; flex: 1; }
+.home-tile-title { font-size: 14.5px; font-weight: 650; color: var(--r-text); margin: 0 0 3px; }
+.home-tile-desc {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--r-text-secondary);
+  margin: 0 0 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* --- a use case's own page: its heading IS the page heading ----------------
+   .r-card-title is 15.5px in the shared system, sized for a card that is one
+   of several on a dashboard. When a request type is active, its card is the
+   entire visible page — the generic "Request portal" <h1> is hidden — so its
+   own title needs to read with that weight instead. Scoped to .uc-card only;
+   the shared rule is untouched, so the six other surfaces reusing it (the
+   unified dashboard, ZAF sidebar, etc.) are unaffected. */
+.uc-card .r-card-title { font-size: 23px; font-weight: 700; letter-spacing: -0.01em; }
+.uc-card .r-card-note { font-size: 14px; margin-top: 6px; }
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--r-text-secondary);
+  cursor: pointer;
+}
+.back-link:hover { color: var(--r-brand); }
+
+/* --- receipt upload (UC-02) -------------------------------------------------
+   Real, per the actual Remote employee flow (support.remote.com's own "How to
+   submit an expense" guide: upload a receipt, Remote scans and pre-fills the
+   details). This demo runs no OCR, so nothing below claims to read the file's
+   content for merchant/amount/category — see wireReceiptUpload() in app.js
+   for what it DOES do honestly: hash the real bytes with the browser's own
+   crypto.subtle, so a duplicate upload is a genuine duplicate. */
+.upload-field { display: block; margin-bottom: 16px; }
+.upload-drop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 14px 16px;
+  border: 1px dashed var(--r-border-strong);
+  border-radius: var(--r-radius);
+  background: var(--r-surface-subtle);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--r-text-secondary);
+}
+.upload-drop:hover { border-color: var(--r-brand); color: var(--r-text); }
+.upload-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.upload-drop-text { font-weight: 600; color: var(--r-text); }
+.upload-drop-name { color: var(--r-text-secondary); font-size: 12.5px; }
+
+/* ---------------------------------------------------------------------------
+   UC-03 -> UC-04 continuation
+   ---------------------------------------------------------------------------
+   Two surfaces, one flow. `.continuation-offer` is the employee's next step on
+   a UC-03 routing; `.continuation-banner` is what they land on at the top of
+   the UC-04 form. Both are set apart from the body copy on purpose: the whole
+   point of this flow is that a deliberate human act happened, so the two
+   places that act is visible should not read as ordinary page furniture.
+
+   `.is-carried` and `.carried-mark` mark a field whose value nobody on this
+   page typed. Three of the five come from a model reading free text, so they
+   are highlighted to be CHECKED, not to look authoritative — colour is never
+   the only cue, and the label carries the words too.
+
+   THE BANNER IS TWO SENTENCES AND ONE CLOSED DISCLOSURE, and its padding is
+   sized for that. It used to run to twenty lines of prose before the first
+   input, which is a screen a person scrolls past rather than reads — see
+   renderContinuationBanner() in app.js for what came off it and where each
+   piece went.
+   --------------------------------------------------------------------------- */
+/* THE INTERSTITIAL. It used to be a quiet block with a top border at the very
+   bottom of the result; it is now the first thing after the outcome, and it is
+   styled to interrupt — a real box with a warning edge, not page furniture. The
+   same node is shown inside a <dialog> the moment the result renders and lands
+   back here when that is dismissed, so these rules have to read as deliberate
+   in BOTH positions: on the page and in the modal. That is why the emphasis is
+   the border and the surface rather than a drop shadow or a width. */
+.continuation-offer {
+  border: 1px solid var(--r-warn, var(--r-border));
+  border-left-width: 4px;
+  border-radius: var(--r-radius, 8px);
+  background: var(--r-surface-2, transparent);
+  padding: 14px 16px;
+  margin: 14px 0;
+}
+.interstitial-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--r-text);
+}
+.continuation-offer > p { max-width: 68ch; }
+.interstitial-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.continuation-offer .r-btn { margin-top: 0; }
+
+/* PROMOTED — the ONE offer on a result that is allowed to interrupt. Same box,
+   more weight, because it has to read as the lead item in both of the places it
+   lives: inside the dialog, and at the top of the result after that is
+   dismissed. Exactly one node ever carries this class (offersOn() promotes the
+   first offer and only the first), which is also what makes it safe for it to
+   carry the single id the dialog is labelled by. */
+.continuation-offer.interstitial { border-left-width: 6px; }
+
+/* WHERE THE KEYBOARD LANDS AFTER THE MODAL CLOSES. presentResultDialog() gives
+   the restored block tabindex="-1" and focuses it when the browser's own
+   restoration has nowhere to go — see the comment there for why that happens.
+   It is the ANSWER that gets it now rather than the offer, because the answer
+   is the first of the restored blocks; both are listed, since a payload with an
+   offer and no plain answer still restores the offer.
+   The default UA ring is a heavy black box; this is the design system's own
+   focus outline (remote-ui.css line 341), so the cue reads as deliberate rather
+   than as an error state. :focus-visible only, so a mouse dismissal is silent. */
+.continuation-offer:focus-visible,
+.plain-answer:focus-visible {
+  outline: 2px solid var(--r-brand);
+  outline-offset: 3px;
+}
+
+/* The modal. The browser supplies the behaviour that matters — focus trap,
+   Escape, inert background, restored focus — so this supplies only the box.
+   `::backdrop` is dimmed rather than opaque: the result panel underneath is the
+   context the notice is about, and hiding it entirely would make the dialog
+   read as a page of its own. */
+.interstitial-dialog {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  max-width: min(560px, calc(100vw - 32px));
+}
+.interstitial-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+
+/* ONE CARD, TWO BLOCKS. The dialog now carries the ANSWER and, under it, the
+   recommendation — so the surface and the shadow belong to a panel around both
+   rather than to either one of them. Two nodes each drawing their own card
+   would read as two sheets of paper stacked over the page.
+
+   THE SCROLL IS ON THE PANEL AND NOT ON THE DIALOG. A letter recommendation
+   carries three certified facts, a sign-off note and two buttons under an
+   answer, and at 340px that is taller than the viewport. Capping the panel and
+   letting it scroll keeps the buttons reachable; capping the dialog would clip
+   them, which on a touch device means an offer that cannot be taken or
+   dismissed. */
+.interstitial-panel {
+  background: var(--r-surface, var(--r-bg));
+  box-shadow: 0 18px 48px rgb(0 0 0 / 22%);
+  border-radius: var(--r-radius, 8px);
+  padding: 18px 20px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+/* Inside the panel the two blocks are one column, so they drop the margins
+   they carry in the result and the recommendation drops its own background —
+   the panel is the card. It keeps its rule down the left: it is a distinct
+   block under the answer, and losing the rule would make the question read as
+   a second paragraph of the answer rather than as a different thing being
+   asked. */
+.interstitial-panel .plain-answer { margin: 0; }
+.interstitial-panel .continuation-offer {
+  margin: 16px 0 0;
+  background: transparent;
+  padding: 0 0 0 14px;
+}
+
+.continuation-steps,
+.continuation-list {
+  margin: 6px 0 10px;
+  padding-left: 20px;
+  max-width: 84ch;
+  font-size: 0.92em;
+  line-height: 1.55;
+}
+.continuation-list { list-style: disc; }
+
+/* ---------------------------------------------------------------------------
+   UC-03: the answer that can become the letter
+   ---------------------------------------------------------------------------
+   Same furniture as the continuation offer above, on purpose — they are the
+   same kind of thing (the employee's own next step, set apart from the body
+   copy because a deliberate human act happens here) and they appear on
+   opposite UC-03 outcomes, so they are never on screen together.
+
+   The only addition is the lead-in above the trip. That list is not reference
+   material: it is the trip the employee is being asked to confirm, and a
+   bulleted list with no sentence in front of it reads as a summary of what was
+   already decided rather than as something to check.
+   --------------------------------------------------------------------------- */
+.letter-offer-lead { margin-bottom: 0; font-weight: 600; color: var(--r-text); }
+.letter-offer .continuation-list { margin-top: 6px; }
+
+.continuation-banner {
+  border: 1px solid var(--r-warn, var(--r-border));
+  border-radius: var(--r-radius, 8px);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  background: var(--r-surface-2, transparent);
+}
+.continuation-banner > p { max-width: 84ch; }
+
+/* The one thing on the banner that is not a sentence: "Why are some boxes
+   blank?", shut. It answers a question the form does not need answered to be
+   filled in, so it is one line here rather than five paragraphs — and it is
+   styled quietly, because a disclosure that shouts is a paragraph with extra
+   steps. */
+.continuation-why { margin-top: 8px; }
+.continuation-why > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--r-text-secondary);
+  padding: 2px 0;
+}
+.continuation-why > summary:hover { color: var(--r-text); }
+.continuation-why > p { max-width: 84ch; margin: 6px 0 0; }
+
+.r-field.is-carried .r-input,
+.r-field.is-carried .r-select {
+  border-color: var(--r-warn, var(--r-border));
+}
+.carried-mark {
+  font-weight: 400;
+  color: var(--r-secondary, inherit);
+  font-size: 0.86em;
+}
+
+/* ---------------------------------------------------------------------------
+   The boxes a continuation is still asking for
+   ---------------------------------------------------------------------------
+   `.is-carried` above marks a box that ALREADY HAS a value somebody else
+   supplied. These mark a box that has NOTHING in it and must. Both used to look
+   the same as an ordinary empty input, which is the whole of the defect they
+   exist to fix: a real employee continued a travel routing, filled everything
+   they could see was being asked for, missed the one blank box in the middle of
+   a three-column grid, and got a completeness refusal from gate 5 of 17.
+
+   THREE CUES, NOT ONE. A border colour (`--r-danger` rather than `--r-warn`, so
+   "empty and required" is not the same signal as "carried over, check it"), a
+   left bar that survives a monochrome print, and — the one that actually
+   carries the meaning — the words "(still needed)" appended to the label by
+   app.js. Colour is never the only cue, which matters more here than anywhere
+   else on the page: the filled fields already wear a marker, so an unmarked
+   empty box reads as the LESS urgent of the two.
+
+   `.gap-prompt` is what the result area shows when a submission is held back.
+   It deliberately borrows nothing from `.result-box`: nothing has been decided,
+   no gate has run, and a panel that looked like the refusal panel would be
+   imitating a verdict this page has no standing to reach.
+   --------------------------------------------------------------------------- */
+.r-field.is-still-needed .r-input,
+.r-field.is-still-needed .r-select {
+  border-color: var(--r-danger, var(--r-border-strong));
+  box-shadow: inset 3px 0 0 0 var(--r-danger, var(--r-border-strong));
+}
+.gap-mark {
+  font-weight: 600;
+  color: var(--r-danger, inherit);
+  font-size: 0.86em;
+}
+
+.gap-prompt {
+  border: 1px solid var(--r-warn, var(--r-border));
+  border-radius: var(--r-radius, 8px);
+  background: var(--r-warn-subtle, var(--r-surface-subtle));
+  padding: 14px 16px;
+}
+.gap-prompt > p { max-width: 84ch; }
+
+/* THE DOCUMENT A REQUEST PRODUCED — "My requests"' newest column.
+   ------------------------------------------------------------------------
+   The three states get the same dot treatment every other badge on this row
+   uses, because the WORD carries the meaning and the colour is the redundant
+   cue (the design system's rule 1). `issued` is settled-green, `drafted` is
+   waiting-amber, and both "none" cases stay neutral: no letter is not a fault,
+   it is four different situations the sentence beneath names. */
+.badge.doc-issued { --r-dot: var(--r-dot-settled); }
+.badge.doc-drafted { --r-dot: var(--r-dot-waiting); }
+.badge.doc-none { --r-dot: var(--r-neutral); }
+
+.document-cell { min-width: 22ch; vertical-align: top; }
+.doc-detail {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--r-text-secondary);
+  max-width: 44ch;
+}
+.doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+/* A control inside a table cell, sized for one. The full-height button this row
+   would otherwise get makes a fourteen-column table unreadable. */
+.r-btn-small {
+  padding: 5px 10px;
+  font-size: 12.5px;
+  margin-top: 0;
+}
+.document-cell .action-status:empty { display: none; }
+
+/* THE LETTER VIEWER.
+   ------------------------------------------------------------------------
+   The document is HTML this system rendered and it names an employee, their
+   job title and their base pay. It is displayed in an `<iframe sandbox="">` —
+   the empty attribute is the restrictive one — so nothing in it executes and
+   it holds an opaque origin. This rule only gives that frame a size and a
+   readable ground; the security is the attribute, in app.js's showLetter(). */
+.letter-panel { width: min(760px, calc(100vw - 32px)); }
+.letter-frame {
+  display: block;
+  width: 100%;
+  height: min(60vh, 520px);
+  margin: 12px 0 0;
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius, 8px);
+  /* The letter is a document on a page: white, whatever the surface around it
+     is, because that is what it will be when it is printed or handed over. */
+  background: #fff;
+}
+.letter-hash {
+  margin-top: 8px;
+  font-family: var(--r-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  word-break: break-all;
+}
+.interstitial-dialog.letter-dialog { max-width: min(800px, calc(100vw - 32px)); }
+
+/* The sidebar identity changed under the reader. Several quick-fills carry a
+   persona — who is asking is half of what they demonstrate — and every one of
+   those switches used to happen in silence, which is what "how do i start as
+   chris lee and end up as admin?" was reporting. It sits inside .scenario-note
+   and would inherit that paragraph's secondary grey, so it takes the primary
+   colour back: it is the one clause on the line stating something that HAPPENED
+   rather than describing what was filled in. */
+.scenario-session-moved {
+  color: var(--r-text-primary);
+  font-weight: 550;
+}
+
+/* FINISHING A CONTINUATION — the two completion buttons inside the UC-04
+   banner (completionRow() in app.js).
+
+   They deliberately reuse .r-btn-secondary and .scenario-note so they LOOK like
+   the quick-fills above the form, because that is what a reader reaches for
+   when they do not know what a box wants. What they must not inherit is
+   .scenario-row's rule off the bottom: the row sits inside a banner that
+   already has its own edges, and a second divider there reads as the end of the
+   banner rather than the end of the buttons. */
+.continuation-completions { margin-top: 12px; }
+.continuation-completions .scenario-row {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: 0;
+}

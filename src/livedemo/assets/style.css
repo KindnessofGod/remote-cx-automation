@@ -1,0 +1,250 @@
+/* ---------------------------------------------------------------------------
+ * style.css — what is specific to the UC-01 live demo
+ * ---------------------------------------------------------------------------
+ * The tokens, reset, cards, forms, buttons, banners and badge primitives all
+ * live in the shared src/shared/ui/remote-ui.css, served at /remote-ui.css.
+ * This file owns only three things this surface genuinely adds:
+ *
+ *   1. The single-column layout. This page is one linear task — pick an
+ *      employee, send, watch the real ticket — with no second place to
+ *      navigate to, so it gets a slim top bar and a centred column rather
+ *      than the sidebar shell the dashboard and the Remote UI stand-in use.
+ *      A sidebar here would be a nav with nothing in it.
+ *   2. The tag chips app.js emits (the status itself is now the shared
+ *      `.r-status` dot-and-word, not a local badge).
+ *   3. The sandboxed iframe the real public reply (the letter) renders into.
+ *
+ * Class names are unchanged from the version that predates the design system,
+ * because app.js writes them and app.js is deliberately not rewritten for a
+ * restyle — the tests that pin it (compiles, no innerHTML) keep passing
+ * untouched. Every colour here is a var(--r-*) token, so both themes work.
+ * ------------------------------------------------------------------------- */
+
+/* --- shell ---------------------------------------------------------------- */
+.ld-topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--r-sidebar);
+  border-bottom: 1px solid var(--r-border);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.ld-main { padding-top: 30px; }
+.ld-col {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.ld-col > header { margin-bottom: 0; }
+.ld-col .r-page-sub { margin-bottom: 0; }
+
+/* The real-account warning sits between the intro and the form on purpose —
+   it cannot be scrolled past on the way to the submit button. */
+.ld-warning { border-color: var(--r-warn); }
+
+.ld-submit { width: 100%; margin-top: 4px; }
+
+.ld-foot {
+  font-size: 12px;
+  color: var(--r-text-muted);
+  margin: 6px 0 0;
+  text-align: center;
+}
+
+/* --- what app.js emits ----------------------------------------------------- */
+.result-box {
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  background: var(--r-surface-subtle);
+  padding: 12px 14px;
+  margin-top: 14px;
+}
+.result-box p { margin: 0; }
+.result-box p + p { margin-top: 5px; }
+
+/* Ticket status is a LIFECYCLE STATE, so it is the shared `.r-status` — a
+   coloured dot beside the plain word, which is how Remote renders state — not
+   a filled pill. app.js owns the status -> tone mapping (one table, commented
+   there); this only gives the line its own spacing.
+
+   The local `.badge` + `.status-*` rules that used to live here are gone. They
+   painted the status with the DECISION palette (auto/human/escalate), which
+   quietly claimed a ticket status was a decision. It isn't: `open` means a
+   human has it, which could be either of two decisions, and the automation's
+   actual outcome is in the tags below. */
+.status-line { margin: 0; }
+
+.tag-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.tag-chip {
+  padding: 2px 8px;
+  border-radius: var(--r-radius-sm);
+  font-family: var(--r-mono);
+  font-size: 11.5px;
+  color: var(--r-text-secondary);
+  background: var(--r-surface-subtle);
+  border: 1px solid var(--r-border);
+}
+
+/* The letter is real customer-facing HTML from the ticket, so it renders in a
+   sandboxed frame on its own white ground rather than inheriting page styling
+   that would misrepresent what the client received. */
+.letter-frame {
+  width: 100%;
+  height: 340px;
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  margin-top: 12px;
+  /* The one deliberate literal in this file, and NOT a theme colour: the frame
+     holds Zendesk's own HTML, which brings its own light-mode letter styling.
+     A token here would flip it to a dark ground in dark mode and misrepresent
+     what the client actually received. */
+  background: #ffffff;
+}
+
+.action-status {
+  margin: 10px 0 0;
+  font-size: 13px;
+  min-height: 1em;
+  color: var(--r-text-secondary);
+}
+.action-status.bad {
+  font-weight: 600;
+  color: var(--r-danger);
+  background: var(--r-danger-subtle);
+  border-radius: var(--r-radius-sm);
+  padding: 8px 11px;
+}
+
+.small { font-size: 12.5px; }
+.muted { color: var(--r-text-muted); }
+
+@media (max-width: 900px) {
+  .ld-main { padding-top: 22px; }
+}
+
+/* --- example requests ------------------------------------------------------
+   The portal's quick-fill row, ported to the one surface that writes to a real
+   account. Same visual grammar on purpose: a reader who has already used the
+   request portal should not have to learn a second control here.
+
+   `.is-chosen` is duplicated from the portal's stylesheet rather than shared,
+   because these two pages have no common stylesheet to put it in — they share
+   only remote-ui.css, which is the design system and not the demo furniture.
+   If a third surface ever grows a quick-fill row, that is the moment to lift
+   all three into remote-ui.css, and not before. */
+.ld-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--r-border);
+}
+.ld-scenarios .r-btn.is-chosen {
+  border-color: var(--r-brand);
+  box-shadow: inset 0 0 0 1px var(--r-brand);
+  background: var(--r-brand-subtle);
+  color: var(--r-brand);
+  font-weight: 600;
+}
+
+/* What this page's operator EXPECTS, said next to the button rather than after
+   the run. Muted and small because it is a prediction, not a result — the real
+   answer arrives from the live pipeline in the panel below, and the two are
+   allowed to disagree. */
+.ld-example-expect {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--r-text-muted);
+}
+.r-btn.is-chosen .ld-example-expect { color: var(--r-brand); }
+
+/* --- the outcome banner ----------------------------------------------------
+   "Did it work" is the question this page exists to answer, and it used to be
+   answerable only by reading a Zendesk status word and a row of tags. The
+   banner states the answer; the status and tags below it are the evidence. */
+.ld-outcome {
+  border: 1px solid var(--r-border);
+  border-left-width: 4px;
+  border-radius: var(--r-radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 18px;
+}
+.ld-outcome-label {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--r-text-primary);
+}
+.ld-outcome-detail {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--r-text-secondary);
+  max-width: 78ch;
+}
+.ld-letter-btn { margin-top: 14px; }
+
+/* Colour is never the only cue — every state's LABEL already says which it is
+   in words, so these borders are redundant reinforcement rather than meaning. */
+.ld-outcome-approved { border-left-color: var(--r-success, #15803d); }
+.ld-outcome-auto     { border-left-color: var(--r-success, #15803d); }
+.ld-outcome-declined { border-left-color: var(--r-danger); }
+.ld-outcome-waiting  { border-left-color: var(--r-warn); }
+.ld-outcome-pending  { border-left-color: var(--r-border); }
+
+/* --- the letter dialog -----------------------------------------------------
+   A native <dialog>: focus trapping, Escape-to-close and an inert background
+   come with it, and a hand-rolled overlay gets all three wrong. */
+.ld-dialog {
+  width: min(880px, 94vw);
+  max-height: 92vh;
+  border: none;
+  border-radius: var(--r-radius);
+  padding: 22px;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+}
+.ld-dialog::backdrop { background: rgba(15, 23, 42, 0.45); }
+.ld-dialog-head { margin-bottom: 14px; }
+.ld-dialog-title { margin: 0; font-size: 17px; font-weight: 650; }
+.ld-dialog-sub { margin: 4px 0 0; font-size: 13px; color: var(--r-text-secondary); }
+.ld-dialog-frame {
+  width: 100%;
+  height: 58vh;
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius-sm);
+  background: #fff;
+}
+.ld-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+.ld-dialog-status { margin: 10px 0 0; min-height: 1em; }
+
+/* The page has given up watching, said in words. A page that has stopped
+   polling and one that is still polling look identical otherwise. */
+.ld-watch-stopped {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--r-border);
+  border-radius: var(--r-radius-sm);
+}
+.ld-watch-stopped p { margin: 0 0 10px; color: var(--r-text-secondary); }

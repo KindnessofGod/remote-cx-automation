@@ -1,0 +1,54 @@
+{
+  "app": {
+    "name": "Remote CX Review",
+    "short_description": "Review and approve automated CX decisions on the current ticket",
+    "long_description": "Shows what the CX automation decided about this ticket, the flags that drove the decision, and — for cases routed to human review — one-click approve or decline. Every decision is written to the append-only audit log.",
+    "installation_instructions": "Set 'apiBaseUrl' to a URL where the review API (src/review/server.js) is reachable. The other 'ucNNApiBaseUrl' settings are optional — set them only if those use cases' APIs are also deployed. Set 'cxSharedSecret' to the same value as ZAF_SHARED_SECRET on those APIs to have approve/decline requests cryptographically signed; leave it blank only for a local demo.",
+    "parameters": {
+      "apiBaseUrl": {
+        "label": "Review API base URL",
+        "helpText": "Base URL of the review API, e.g. https://cx-review.example.com"
+      },
+      "uc06ApiBaseUrl": {
+        "label": "UC-06 amendments API base URL (optional)",
+        "helpText": "Base URL of the UC-06 dual-approval API. Leave blank if UC-06 isn't deployed yet."
+      },
+      "uc08ApiBaseUrl": {
+        "label": "UC-08 dossiers API base URL (optional)",
+        "helpText": "Base URL of the UC-08 read-only dossiers API. Leave blank if UC-08 isn't deployed yet."
+      },
+      "uc02ApiBaseUrl": {
+        "label": "UC-02 expenses API base URL (optional)",
+        "helpText": "Base URL of the UC-02 expense & receipt validation API. Leave blank if UC-02 isn't deployed yet."
+      },
+      "uc03ApiBaseUrl": {
+        "label": "UC-03 travel/workation API base URL (optional)",
+        "helpText": "Base URL of the UC-03 travel support router API. Leave blank if UC-03 isn't deployed yet."
+      },
+      "uc04ApiBaseUrl": {
+        "label": "UC-04 work authorization API base URL (optional)",
+        "helpText": "Base URL of the UC-04 work authorization API. Leave blank if UC-04 isn't deployed yet."
+      },
+      "uc05ApiBaseUrl": {
+        "label": "UC-05 resignation notice API base URL (optional)",
+        "helpText": "Base URL of the UC-05 resignation notice API. Leave blank if UC-05 isn't deployed yet."
+      },
+      "uc07ApiBaseUrl": {
+        "label": "UC-07 mobility dossiers API base URL (optional)",
+        "helpText": "Base URL of the UC-07 read-only global mobility dossiers API. Leave blank if UC-07 isn't deployed yet."
+      },
+      "uc09ApiBaseUrl": {
+        "label": "UC-09 payroll adjustment API base URL (optional)",
+        "helpText": "Base URL of the UC-09 off-cycle payroll adjustment API. Leave blank if UC-09 isn't deployed yet."
+      },
+      "cxSharedSecret": {
+        "label": "Signed-request shared secret (optional)",
+        "helpText": "The HS256 secret this app signs its requests with — reads as well as approve/decline. Must match ZAF_SHARED_SECRET on the API. Stored securely by Zendesk and never sent to the browser. Leave blank for a local demo."
+      },
+      "signWrites": {
+        "label": "Sign requests to the automation APIs",
+        "helpText": "Tick this after saving the shared secret above. Zendesk never sends a secure setting to the browser, so the app cannot see that the secret is set — this checkbox is how it is told to use it. It applies to reads as well as approvals: a deployed API requires a signed identity before it will return a case. Leave unticked only for a local demo."
+      }
+    }
+  }
+}

@@ -1,0 +1,269 @@
+/* ---------------------------------------------------------------------------
+ * style.css — what is specific to the UC-01 playground
+ * ---------------------------------------------------------------------------
+ * The tokens, shell, cards, tables, buttons and form primitives all live in the
+ * shared src/shared/ui/remote-ui.css, served at /remote-ui.css. This file holds
+ * only what this page genuinely adds on top:
+ *
+ *   - the sidebar's §12 scenario list (one-click form fills),
+ *   - the two-column queue/detail grid,
+ *   - the result + case-detail panels app.js builds,
+ *   - and element-level rules for the controls app.js creates itself.
+ *
+ * That last group is why this file still defines `.field`, `.btn`, `.badge` and
+ * bare `input`/`select`/`textarea` rather than using .r-field/.r-btn/.r-badge:
+ * app.js emits those class names, and app.js is deliberately NOT being rewritten
+ * for a restyle — the tests that pin it (compiles, no innerHTML, no re-derived
+ * policy) should keep passing untouched. Every rule below is built out of the
+ * shared --r-* tokens, so both themes follow automatically; there is not one
+ * hard-coded colour in this file.
+ *
+ * Colour is never the sole carrier of meaning here either: a decision badge
+ * always spells out "Auto-resolved"/"Awaiting review"/"Escalated" beside its
+ * dot, and the tier badge carries the tier word and emoji app.js writes.
+ *
+ * Lifecycle STATE (resolved / pending review / escalated / declined) is not a
+ * badge at all — app.js emits the shared `.r-status` dot-beside-a-word, which
+ * is how Remote itself renders state in a dense list. `.badge` here stays for
+ * the two things that are genuinely a classification rather than a state: the
+ * DECISION and the RISK TIER.
+ * ------------------------------------------------------------------------- */
+
+/* --- sidebar: the §12 scenario one-click fills ---------------------------- */
+/* app.js appends one `.example-btn` per scenario into #examples. They read as
+   navigation, so they get the shared nav-item treatment. */
+.scenario-list { display: flex; flex-direction: column; gap: 2px; }
+
+.example-btn {
+  display: block; width: 100%; text-align: left;
+  font-family: inherit; font-size: 13.5px; font-weight: 500;
+  padding: 7px 10px; border-radius: 8px; cursor: pointer;
+  border: 0; background: none; color: var(--r-text-secondary);
+}
+.example-btn:hover { background: var(--r-surface-hover); color: var(--r-text); }
+
+.sidebar-foot {
+  font-size: 11.5px; line-height: 1.5; color: var(--r-text-muted);
+  padding: 0 8px; margin: 0;
+}
+
+/* --- card heads: the numbered step marker --------------------------------- */
+.step-num {
+  width: 21px; height: 21px; border-radius: 6px; flex: none;
+  background: var(--r-brand-subtle); color: var(--r-brand);
+  display: inline-grid; place-items: center;
+  font-size: 12px; font-weight: 700;
+}
+
+/* --- form controls -------------------------------------------------------- */
+/* `.field` is a label wrapping a <span> caption and one control — the shape
+   app.js builds for the specialist's "acting as" / "reason" inputs, mirrored in
+   index.html so the two halves of the page look like one form. */
+.field { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; margin-bottom: 14px; }
+.field > span { font-size: 13px; font-weight: 600; color: var(--r-text); }
+
+.field-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.field-row .field { margin-bottom: 0; }
+.field-row.checkboxes { align-items: center; gap: 20px; }
+
+input[type="text"], select, textarea {
+  font-family: inherit; font-size: 14px; color: var(--r-text);
+  background: var(--r-surface); border: 1px solid var(--r-border-strong);
+  border-radius: 9px; padding: 9px 11px; width: 100%;
+}
+input[type="text"]:focus, select:focus, textarea:focus {
+  border-color: var(--r-brand); outline: none;
+  box-shadow: 0 0 0 3px var(--r-brand-subtle);
+}
+/* Same correction as the shared sheet makes for `.r-input`: `outline: none`
+   above applies on keyboard focus too, and the pale ring that replaces it is
+   nearly invisible against the surface. Keyboard focus gets a real outline. */
+input[type="text"]:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--r-brand);
+  outline-offset: 1px;
+}
+textarea { min-height: 84px; resize: vertical; }
+
+.check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--r-text-secondary); }
+
+.advanced { margin: 2px 0 16px; font-size: 13px; }
+.advanced summary { cursor: pointer; color: var(--r-text-muted); }
+.advanced .check { margin: 10px 0 6px; }
+
+/* --- buttons app.js emits ------------------------------------------------- */
+/* index.html's own submit uses the shared .r-btn classes directly; these two
+   exist because app.js writes `btn approve` / `btn decline` on the specialist
+   controls it builds. Same geometry as .r-btn so they read as one set. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-family: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+  padding: 9px 16px; border-radius: 9px; cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.approve { background: var(--r-brand); color: var(--r-on-brand); }
+.btn.approve:hover:not(:disabled) { background: var(--r-brand-hover); }
+/* `.deny` kept as an alias of `.decline` — the verb renamed 2026-08-19 and a
+   dropped class would leave any not-yet-updated button unstyled. */
+.btn.decline,
+.btn.deny { background: var(--r-danger-subtle); color: var(--r-danger); }
+.btn.decline:hover:not(:disabled),
+.btn.deny:hover:not(:disabled) { border-color: var(--r-danger); }
+
+/* --- badges: colour + WORD, never colour alone ---------------------------- */
+/* app.js writes `badge decision-<decision>` and `badge tier-<tier>`, with the
+   human-readable label as the text. The dot is the decoration; the word is the
+   signal. Decision colours come from the already-validated palette in
+   remote-ui.css and are never re-picked here. */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; line-height: 1.4;
+  padding: 3px 9px; border-radius: 20px; white-space: nowrap;
+  background: var(--r-neutral-subtle); color: var(--r-text);
+}
+.badge[class*="decision-"]::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--r-neutral);
+}
+/* State scale, not the chart's categorical palette — see the note in
+   src/portal/assets/style.css and remote-ui.css. */
+.badge.decision-auto_resolve::before { background: var(--r-dot-settled); }
+.badge.decision-human_review::before { background: var(--r-dot-waiting); }
+.badge.decision-escalate::before { background: var(--r-dot-stopped); }
+
+.badge[class*="tier-"] {
+  background: transparent; color: var(--r-text-secondary);
+  border: 1px solid var(--r-border-strong); font-weight: 500;
+}
+
+/* --- the queue / detail grid ---------------------------------------------- */
+.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+/* `min-width: 0` is load-bearing, the same way it is on `.r-main` in the shared
+   sheet: a grid item defaults to `min-width: auto` and so refuses to shrink
+   below its widest content. Without it the queue table pushes its column past
+   its share and the whole PAGE scrolls sideways; with it, the table's own
+   `.r-table-wrap` overflow-x container does the scrolling, which is the point
+   of having one. */
+.dashboard-grid > * { min-width: 0; }
+/* Stacked well before a laptop viewport, on purpose. The queue is a seven-column
+   table; side by side at 1280px it gets ~460px, which is not enough for it — and
+   before `min-width: 0` above, it took the space anyway and squeezed the detail
+   card down to a hundred-odd pixels. Full width, one above the other, is the
+   honest fit: the whole row is readable and the detail panel keeps its width. */
+@media (max-width: 1400px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+}
+
+/* --- result + case-detail panels ------------------------------------------ */
+#ticket-result:not(:empty) { margin-top: 18px; }
+
+.result-box {
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  padding: 16px;
+  background: var(--r-surface-subtle);
+}
+.result-box .badges { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+
+.rows {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 6px 14px;
+  font-size: 13.5px;
+}
+.rows dt { color: var(--r-text-muted); white-space: nowrap; font-weight: 500; }
+.rows dd { margin: 0; overflow-wrap: anywhere; color: var(--r-text); }
+
+.flags { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.flag {
+  padding: 3px 8px; border-radius: 5px;
+  font-family: var(--r-mono); font-size: 11px;
+  background: var(--r-warn-subtle); color: var(--r-warn);
+}
+
+.ticket-text-box {
+  margin-top: 16px; padding: 14px;
+  background: var(--r-surface);
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+}
+.ticket-text-box h4 {
+  margin: 0 0 8px; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--r-text-muted);
+}
+.ticket-text-box pre {
+  margin: 0; font-family: inherit; font-size: 13.5px;
+  white-space: pre-wrap; color: var(--r-text); line-height: 1.55;
+}
+
+/* The letter renders its own complete HTML document (which paints its own
+   page background), so this only frames it. */
+.letter-frame {
+  width: 100%; height: 360px; margin-top: 14px;
+  border: 1px solid var(--r-border); border-radius: var(--r-radius);
+  background: var(--r-surface);
+}
+
+/* --- tables --------------------------------------------------------------- */
+tr.clickable { cursor: pointer; }
+
+/* The review column holds a real focusable button (see app.js's note on why a
+   click-only <tr> was a keyboard dead end) with the "needs decision" marker
+   beside it. Right-aligned so the buttons form one column the eye can run
+   down instead of tracking a ragged edge. */
+.action-cell { white-space: nowrap; text-align: right; }
+.action-cell .needs-decision {
+  font-size: 12px; font-weight: 600; color: var(--r-warn);
+  margin-right: 8px; vertical-align: middle;
+}
+
+/* A queue row can carry two states at once — the case's own status, and the
+   review-queue status when a specialist decision is pending or made. Both are
+   shared `.r-status` (dot + word); this only stacks them. */
+.status-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+
+.audit-reason { max-width: 220px; white-space: normal; line-height: 1.4; }
+.audit-details {
+  display: block; max-width: 280px;
+  white-space: pre-wrap; word-break: break-word;
+  font-size: 11px; line-height: 1.4;
+  background: none; padding: 0;
+}
+
+/* The per-attempt trace nested under its decision row. Quieter than the
+   decision's own details, because it is evidence for that row rather than a
+   record in its own right — the second level of invariant 7, not a peer. */
+.audit-trace {
+  margin-top: 6px; max-width: 280px;
+  font-size: 10.5px; line-height: 1.4;
+  color: var(--r-text-muted);
+  white-space: pre-wrap; word-break: break-word;
+}
+
+/* --- inline status line under the approve/decline buttons ---------------- */
+/* app.js sets `.ok` / `.bad`; each also gets an explicit sentence, so the
+   colour is a reinforcement rather than the message. */
+.action-status { margin: 12px 0 0; font-size: 13px; min-height: 1.2em; color: var(--r-text-secondary); }
+.action-status.ok { color: var(--r-ok); font-weight: 600; }
+.action-status.bad { color: var(--r-danger); font-weight: 600; }
+
+/* --- small shared utilities app.js writes --------------------------------- */
+.muted { color: var(--r-text-muted); }
+.small { font-size: 12.5px; }
+.hidden { display: none; }
+
+.empty-note { margin: 0; padding: 18px 20px; font-size: 13.5px; color: var(--r-text-muted); }
+
+code {
+  background: var(--r-surface-subtle);
+  padding: 2px 5px; border-radius: 4px;
+}
+
+/* --- responsive: the sidebar folds to a top bar, so the scenarios wrap ----- */
+@media (max-width: 900px) {
+  .scenario-list { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .example-btn { width: auto; border: 1px solid var(--r-border); font-size: 12.5px; padding: 5px 10px; }
+  .sidebar-foot { display: none; }
+}

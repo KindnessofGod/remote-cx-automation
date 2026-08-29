@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+
+# Secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime artifacts
+audit.log
+*.log
+demo/letter.html
+demo/letter.pdf
+demo/metrics.html
+
+# Claude Code agent worktrees (harness scratch space, not repo content)
+.claude/worktrees/
+
+# Agent scratch space (pid files, throwaway drivers) — never repo content
+.scratch/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Throwaway probe scripts and raw API dumps.
+#
+# Verifying a shape against the live API — rather than against src/remote/
+# mockServer.js, which is what hid five defects on 2026-08-18 — means writing
+# a one-off script and dumping the response. Those are working notes, not
+# deliverables: the FINDING belongs in a test or in docs/, and the dump itself
+# is a stale copy of an API that gets reseeded. .employments.json and
+# .schemas.json are also raw Sandbox records, which prime directive 5 keeps
+# out of the repo on principle even in a sandbox.
+.probe*.mjs
+.probe*.out
+.employments.json
+.schemas.json
+.nld-schema.txt
+.sandbox-cap/
+
+# Built ZAF app bundles (`dist/zaf-app-<version>.zip`). The bundle is a zip of
+# zaf-app/, rebuilt in one command — committing a binary that is derivable from
+# tracked files is how the repo and the installed app come to disagree about
+# which one is authoritative.
+dist/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+# --- Local orchestration working files: never part of the portfolio -----------
+# These are how the fleet works, not what it built. They are untracked today,
+# which is one `git add -A` away from being public. Ignoring them is what
+# actually keeps them out; making the repo private does not, because a repo can
+# be flipped back to public and its history comes with it.
+.gc/
+.claude/skills/
+.beads/formulas/
+.beads/identity.toml
+.beads/routes.jsonl
+zaf-app/tmp/
+# Repo-root scratch. Untracked and, until now, NOT ignored — agents' throwaway
+# probes (tmp/vc33, tmp/zaf, tmp/zd, tmp/zafharness) sat one `git add -A` away
+# from being committed. The pre-commit guard that used to catch that was retired
+# 2026-08-23T21:45Z once the owner's outbox work was committed, so ignore it here.
+tmp/

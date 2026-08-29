@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>UC-01 Chat Demo — Employment Verification</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- The shared design system first, this surface's own additions second, so a
+     local rule can still override a shared one. -->
+<link rel="stylesheet" href="/remote-ui.css" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<!-- A conversation is a single reading column, so this surface takes the shared
+     tokens and components but not the .r-app sidebar shell — there is no
+     second axis of navigation to put in one. The logo block keeps it visibly
+     part of the same product. -->
+<div class="wrap">
+
+  <header class="intro">
+    <div class="r-logo">
+      <span class="r-logo-mark" aria-hidden="true">R</span>
+      <span class="r-logo-word">remote</span>
+    </div>
+
+    <h1 class="r-page-title">UC-01 Chat Demo</h1>
+    <!-- "A conversational wrapper around UC-01" was the heading again. What
+         stays is what the heading cannot say: the reply is a real decision. -->
+    <p class="r-page-sub">
+      Every message you type is sent as a
+      ticket into the <strong>real</strong> decision flow — classifier, identity check,
+      policy gates — and the actual result is rendered back as the reply. Nothing
+      here decides anything; this page is a view over
+      <code>handleVerificationTicket()</code>.
+    </p>
+    <div class="r-banner r-banner-neutral">
+      <span class="r-banner-icon" aria-hidden="true">ℹ️</span>
+      <span>
+        <strong>Demo/testing aid, not a submission deliverable</strong> — it never writes to
+        Supabase and never touches a real Zendesk ticket.
+      </span>
+    </div>
+  </header>
+
+  <section class="r-card" id="context-card">
+    <div class="r-card-head">
+      <h2 class="r-card-title">Who is sending — and about whom</h2>
+    </div>
+    <div class="r-card-body">
+      <div class="field-row">
+        <label class="r-field">
+          <span class="r-label">Logged in as</span>
+          <!--
+            DEFAULTS TO A SIGNED-IN EMPLOYEE, unlike the playground, and the
+            difference is deliberate. The playground has scenario buttons that
+            set this field for you; this page has none — it just says "Say
+            something like 'Please send me a standard employment verification
+            letter.'". With "Not logged in" selected, that exact suggested
+            message escalates `identity_not_verified`, so the page's own
+            onboarding instruction produced a refusal and a first-time viewer
+            saw a system that appears to refuse everything.
+
+            The gate is unchanged and still runs: identity still comes from the
+            session rather than from anything typed, and choosing "Not logged
+            in" still demonstrates the fail-closed path. This only makes the
+            default state the one the page describes.
+          -->
+          <select class="r-select" id="logged-in-select">
+            <option value="">Not logged in</option>
+            <option value="emp_active_001" selected>Amara Okafor (active, NG)</option>
+            <option value="emp_active_003">Priya Nair (active, NG)</option>
+            <option value="emp_terminated_002">Kofi Mensah (terminated)</option>
+            <option value="emp_uk_001">Oliver Hughes (active, UK)</option>
+            <option value="emp_de_001">Lena Müller (active, DE)</option>
+            <option value="emp_de_probation_001">Marcus Becker (active, DE, probation)</option>
+            <option value="emp_pl_001">Katarzyna Kowalski (active, PL)</option>
+          </select>
+        </label>
+
+        <label class="r-field">
+          <span class="r-label">Message is about</span>
+          <select class="r-select" id="about-select">
+            <option value="emp_active_001">Amara Okafor (active, NG)</option>
+            <option value="emp_active_003">Priya Nair (active, NG)</option>
+            <option value="emp_terminated_002">Kofi Mensah (terminated)</option>
+            <option value="emp_uk_001">Oliver Hughes (active, UK)</option>
+            <option value="emp_de_001">Lena Müller (active, DE)</option>
+            <option value="emp_de_probation_001">Marcus Becker (active, DE, probation)</option>
+            <option value="emp_pl_001">Katarzyna Kowalski (active, PL)</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="field-row">
+        <label class="r-field">
+          <span class="r-label">Or custom employment ID</span>
+          <input class="r-input" type="text" id="custom-about-id" placeholder="e.g. emp_active_001" />
+        </label>
+        <label class="r-field">
+          <span class="r-label">Or custom logged-in ID</span>
+          <input class="r-input" type="text" id="custom-logged-in-id" placeholder="leave blank to use dropdown" />
+        </label>
+      </div>
+
+      <div class="checkboxes">
+        <label class="check"><input type="checkbox" id="attachment-checkbox" /> A file is attached</label>
+        <label class="check"><input type="checkbox" id="consent-checkbox" /> Third-party consent on record</label>
+      </div>
+    </div>
+  </section>
+
+  <section class="r-card chat-card">
+    <div class="r-card-head">
+      <h2 class="r-card-title">Conversation</h2>
+    </div>
+    <div class="r-card-body">
+      <!-- A transcript is the textbook live region: replies arrive with no
+           focus change and no other event to notice. `polite` so it never
+           interrupts, `role="log"` so the reading order is append-only. -->
+      <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-label="Conversation transcript">
+        <p class="muted small" id="chat-empty">
+          Say something like “Please send me a standard employment verification letter.” to get started.
+        </p>
+      </div>
+      <form id="message-form" class="message-form">
+        <!-- A placeholder is not a label: it disappears on the first keystroke
+             and is not announced as the field's name. The visible design wants
+             no caption above a composer, so the label is visually hidden
+             rather than absent. -->
+        <label class="r-sr-only" for="message-input">Your message</label>
+        <input class="r-input" type="text" id="message-input" placeholder="Type a request…" autocomplete="off" />
+        <button type="submit" class="r-btn r-btn-primary" id="send-btn">Send</button>
+      </form>
+    </div>
+  </section>
+
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

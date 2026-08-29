@@ -1,0 +1,708 @@
+/* ---------------------------------------------------------------------------
+   remote-ui.css — one design system, shared by every browser surface
+   ---------------------------------------------------------------------------
+   WHY THIS EXISTS
+   This repo has six separate browser surfaces (the unified dashboard, the
+   playground, the chat demo, the live demo, the Remote UI stand-in, and the
+   ZAF sidebar) and each grew its own stylesheet. They worked, but they read
+   as six different products — which undercuts the thing the portfolio is
+   arguing, that this is ONE system with nine panels.
+
+   So: one stylesheet, modelled on Remote's own product UI. Every surface
+   imports it and adds only what is genuinely specific to it. Same reasoning
+   as zaf-app's shared shell + panel registry (00-FOUNDATION.md §6) — the
+   generic part exists once, and a use case contributes a panel, not a fork.
+
+   MODELLED ON, NOT COPIED FROM. These are original styles written to match
+   the *shape* of Remote's product surfaces (sidebar + content column, soft
+   card surfaces, pale-blue icon tiles, quiet dense tables) so the demo reads
+   as something that could live inside the product. No Remote CSS, asset or
+   font is used, and every page that stands in for a Remote surface says so
+   in its own copy.
+
+   TWO RULES CARRIED IN FROM THE REST OF THE REPO, both load-bearing:
+
+   1. Colour is never the sole carrier of meaning. Every status badge ships a
+      word, and the risk-tier dot is always adjacent to its tier name. This is
+      the same rule docs/METRICS.md's palette validation imposed on the charts,
+      applied to the chrome.
+   2. Colour is assigned by the JOB it does, and the two jobs are kept apart.
+      * STATE (risk tier, decision, lifecycle status) wears the three-step
+        state scale defined below — settled / waiting / stopped. State is what
+        every table cell, badge and dot in this sheet is showing, and the word
+        is always printed beside the mark.
+      * SERIES IDENTITY (the metrics page's decision-mix chart, and only that)
+        wears the validated categorical palette — auto #2a78d6 / human #eb6834
+        / escalate #1baf7a. There, hue is the sole separator between adjacent
+        fills, so it has to clear the CVD gates; the state scale does not and
+        must never be used for it.
+      The two sets are deliberately different, and that difference is the fix
+      rather than the drift: reusing the categorical palette for state is what
+      put a green "escalate" badge beside a red "escalated" status in the same
+      dashboard row. See the state-scale block below for the measurements.
+
+   No external fonts, no CDN, no build step — every surface must render from
+   a `file://` open or a bare Node static server.
+   --------------------------------------------------------------------------- */
+
+/* --- tokens ---------------------------------------------------------------
+   Light is the base; dark redefines only what changes, under BOTH a media
+   query and an explicit [data-theme] attribute so a toggle can win in either
+   direction. Never give a colour its only definition inside one of those
+   blocks — a surface that opens with no theme set must still be complete. */
+:root {
+  /* Tell the UA which themes this page really supports. Without it the browser
+     paints every NATIVE control — select popups, checkboxes, date pickers,
+     scrollbars — in light chrome even while the page around them is dark. Six
+     of these surfaces are mostly forms, so that gap is the single most visible
+     dark-mode defect there is. Both explicit themes below pin it to one value
+     so a toggle moves the native controls too. */
+  color-scheme: light dark;
+  accent-color: var(--r-brand);
+
+  --r-bg: #f7f8fa;
+  --r-surface: #ffffff;
+  --r-surface-subtle: #f4f5f8;
+  --r-surface-hover: #f0f1f5;
+  --r-sidebar: #ffffff;
+
+  --r-border: #e6e7ec;
+  --r-border-strong: #d3d5dd;
+
+  --r-text: #0f1115;
+  --r-text-secondary: #565c69;
+  /* 5.19:1 on --r-surface, 4.89:1 on --r-bg, 4.76:1 on --r-surface-subtle —
+     measured against all three grounds it actually lands on, because it is the
+     colour of the SMALLEST type in the system: hints, table headers, captions,
+     timestamps, the empty-cell em dash. The previous #868c9a read as a nice
+     quiet grey and carried 3.09–3.37:1, i.e. every one of those failed WCAG AA
+     on every surface at once. Same hue, enough weight to be legal. */
+  --r-text-muted: #666d7c;
+
+  /* Sampled from Remote's own product screenshots (the primary button, the
+     logo mark, the product tags). #1f5eff carries 5.12:1 against white in
+     BOTH directions, so it is safe as a button fill under white text and as
+     link text on a white surface — checked, not assumed. */
+  --r-brand: #1f5eff;
+  --r-brand-hover: #1a4fd6;
+  --r-brand-subtle: #eaf1fe;
+  --r-brand-subtle-hover: #dce8fd;
+  --r-on-brand: #ffffff;
+
+  /* --- THE CHART SERIES PALETTE --------------------------------------------
+     CATEGORICAL, NOT STATE. These three are the metrics page's decision-mix
+     chart and nothing else: adjacent stacked-bar fills touch, so hue is the
+     only separator and the palette is held to the categorical CVD gate
+     (ΔE >= 8 under protan/deutan, >= 15 to normal vision) by
+     test/uiPalette.test.js. They are named `--r-series-*` and not
+     `--r-decision-*` BECAUSE OF A REAL DEFECT: under the old name, four
+     surfaces (the portal, the playground, the Remote UI stand-in and the
+     generated QA report) read "decision" and painted their decision BADGES
+     with them — which put an AQUA-GREEN dot on `escalate`, the most serious
+     of the three states, and an ORANGE one on the ordinary `human_review`
+     path. In the portal's own "My requests" list that produced a green
+     `escalated` dot one line above a red `blocked` dot: the two most serious
+     states, opposite colours.
+
+     THE VALUES ARE NOT THE BUG AND MUST NOT BE RE-PICKED. Re-colouring these
+     to green/amber/red so the badges read correctly was measured with the
+     dataviz validator and FAILS the chart outright — `#dc2626` vs `#c26a05`
+     is ΔE 3.3 under deuteranopia and 12.3 to normal vision, against floors of
+     8 and 15. Two jobs, two palettes; the fix was to give the badges the
+     state scale below, which is what they always should have worn.
+
+     A decision rendered in a table or on a badge is STATE. It takes
+     --r-dot-settled / --r-dot-waiting / --r-dot-stopped. Only a chart series
+     takes these. */
+  --r-series-auto: #2a78d6;
+  --r-series-human: #eb6834;
+  --r-series-escalate: #1baf7a;
+
+  /* Status/tone colours, always paired with a word or icon. */
+  --r-ok: #0f7a43;
+  --r-ok-subtle: #e4f4ec;
+  --r-warn: #9a5b00;
+  --r-warn-subtle: #fdf0dc;
+  --r-danger: #b3261e;
+  --r-danger-subtle: #fce9e7;
+  --r-info: #1d4ed8;
+  --r-info-subtle: #e7f0fe;
+  --r-neutral: #5b6070;
+  --r-neutral-subtle: #eef0f4;
+
+  /* --- THE STATE SCALE -----------------------------------------------------
+     ONE three-step scale for every "what state is this in?" mark in the repo:
+     the risk tier, the decision badge, and the lifecycle status. Three names
+     for three concepts, all pointing at the same three hexes, because in this
+     system they line up exactly:
+
+       settled  🟢  low tier · auto-resolved · resolved   — nothing is owed
+       waiting  🟡  medium tier · needs approval · pending — a human owes an act
+       stopped  🔴  high tier · escalated · blocked        — left the automation
+
+     WHY THIS EXISTS (a real defect, not a tidy-up). The decision badge used to
+     wear the *categorical chart* palette — auto blue / human orange / escalate
+     AQUA — while the lifecycle status beside it wore the danger token. On the
+     unified dashboard that put a GREEN "escalate" badge in one column and a RED
+     "escalated" status in the next column OF THE SAME ROW: one fact, two
+     opposite colours, one cell apart. The dataviz method names this exactly —
+     "status color used for a non-status series, or a series color used for
+     status". A decision in a table is state, not series identity, so it wears
+     status tokens; the categorical palette stays where colour genuinely does
+     identity work, which is the metrics chart and nowhere else.
+
+     WHY THESE HEXES. Every one is measured, not chosen. A dot has to clear 3:1
+     against the DARKEST light ground it ever lands on, which is the badge pill
+     (--r-neutral-subtle, #eef0f4) — not the white card. The previous green
+     (#16a34a) and amber (#d97706) were picked against white and land at 2.89
+     and 2.79 on that pill, i.e. both failed on the one surface they are used on
+     most. These are the nearest darker steps that pass on ALL four light
+     grounds (pill / subtle / page / card): green 3.61, amber 3.44, red 4.23.
+
+     WHY IT IS SAFE THAT GREEN AND RED ARE INDISTINGUISHABLE UNDER CVD. They
+     are — measured, deuteranopia ΔE 5.0, well under the ΔE 8 a *chart* palette
+     must clear. That is why this scale is NOT used in the metrics chart, where
+     hue is the only separator and the validator rejects it outright. Here the
+     word is always rendered beside the dot (.r-status, .r-tier and the decision
+     badges all print their label), so the dot is a redundant second cue and the
+     documented icon+label mitigation applies. Colour is never the carrier. */
+  --r-dot-settled: #15903f;
+  --r-dot-waiting: #c26a05;
+  --r-dot-stopped: #dc2626;
+
+  /* Kept as aliases so nothing that already referenced them breaks, and so the
+     tier and the decision provably cannot drift apart — they are the same
+     three values by construction, not by two lists agreeing. */
+  --r-dot-warn: var(--r-dot-waiting);
+  --r-tier-low-dot: var(--r-dot-settled);
+  --r-tier-medium-dot: var(--r-dot-waiting);
+  --r-tier-high-dot: var(--r-dot-stopped);
+
+  --r-radius-sm: 6px;
+  --r-radius: 10px;
+  --r-radius-lg: 14px;
+  --r-shadow: 0 1px 2px rgba(15, 17, 21, 0.04), 0 1px 3px rgba(15, 17, 21, 0.06);
+  --r-shadow-lift: 0 4px 12px rgba(15, 17, 21, 0.08);
+
+  --r-sidebar-w: 264px;
+  --r-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --r-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --r-bg: #0e1013;
+    --r-surface: #16191f;
+    --r-surface-subtle: #1b1f26;
+    --r-surface-hover: #21262e;
+    --r-sidebar: #12151a;
+
+    --r-border: #272c35;
+    --r-border-strong: #38404b;
+
+    --r-text: #f3f4f6;
+    --r-text-secondary: #a8aebb;
+    --r-text-muted: #8b929f; /* 5.28:1 on the darkest ground it lands on */
+
+    --r-brand: #5b92ff;
+    --r-brand-hover: #7aa6ff;
+    --r-brand-subtle: #17274a;
+    --r-brand-subtle-hover: #1d3159;
+    --r-on-brand: #0b0f16;
+
+    --r-series-auto: #3987e5;
+    --r-series-human: #d95926;
+    --r-series-escalate: #199e70;
+
+    --r-ok: #46c98a;
+    --r-ok-subtle: #10301f;
+    --r-warn: #e0a250;
+    --r-warn-subtle: #33240c;
+    --r-danger: #f08a80;
+    --r-danger-subtle: #3a1512;
+    --r-info: #7aa6ff;
+    --r-info-subtle: #17274a;
+    --r-neutral: #a8aebb;
+    --r-neutral-subtle: #21262e;
+
+    /* The state scale, dark. Every one clears 3:1 on all four dark grounds
+       (badge #21262e / subtle #1b1f26 / card #16191f / page #0e1013): green
+       6.71, amber 7.05, red 4.87 at worst. Same three roles, stepped for the
+       dark surface rather than flipped from the light values. */
+    --r-dot-settled: #34c46e;
+    --r-dot-waiting: #e8a33c;
+    --r-dot-stopped: #f0655c;
+    --r-dot-warn: var(--r-dot-waiting);
+    --r-tier-low-dot: var(--r-dot-settled);
+    --r-tier-medium-dot: var(--r-dot-waiting);
+    --r-tier-high-dot: var(--r-dot-stopped);
+
+    --r-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --r-shadow-lift: 0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --r-bg: #0e1013;
+  --r-surface: #16191f;
+  --r-surface-subtle: #1b1f26;
+  --r-surface-hover: #21262e;
+  --r-sidebar: #12151a;
+
+  --r-border: #272c35;
+  --r-border-strong: #38404b;
+
+  --r-text: #f3f4f6;
+  --r-text-secondary: #a8aebb;
+  --r-text-muted: #8b929f; /* 5.28:1 on the darkest ground it lands on */
+
+  --r-brand: #5b92ff;
+  --r-brand-hover: #7aa6ff;
+  --r-brand-subtle: #17274a;
+  --r-brand-subtle-hover: #1d3159;
+  --r-on-brand: #0b0f16;
+
+  --r-series-auto: #3987e5;
+  --r-series-human: #d95926;
+  --r-series-escalate: #199e70;
+
+  --r-ok: #46c98a;
+  --r-ok-subtle: #10301f;
+  --r-warn: #e0a250;
+  --r-warn-subtle: #33240c;
+  --r-danger: #f08a80;
+  --r-danger-subtle: #3a1512;
+  --r-info: #7aa6ff;
+  --r-info-subtle: #17274a;
+  --r-neutral: #a8aebb;
+  --r-neutral-subtle: #21262e;
+
+    /* The state scale, dark. Every one clears 3:1 on all four dark grounds
+     (badge #21262e / subtle #1b1f26 / card #16191f / page #0e1013): green
+     6.71, amber 7.05, red 4.87 at worst. Same three roles, stepped for the
+     dark surface rather than flipped from the light values. */
+  --r-dot-settled: #34c46e;
+  --r-dot-waiting: #e8a33c;
+  --r-dot-stopped: #f0655c;
+  --r-dot-warn: var(--r-dot-waiting);
+  --r-tier-low-dot: var(--r-dot-settled);
+  --r-tier-medium-dot: var(--r-dot-waiting);
+  --r-tier-high-dot: var(--r-dot-stopped);
+
+  --r-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --r-shadow-lift: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+/* An explicit light choice has to pin the native chrome too, or a viewer whose
+   OS is dark keeps dark select popups and scrollbars on a light page. The
+   token values are already complete on bare `:root`, so this block carries the
+   one thing that is genuinely light-specific and nothing else. */
+:root[data-theme="light"] { color-scheme: light; }
+
+/* --- reset + base --------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+/* Nothing in this system animates to convey meaning — every transition is a
+   hover nicety — so honouring the OS preference costs nothing and removes a
+   real vestibular trigger. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+body {
+  background: var(--r-bg);
+  color: var(--r-text);
+  font-family: var(--r-font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--r-brand); text-decoration: none; }
+a:hover { color: var(--r-brand-hover); text-decoration: underline; }
+
+code, pre, .r-mono { font-family: var(--r-mono); font-size: 0.86em; }
+
+/* Two blanket guards against the one responsive failure that ruins a page
+   rather than a component: something wider than the viewport making the whole
+   BODY scroll sideways. Embedded media shrinks, and a code block scrolls
+   inside itself. Tables get the same treatment via `.r-table-wrap`. */
+img, iframe, video, svg { max-width: 100%; }
+pre { overflow-x: auto; max-width: 100%; }
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--r-brand);
+  outline-offset: 2px;
+  border-radius: var(--r-radius-sm);
+}
+
+/* --- app shell: sidebar + content ----------------------------------------- */
+.r-app { display: grid; grid-template-columns: var(--r-sidebar-w) 1fr; min-height: 100vh; }
+
+.r-sidebar {
+  background: var(--r-sidebar);
+  border-right: 1px solid var(--r-border);
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+.r-logo { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+.r-logo-mark {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--r-brand); color: var(--r-on-brand);
+  display: grid; place-items: center;
+  font-weight: 700; font-size: 17px; flex: none;
+}
+.r-logo-word { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--r-text); }
+
+.r-nav { display: flex; flex-direction: column; gap: 2px; }
+.r-nav-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--r-text-muted); padding: 14px 8px 4px;
+}
+.r-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  color: var(--r-text-secondary); font-size: 14.5px; font-weight: 500;
+  border: 0; background: none; width: 100%; text-align: left; cursor: pointer;
+  font-family: inherit;
+}
+.r-nav-item:hover { background: var(--r-surface-hover); color: var(--r-text); text-decoration: none; }
+.r-nav-item[aria-current="page"], .r-nav-item.is-active {
+  background: var(--r-brand-subtle); color: var(--r-brand); font-weight: 600;
+}
+.r-nav-count {
+  margin-left: auto; font-size: 12px; font-weight: 600;
+  background: var(--r-neutral-subtle); color: var(--r-text-secondary);
+  border-radius: 20px; padding: 1px 8px; min-width: 22px; text-align: center;
+}
+
+/* --- content -------------------------------------------------------------- */
+/* `min-width: 0` is load-bearing, not defensive noise: a grid item defaults to
+   `min-width: auto`, so it refuses to shrink below its widest content. Without
+   it a wide table pushes the whole column past the viewport and the page — not
+   just the table — scrolls sideways. With it, the table's own overflow-x
+   container does the scrolling, which is what we want. */
+.r-main { padding: 30px 34px 60px; min-width: 0; }
+.r-page-title { font-size: 27px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+.r-page-sub { color: var(--r-text-secondary); font-size: 15px; margin: 0 0 26px; max-width: 76ch; }
+
+.r-section-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 16px; margin: 30px 0 12px;
+}
+.r-section-title { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
+.r-section-title .r-count { color: var(--r-text-muted); font-weight: 500; }
+
+/* --- card ----------------------------------------------------------------- */
+.r-card {
+  background: var(--r-surface);
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius-lg);
+  box-shadow: var(--r-shadow);
+}
+.r-card-head {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 16px 20px; border-bottom: 1px solid var(--r-border);
+}
+.r-card-title { font-size: 15.5px; font-weight: 650; margin: 0; display: flex; align-items: center; gap: 9px; }
+.r-card-body { padding: 18px 20px; }
+.r-card-note { color: var(--r-text-secondary); font-size: 13.5px; margin: 4px 0 0; }
+
+/* Icon tile — the soft rounded square Remote uses to head a list row. */
+.r-tile {
+  width: 44px; height: 44px; border-radius: 11px; flex: none;
+  background: var(--r-brand-subtle); color: var(--r-brand);
+  display: grid; place-items: center; font-size: 19px;
+}
+.r-tile-lg { width: 60px; height: 60px; border-radius: 15px; font-size: 25px; }
+
+.r-row { display: flex; align-items: center; gap: 14px; padding: 14px 20px; }
+.r-row + .r-row { border-top: 1px solid var(--r-border); }
+.r-row-main { min-width: 0; flex: 1; }
+.r-row-title { font-size: 14.5px; font-weight: 600; margin: 0; }
+.r-row-sub { font-size: 13.5px; color: var(--r-text-secondary); margin: 2px 0 0; }
+.r-row-meta { color: var(--r-text-muted); font-size: 13px; white-space: nowrap; }
+
+/* --- table: the workhorse, seven of nine panels are fundamentally a list --- */
+.r-table-wrap { overflow-x: auto; }
+.r-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.r-table th {
+  text-align: left; font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--r-text-muted);
+  padding: 10px 14px; border-bottom: 1px solid var(--r-border);
+  background: var(--r-surface-subtle); white-space: nowrap;
+}
+.r-table td {
+  padding: 12px 14px; border-bottom: 1px solid var(--r-border);
+  vertical-align: middle; color: var(--r-text);
+}
+.r-table tbody tr:last-child td { border-bottom: 0; }
+.r-table tbody tr:hover td { background: var(--r-surface-hover); }
+.r-table .r-num { font-variant-numeric: tabular-nums; }
+.r-table .r-id { font-family: var(--r-mono); font-size: 12px; color: var(--r-text-secondary); }
+
+/* --- status: a coloured dot beside the word, no fill ----------------------
+   This is how Remote actually renders state in a table cell — an amber dot
+   then the plain word "Pending", not a filled pill. It reads quieter at
+   density, which matters when a column of forty rows all carry one.
+
+   It also satisfies the colour rule for free, and more honestly than a pill
+   does: the word is the label, and the dot is a redundant cue beside it
+   rather than a shape whose fill you have to decode. Use `.r-status` for
+   lifecycle state (pending / approved / blocked) and `.r-badge` below for
+   things that are genuinely a tag (a product name, a category). */
+.r-status {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13.5px; color: var(--r-text); white-space: nowrap;
+}
+.r-status::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--r-status-dot, var(--r-neutral));
+}
+.r-status-ok { --r-status-dot: var(--r-ok); }
+.r-status-warn { --r-status-dot: var(--r-dot-warn); }
+.r-status-danger { --r-status-dot: var(--r-danger); }
+.r-status-info { --r-status-dot: var(--r-brand); }
+.r-status-idle { --r-status-dot: var(--r-text-muted); }
+
+/* Empty cell. Remote prints an em dash rather than leaving a blank, so a
+   missing value is visibly "nothing here" instead of ambiguously unrendered —
+   the same instinct as this repo refusing to fabricate a row. */
+.r-none { color: var(--r-text-muted); }
+
+/* --- badges: colour + WORD, never colour alone ---------------------------- */
+.r-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 12px; font-weight: 600; line-height: 1.4;
+  padding: 3px 9px; border-radius: 20px; white-space: nowrap;
+  background: var(--r-neutral-subtle); color: var(--r-neutral);
+}
+.r-badge-ok { background: var(--r-ok-subtle); color: var(--r-ok); }
+.r-badge-warn { background: var(--r-warn-subtle); color: var(--r-warn); }
+.r-badge-danger { background: var(--r-danger-subtle); color: var(--r-danger); }
+.r-badge-info { background: var(--r-info-subtle); color: var(--r-info); }
+
+/* Decision badges: a quiet pill with a state dot and the decision WORD. The dot
+   is the state scale, not a series colour — see the rule-2 note at the top of
+   this file for why that swap is a correctness fix and not a restyle. */
+.r-badge-decision { background: var(--r-neutral-subtle); color: var(--r-text); padding-left: 7px; }
+.r-badge-decision::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--r-dot, var(--r-neutral));
+}
+.r-badge-auto { --r-dot: var(--r-dot-settled); }
+.r-badge-human { --r-dot: var(--r-dot-waiting); }
+.r-badge-escalate { --r-dot: var(--r-dot-stopped); }
+
+/* Risk tier — the dot is decorative; the tier WORD next to it carries it. */
+.r-tier { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--r-text-secondary); }
+.r-tier::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--r-tier-color, var(--r-neutral)); flex: none; }
+.r-tier-low { --r-tier-color: var(--r-tier-low-dot); }
+.r-tier-medium { --r-tier-color: var(--r-tier-medium-dot); }
+.r-tier-high { --r-tier-color: var(--r-tier-high-dot); }
+
+/* --- the tier rail -------------------------------------------------------
+   A tier is not decoration on these surfaces: it decides whether a control may
+   exist at all. 🟢 executes on its own, 🟡 cannot proceed without a named human,
+   🔴 has no execution path to reach. An agent about to approve a payroll change
+   must be able to see which of those they are in without hunting, so the tier
+   gets a full-width rail at the top of the panel rather than a chip competing
+   with the decision badge for the same corner.
+
+   It always prints THREE things — the glyph, the tier word, and what the tier
+   MEANS operationally. "Medium risk" alone tells an agent nothing they can act
+   on; "Medium · a named human must approve" does. */
+.r-tier-rail {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 8px 11px; border-radius: var(--r-radius-sm);
+  border-left: 3px solid var(--r-tier-color, var(--r-neutral));
+  background: var(--r-surface-subtle);
+  font-size: 12px; color: var(--r-text-secondary);
+}
+.r-tier-rail .r-tier-name { font-weight: 700; color: var(--r-text); }
+.r-tier-rail .r-tier-means { color: var(--r-text-secondary); }
+
+/* --- approval meter -------------------------------------------------------
+   How many of the required approval slots are filled. Purely a picture of
+   numbers the API already returned — it never computes whether the case may
+   proceed, which stays server-side. The count is printed as a word too, so the
+   segments are a redundant cue. */
+.r-approval-meter { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--r-text-secondary); }
+.r-approval-slots { display: flex; gap: 3px; flex: none; }
+.r-approval-slot { width: 22px; height: 5px; border-radius: 3px; background: var(--r-border-strong); }
+.r-approval-slot.filled { background: var(--r-dot-settled); }
+
+/* --- buttons -------------------------------------------------------------- */
+.r-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-family: inherit; font-size: 14px; font-weight: 600; line-height: 1;
+  padding: 9px 16px; border-radius: 9px; cursor: pointer;
+  border: 1px solid transparent; background: var(--r-surface-subtle); color: var(--r-text);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.r-btn:hover { background: var(--r-surface-hover); text-decoration: none; }
+.r-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.r-btn-primary { background: var(--r-brand); color: var(--r-on-brand); }
+.r-btn-primary:hover { background: var(--r-brand-hover); }
+.r-btn-secondary { background: var(--r-surface); border-color: var(--r-border-strong); color: var(--r-text); }
+.r-btn-secondary:hover { background: var(--r-surface-hover); }
+.r-btn-danger { background: var(--r-danger-subtle); color: var(--r-danger); border-color: transparent; }
+.r-btn-danger:hover { background: var(--r-danger-subtle); border-color: var(--r-danger); }
+.r-btn-sm { padding: 6px 12px; font-size: 13px; border-radius: 8px; }
+
+/* --- forms ----------------------------------------------------------------
+   Sized from Remote's own request modal, which uses noticeably larger controls
+   than a typical dense admin form — roughly 52px tall with generous padding.
+   That is a deliberate product choice on their side and worth matching: these
+   forms ask for things people get wrong (dates, countries, passport numbers),
+   and a cramped field invites a cramped answer. */
+/* `hidden` must actually hide, whatever a component sets.
+   The browser's own rule is `[hidden] { display: none }` at UA priority, which
+   ANY author `display` declaration beats — including `.r-field { display:
+   flex }` immediately below. So `element.hidden = true` on a field silently did
+   nothing, and the portal's reference box stayed on screen while the control
+   said it was inactive. Caught by looking at a screenshot; every assertion
+   about the hidden attribute passed, because the attribute was correctly set
+   and only its effect was missing.
+   `!important` is deliberate here and is the standard fix for exactly this:
+   `hidden` is a statement about the element's existence to the reader, not a
+   style suggestion a component may override. */
+[hidden] { display: none !important; }
+
+.r-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.r-label { font-size: 14px; font-weight: 600; color: var(--r-text); }
+/* Required marker. Remote uses a red asterisk after the label; the visually
+   hidden word keeps that meaning available to a screen reader, since a bare
+   "*" is not self-describing. */
+.r-req { color: var(--r-danger); margin-left: 3px; font-weight: 700; }
+.r-hint { font-size: 13px; color: var(--r-text-muted); line-height: 1.45; }
+.r-input, .r-select, .r-textarea {
+  font-family: inherit; font-size: 15px; color: var(--r-text);
+  background: var(--r-surface); border: 1px solid var(--r-border-strong);
+  border-radius: 10px; padding: 14px 14px; width: 100%;
+}
+.r-input::placeholder, .r-textarea::placeholder { color: var(--r-text-muted); }
+.r-input:focus, .r-select:focus, .r-textarea:focus { border-color: var(--r-brand); outline: none; box-shadow: 0 0 0 3px var(--r-brand-subtle); }
+/* The soft ring above is `--r-brand-subtle` — barely a shade off the surface in
+   either theme — and it sets `outline: none`, which beats the sheet's global
+   `:where(...):focus-visible` rule because `:where()` contributes no
+   specificity. So a KEYBOARD user's only cue on a form field was a border
+   colour change. This restores a real outline for keyboard focus specifically;
+   a mouse click still gets the quiet ring and nothing else. */
+.r-input:focus-visible, .r-select:focus-visible, .r-textarea:focus-visible, .r-search:focus-visible {
+  outline: 2px solid var(--r-brand);
+  outline-offset: 1px;
+}
+.r-textarea { min-height: 104px; resize: vertical; }
+/* Character counter, right-aligned under a textarea (Remote shows "0/255"). */
+.r-counter { font-size: 12.5px; color: var(--r-text-muted); align-self: flex-end; font-variant-numeric: tabular-nums; }
+
+/* --- tabs with counts -----------------------------------------------------
+   Remote heads every list view with these — Active (74) / Employees (59) /
+   Contractors (15). The count is part of the label, not a separate badge. */
+.r-tabs {
+  display: flex; gap: 26px; border-bottom: 1px solid var(--r-border);
+  margin-bottom: 20px; overflow-x: auto;
+}
+.r-tab {
+  padding: 11px 1px 13px; font-size: 14.5px; font-weight: 550;
+  color: var(--r-text-secondary); background: none; border: 0;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  cursor: pointer; white-space: nowrap; font-family: inherit;
+}
+.r-tab:hover { color: var(--r-text); }
+.r-tab[aria-selected="true"], .r-tab.is-active {
+  color: var(--r-brand); border-bottom-color: var(--r-brand); font-weight: 650;
+}
+.r-tab .r-count { color: var(--r-text-muted); font-weight: 500; margin-left: 4px; }
+
+/* --- card toolbar (search + filter + overflow) ---------------------------- */
+.r-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.r-search {
+  flex: 0 1 280px; font-family: inherit; font-size: 14px;
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--r-border-strong); background: var(--r-surface); color: var(--r-text);
+}
+.r-search:focus { border-color: var(--r-brand); outline: none; box-shadow: 0 0 0 3px var(--r-brand-subtle); }
+
+/* --- avatar --------------------------------------------------------------- */
+.r-avatar {
+  width: 30px; height: 30px; border-radius: 50%; flex: none;
+  display: grid; place-items: center;
+  font-size: 11.5px; font-weight: 650; letter-spacing: 0.02em;
+  background: var(--r-brand-subtle); color: var(--r-brand);
+}
+
+/* --- pagination footer ---------------------------------------------------- */
+.r-pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; padding-top: 14px; margin-top: 4px;
+  border-top: 1px solid var(--r-border);
+  font-size: 13px; color: var(--r-text-secondary);
+}
+
+/* A modal component used to sit here, with a comment saying "three surfaces now
+   want the same shape". No surface referenced a single one of its seven classes.
+   It is removed rather than re-commented: this sheet is copied verbatim into the
+   ZAF bundle that Zendesk serves to every agent, so an unused component is not
+   only a false claim about the system, it is bytes on someone's wire. If a
+   surface needs a modal later, it can be written then — against a real caller. */
+
+/* --- banners: disclaimers and the 🔴 "no execution path" notices ---------- */
+.r-banner {
+  display: flex; gap: 11px; align-items: flex-start;
+  padding: 12px 15px; border-radius: var(--r-radius);
+  font-size: 13.5px; line-height: 1.5;
+  background: var(--r-info-subtle); color: var(--r-text);
+  border: 1px solid transparent;
+}
+.r-banner-icon { flex: none; font-size: 15px; line-height: 1.4; }
+.r-banner-warn { background: var(--r-warn-subtle); }
+.r-banner-danger { background: var(--r-danger-subtle); }
+.r-banner-neutral { background: var(--r-surface-subtle); border-color: var(--r-border); }
+.r-banner strong { font-weight: 650; }
+
+/* --- empty + error states ------------------------------------------------- */
+.r-empty { text-align: center; padding: 40px 20px; }
+.r-empty .r-tile { margin: 0 auto 14px; }
+.r-empty-title { font-size: 15.5px; font-weight: 650; margin: 0 0 4px; }
+.r-empty-body { color: var(--r-text-secondary); font-size: 13.5px; margin: 0; }
+
+/* --- misc utilities ------------------------------------------------------- */
+.r-stack { display: flex; flex-direction: column; gap: 16px; }
+.r-inline { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.r-spacer { flex: 1; }
+.r-muted { color: var(--r-text-muted); }
+.r-secondary { color: var(--r-text-secondary); }
+.r-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+/* --- responsive: the sidebar folds to a top bar on narrow screens --------- */
+@media (max-width: 900px) {
+  .r-app { grid-template-columns: 1fr; }
+  .r-sidebar {
+    position: static; height: auto; border-right: 0;
+    border-bottom: 1px solid var(--r-border); flex-direction: row;
+    align-items: center; gap: 14px; overflow-x: auto; padding: 12px 16px;
+  }
+  .r-nav { flex-direction: row; gap: 4px; }
+  .r-nav-label { display: none; }
+  .r-main { padding: 22px 18px 48px; }
+}

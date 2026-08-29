@@ -1,0 +1,196 @@
+/* ---------------------------------------------------------------------------
+ * style.css — what is specific to the unified dashboard
+ * ---------------------------------------------------------------------------
+ * The shell, tokens, tables, badges and buttons all live in the shared
+ * src/shared/ui/remote-ui.css, served at /remote-ui.css. This file holds only
+ * what this page genuinely adds on top: the nine-section grid, the sidebar
+ * status chips, and the per-section status line.
+ *
+ * Class names are unchanged from the version that predates the design system,
+ * because app.js writes them and app.js is deliberately not being rewritten
+ * for a restyle — the tests that pin it (no innerHTML, no re-derived policy,
+ * ports matching each cli.js) should keep passing untouched.
+ * ------------------------------------------------------------------------- */
+
+/* --- sidebar status chips -------------------------------------------------
+   Each chip is a live health indicator AND a link to its section. The dot is
+   never the only signal: the label always spells out "3 rows" or
+   "unreachable", per the colour-is-never-alone rule in remote-ui.css. */
+#summary-bar { display: flex; flex-direction: column; gap: 2px; }
+
+.summary-chip {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 10px; border-radius: 8px;
+  font-size: 13px; font-weight: 500; color: var(--r-text-secondary);
+  text-decoration: none;
+}
+.summary-chip:hover { background: var(--r-surface-hover); color: var(--r-text); text-decoration: none; }
+
+.summary-chip .dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--r-text-muted);
+}
+.summary-chip.up .dot { background: var(--r-ok); }
+.summary-chip.down .dot { background: var(--r-danger); }
+.summary-chip.down { color: var(--r-danger); }
+
+.sidebar-foot {
+  font-size: 11.5px; line-height: 1.5; color: var(--r-text-muted);
+  padding: 0 8px; margin: 0;
+}
+
+/* --- section grid --------------------------------------------------------- */
+.section-grid { display: flex; flex-direction: column; gap: 18px; }
+
+/* app.js emits `card`; give it the shared card treatment plus scroll-margin so
+   a sidebar jump doesn't tuck the heading under the top of the viewport. */
+.card {
+  background: var(--r-surface);
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius-lg);
+  box-shadow: var(--r-shadow);
+  padding: 18px 20px 6px;
+  scroll-margin-top: 20px;
+}
+
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.section-title { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.section-title h2 { font-size: 16px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+.section-title .tier { font-size: 14px; line-height: 1; flex: none; }
+/* The tier WORD, beside the decorative glyph. Quiet, because the section title
+   is the thing being read — but present, because the glyph alone is a colour. */
+.section-title .tier-word {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--r-text-muted); flex: none; white-space: nowrap;
+}
+
+.refresh-btn {
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  background: var(--r-surface); color: var(--r-text);
+  border: 1px solid var(--r-border-strong);
+}
+.refresh-btn:hover { background: var(--r-surface-hover); }
+
+.section-sub { color: var(--r-text-secondary); font-size: 13px; margin: 7px 0 0; }
+.source-link {
+  font-family: var(--r-mono); font-size: 11.5px; color: var(--r-text-muted);
+  margin: 7px 0 0; word-break: break-all;
+}
+
+/* --- the footer ------------------------------------------------------------
+   The shared .r-pagination gives it the top rule and the space-between layout;
+   this only sizes the two spans app.js writes into it. The left one carries the
+   row count (or, when the API is down, the whole "is it running?" sentence, so
+   the failure is never silent); the right one carries the freshness stamp.
+
+   A healthy count is deliberately NOT green: in a footer under a table it read
+   as an alert about nothing. The count itself is the signal, the sidebar chip
+   carries reachability, and red is kept for the one line that is genuinely a
+   problem. */
+.section-foot { margin-top: 0; }
+.status-line { font-size: 12.5px; color: var(--r-text-secondary); margin: 0; min-width: 0; }
+.status-line.bad { color: var(--r-danger); }
+.updated-line { font-size: 12.5px; color: var(--r-text-muted); white-space: nowrap; }
+
+/* --- the table ------------------------------------------------------------
+   Several of these tables are wider than the column they sit in, and the
+   scroller gave no sign of it: the rightmost column simply ended at the card
+   edge, so "Reason" looked like an empty column rather than a clipped one. The
+   mask fades the last few pixels of overflowing content, which reads as "there
+   is more this way" — and it is applied ONLY while the table actually overflows
+   (app.js toggles .is-clipped), so a table that fits is not given a phantom
+   edge. The scrollbar itself is kept visible rather than overlay-hidden. */
+.table-scroll {
+  overflow-x: auto;
+  margin: 0 -20px; padding: 0 20px 4px;
+  scrollbar-width: thin;
+}
+.table-scroll.is-clipped {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent 100%);
+}
+/* A horizontal scroller must be reachable by keyboard. Making it focusable
+   (app.js sets tabindex + an accessible name when it overflows) lets arrow keys
+   scroll it; without this the clipped columns are mouse-only. */
+.table-scroll:focus-visible { outline: 2px solid var(--r-brand); outline-offset: 2px; }
+
+.card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.card th {
+  text-align: left; font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--r-text-muted);
+  padding: 8px 12px; border-bottom: 1px solid var(--r-border); white-space: nowrap;
+}
+.card td {
+  padding: 10px 12px; border-bottom: 1px solid var(--r-border);
+  vertical-align: middle; color: var(--r-text);
+}
+.card tbody tr:last-child td { border-bottom: 0; }
+.card tbody tr:hover td { background: var(--r-surface-hover); }
+
+/* The shared .r-status is sized for the standard .r-table; these nine tables run
+   denser, so the status text matches its neighbouring cells rather than sitting
+   half a point larger than every value beside it. */
+.card td .r-status { font-size: inherit; }
+
+/* app.js badge-styles a decision cell only when the value is one it knows;
+   anything else keeps the neutral dot rather than being given a guessed colour.
+
+   The selectors below name the classes app.js actually writes
+   (`badge decision-<value>`). They used to read `.badge.auto_resolve`, which
+   nothing on the page ever carried — so every decision dot rendered neutral and
+   the validated --r-decision-* palette was silently unused. The colours are
+   unchanged; only the selectors that reach them are corrected.
+
+   There is one rule per entry in app.js's KNOWN_DECISIONS, and that is the
+   invariant to keep: KNOWN_DECISIONS is the list of strings this page claims
+   to recognise, so a string in it with no rule here is a decision the page
+   says it knows and then paints grey anyway. Five were in exactly that state
+   (auto_approve, ready_for_approval, prepared_for_signoff,
+   dual_approval_required, blocked) — the UC-02/04/05/06/09 columns. */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; font-weight: 600; padding: 3px 9px;
+  border-radius: 20px; white-space: nowrap;
+  background: var(--r-neutral-subtle); color: var(--r-text);
+}
+.badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--r-neutral); }
+/* These dots are the shared STATE SCALE (--r-dot-*), not the categorical chart
+   palette they used to use. That swap fixes a contradiction that was visible in
+   a single table row: a `escalate` decision wore the categorical AQUA while the
+   `escalated` status in the very next column wore danger red, so the same fact
+   was green and red one cell apart. A decision in a table is state, not series
+   identity — the categorical palette is now confined to the metrics chart,
+   where hue actually separates adjacent fills and has to clear the CVD gates
+   (green/amber/red does not, which is exactly why it is not used there). */
+.badge.decision-auto_resolve::before { background: var(--r-dot-settled); }
+.badge.decision-auto_approve::before { background: var(--r-dot-settled); }
+.badge.decision-human_review::before { background: var(--r-dot-waiting); }
+.badge.decision-route_to_uc04::before { background: var(--r-dot-waiting); }
+.badge.decision-ready_for_approval::before { background: var(--r-dot-waiting); }
+.badge.decision-prepared_for_signoff::before { background: var(--r-dot-waiting); }
+.badge.decision-dual_approval_required::before { background: var(--r-dot-waiting); }
+.badge.decision-triple_approval_required::before { background: var(--r-dot-waiting); }
+.badge.decision-escalate::before { background: var(--r-dot-stopped); }
+.badge.decision-blocked::before { background: var(--r-dot-stopped); }
+
+.muted { color: var(--r-text-muted); }
+.small { font-size: 12.5px; }
+.hidden { display: none; }
+
+/* --- tier legend ----------------------------------------------------------
+   Nine sections each carry a tier glyph and word, but nothing on the page said
+   what a tier IMPLIES — and the tier is the thing that decides whether a use
+   case may execute at all. One legend, once, under the page intro. */
+.tier-legend {
+  display: flex; flex-wrap: wrap; gap: 8px 20px;
+  margin: 14px 0 0; padding: 12px 14px;
+  background: var(--r-surface); border: 1px solid var(--r-border);
+  border-radius: var(--r-radius); font-size: 12.5px;
+}
+.tier-legend-item { display: flex; align-items: baseline; gap: 7px; color: var(--r-text-secondary); }
+.tier-legend-item b { color: var(--r-text); font-weight: 650; }
+
+/* The sidebar chips carry reachability, which is state — same scale. */
+.summary-chip.up .dot { background: var(--r-dot-settled); }
+.summary-chip.down .dot { background: var(--r-dot-stopped); }

@@ -1,0 +1,90 @@
+{
+  "evaluation": {
+    "version": "classifier-v2",
+    "dataset": "uc01-classifier-golden-v2-remote-aligned",
+    "evaluator": "uc01-classifier-evaluator-v2",
+    "mode": "SMOKE",
+    "selectedCase": "cls2-006",
+    "caseCount": 1
+  },
+  "summary": {
+    "exactPasses": 1,
+    "exactFailures": 0,
+    "exactMatchRate": 1
+  },
+  "results": [
+    {
+      "id": "cls2-006",
+      "category": "standard_template_fields",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Entity/contact details are documented as part of the standard template.",
+      "input": {
+        "text": "I only need the usual employment confirmation with the local Remote entity details and who can be contacted for more information.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "a71cad22aada6ef6"
+    }
+  ]
+}

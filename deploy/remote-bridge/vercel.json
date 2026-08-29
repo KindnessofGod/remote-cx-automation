@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [{ "source": "/:standinpath*", "destination": "/api?__standin_path=:standinpath*" }]
+}

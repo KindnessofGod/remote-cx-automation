@@ -1,0 +1,411 @@
+/* ---------------------------------------------------------------------------
+   style.css — audit viewer specifics, on top of the shared design system
+   (remote-ui.css). Only what this surface needs and the system lacks: the
+   live toggle, the feed's clickable rows, the drill-down layout, the pretty
+   JSON block. Colours come from the system's tokens — nothing new is invented.
+   ------------------------------------------------------------------------- */
+
+/* `hidden` must WIN. The shared sheet gives banners/cards an explicit display
+   (`.r-banner { display: flex }`), which outranks the UA's `[hidden] {
+   display: none }` — so a "hidden" banner rendered anyway. Found by driving
+   the real page with Playwright, not by the tests: the duplicate-call banner
+   showed on a clean retry. Pinned here for every element on this page. */
+[hidden] { display: none !important; }
+
+/* The one decision the shared sheet's badge set lacks: `blocked` (UC-04's
+   sanctions screen). On the system's three-step state scale it is "stopped" —
+   left the automation — exactly like escalate, so it wears the same token
+   rather than a fourth colour (remote-ui.css's STATE SCALE comment). */
+.r-badge-blocked { --r-dot: var(--r-dot-stopped); }
+
+/* -- sidebar extras -------------------------------------------------------- */
+
+.mode-box { display: flex; flex-direction: column; gap: 4px; padding: 0 6px; }
+.mode-line { margin: 0; font-size: 13px; color: var(--r-text-secondary); }
+
+.sidebar-foot {
+  margin: 14px 6px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--r-text-muted);
+}
+
+/* -- nav buttons (the shared .r-nav-item is styled for links) --------------- */
+
+.r-nav-item {
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+/* -- feed header + live toggle ---------------------------------------------- */
+
+.feed-head { display: flex; align-items: flex-start; gap: 16px; }
+.feed-head > div { flex: 1; min-width: 0; }
+
+.live-toggle { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--r-ok);
+  animation: audit-pulse 2s ease-in-out infinite;
+}
+.live-toggle.is-paused .live-dot { background: var(--r-text-muted); animation: none; }
+
+@keyframes audit-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot { animation: none; }
+}
+
+/* -- filters ---------------------------------------------------------------- */
+
+.feed-filters { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.scroll-hint {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--r-text-muted);
+  max-width: 92ch;
+}
+.filter-field { margin-bottom: 0; min-width: 160px; }
+.filter-search { flex: 1; min-width: 240px; }
+
+/* -- the feed table ---------------------------------------------------------- */
+
+.feed-row { cursor: pointer; }
+.feed-row:focus-visible { outline: 2px solid var(--r-brand); outline-offset: -2px; }
+.feed-row-new td { animation: audit-arrive 1.2s ease-out; }
+@keyframes audit-arrive {
+  from { background: var(--r-brand-subtle); }
+  to { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feed-row-new td { animation: none; }
+}
+
+.when-cell { white-space: nowrap; }
+.reason-cell, .error-cell {
+  max-width: 30ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* THE WIDE FEED. A reader needs more columns than fit — kind, group, attempt
+   count, flags — so the table is given a floor width and the CARD scrolls
+   sideways around it (.r-table-wrap owns `overflow-x: auto`). Without the
+   min-width the browser would squeeze thirteen columns into the viewport and
+   the horizontal scroll would never appear, which is the whole point. The
+   page body itself never scrolls sideways: only this container does. */
+.feed-table { min-width: 1240px; }
+.ref-decisions-table { min-width: 880px; }
+.feed-table td, .ref-decisions-table td { white-space: nowrap; }
+
+/* THE REASON CELL WRAPS, AND ONLY THIS CELL DOES. The slug stays on its own
+   line (it is what a person greps and what the filters match); the policy
+   engine's own plain-words sentence sits under it, clamped to two lines with
+   the whole of it on the title and in full in the drill-down. Without the
+   clamp one row of prose would be taller than the ten rows around it. */
+.feed-table .reason-cell,
+.ref-decisions-table .reason-cell,
+.siblings-table .reason-cell {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  max-width: 46ch;
+  min-width: 22ch;
+}
+.reason-slug { display: block; font-family: var(--r-font-mono, ui-monospace, monospace); font-size: 12.5px; }
+.reason-means {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--r-text-secondary);
+}
+.group-cell span { cursor: help; }
+
+/* Chips for array values — never `["a","b"]` on screen. */
+.chips { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--r-border);
+  background: var(--r-surface-subtle);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--r-text-secondary);
+  white-space: nowrap;
+  /* Flag codes get long (`no_payroll_cycle_covers_effective_date`). Truncating
+     the CHIP keeps the ellipsis inside its own border — capping the CELL
+     instead let the nowrap text run straight through the pill's edge and over
+     the next column, which is what the first screenshot of this feed showed.
+     The full value stays on the element's title. */
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+/* Decision vs. execution vs. follow-up event. The WORD carries the meaning; the
+   tone is decoration on top of it, so the distinction survives a monochrome
+   print or a colour-blind reader.
+
+   Execution is the only one of the three that gets weight as well as a dot —
+   a filled chip and a heavier label — because it is the row recording that
+   something LEFT this system and changed at Remote, and in a feed of otherwise
+   internal bookkeeping it should be the row the eye lands on. The event style
+   keeps its slight fade, which is what pushes it back behind both. */
+.r-badge-kind-decision { --r-dot: var(--r-dot-settled); }
+.r-badge-kind-execution {
+  --r-dot: var(--r-info, var(--r-dot-settled));
+  background: var(--r-info-subtle, var(--r-neutral-subtle));
+  color: var(--r-info, var(--r-text));
+  font-weight: 600;
+}
+.r-badge-kind-event { --r-dot: var(--r-dot-waiting); opacity: 0.9; }
+
+/* -- pagination -------------------------------------------------------------- */
+
+.pager {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.pager-where { font-size: 12.5px; color: var(--r-text-secondary); padding-bottom: 7px; }
+.pager-size { margin-bottom: 0; min-width: 130px; }
+.pager-paused {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--r-text-secondary);
+  border-left: 3px solid var(--r-warn, var(--r-border));
+  padding-left: 10px;
+}
+
+.empty-note { padding: 16px 20px; margin: 0; font-size: 13.5px; color: var(--r-text-muted); }
+
+/* -- drill-down -------------------------------------------------------------- */
+
+.drill { margin-top: 22px; }
+.drill-summary { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 16px; }
+.summary-item { display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; }
+.summary-label {
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--r-text-muted);
+}
+.drill-h { font-size: 14px; font-weight: 650; margin: 20px 0 8px; }
+.drill-clean { font-size: 13px; color: var(--r-text-secondary); margin: 0 0 4px; }
+
+.drill-note { font-size: 13px; color: var(--r-text-secondary); margin: 0 0 10px; }
+
+/* -- the reason, explained --------------------------------------------------- */
+/* The slug is never replaced, only accompanied — it is the string in audit_log,
+   in the metrics exception ranking and in the n8n ports. */
+.reason-explained {
+  border: 1px solid var(--r-border);
+  border-radius: 10px;
+  background: var(--r-surface-subtle);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  max-width: 92ch;
+}
+.reason-explained .reason-slug { display: inline-block; margin-left: 8px; font-size: 13px; }
+.reason-explained .summary-label { display: inline; }
+.reason-means-full { margin: 8px 0 0; font-size: 13px; line-height: 1.55; }
+.reason-gate { margin: 6px 0 0; font-size: 12px; color: var(--r-text-muted); }
+.reason-gate:empty { display: none; }
+
+/* -- a person's decision ----------------------------------------------------- */
+/* The 🟡 tier's whole point, and until now the least legible row on the page. */
+.human { margin-bottom: 4px; }
+.human-verdict-line { margin: 0; font-size: 14px; font-weight: 600; }
+.human-facts { margin: 8px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.65; }
+.human-facts li { color: var(--r-text-secondary); }
+.fact-label { color: var(--r-text-muted); }
+.fact-value { color: var(--r-text); }
+
+/* The chip is a WORD first — colour never carries the meaning alone. */
+.human-chip { margin-left: 6px; --r-dot: var(--r-dot-settled); }
+.human-chip-slot { --r-dot: var(--r-dot-waiting); }
+.human-chip-defers { --r-dot: var(--r-dot-waiting); }
+
+/* An approval whose Remote write cannot be confirmed is the one state a reader
+   must not skim past — it means a person said yes and nothing here records
+   Remote having taken it. */
+.verdict-no_write_recorded { border-left-color: var(--r-warn, var(--r-border)); }
+.verdict-execution_without_response { border-left-color: var(--r-warn, var(--r-border)); }
+.verdict-execution_stopped { border-left-color: var(--r-info, var(--r-border)); }
+
+/* The empty-attempts verdict. Six honest outcomes, one styling: the words do
+   the work, and only two are toned at all — "we do not know", because it is
+   the only one that means somebody should look, and the execution row, so its
+   left edge agrees with the Execution badge sitting directly above it. */
+.verdict {
+  border: 1px solid var(--r-border);
+  border-left-width: 3px;
+  border-radius: 10px;
+  background: var(--r-surface-subtle);
+  padding: 12px 16px;
+  margin-top: 10px;
+}
+.verdict-unexplained { border-left-color: var(--r-warn, var(--r-border)); }
+.verdict-execution_row { border-left-color: var(--r-info, var(--r-border)); }
+.verdict-headline { margin: 0; font-size: 13.5px; font-weight: 600; }
+.verdict-detail { margin: 6px 0 0; font-size: 13px; line-height: 1.55; color: var(--r-text-secondary); }
+.verdict-evidence { margin: 8px 0 0; padding-left: 20px; font-size: 12.5px; line-height: 1.6; }
+.verdict-evidence:empty { display: none; }
+.verdict-evidence li { margin-bottom: 4px; color: var(--r-text-secondary); }
+.evidence-field { color: var(--r-text); }
+.verdict #drill-verdict-open { margin-top: 10px; }
+
+/* -- the details table (label/value, headers down the side) ------------------ */
+
+.detail-table { min-width: 520px; }
+/* `.r-table th` (class + element) outranks a bare class, so the shared sheet's
+   uppercase column-header styling would win here and shout every field name.
+   A label running down the SIDE is a field name, not a column header. */
+.r-table th.detail-label {
+  width: 22%;
+  min-width: 170px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--r-text-secondary);
+  vertical-align: top;
+  background: var(--r-surface-subtle);
+}
+.detail-value { font-size: 13px; word-break: break-word; }
+.money { font-variant-numeric: tabular-nums; font-weight: 600; }
+.money-unlabelled { font-variant-numeric: tabular-nums; color: var(--r-text-secondary); }
+.bool { font-weight: 600; }
+.bool-false { color: var(--r-text-secondary); }
+
+.raw-block { margin: 0; }
+.raw-summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--r-text-secondary);
+  padding: 2px 0;
+}
+.raw-block[open] .raw-summary { margin-bottom: 6px; }
+.drill .raw-block { margin-top: 12px; }
+
+.details-json {
+  background: var(--r-surface-subtle);
+  border: 1px solid var(--r-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+  margin: 0;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+/* -- bug audit ---------------------------------------------------------------- */
+
+.ref-form { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 20px; }
+.ref-field { margin-bottom: 0; flex: 1; max-width: 420px; }
+.ref-card { margin-bottom: 18px; }
+#ref-verdict { margin-bottom: 18px; }
+/* Each note is its own paragraph inside the banner's one text column, so the
+   multi-use-case explanation does not run on from the verdict's own sentence. */
+.ref-verdict-note { display: block; margin-top: 8px; }
+
+/* -- the reference, as something you can act on -------------------------------- */
+
+/* A button that reads as the id it carries. It is deliberately NOT shortened:
+   a reference exists to be copied and quoted, and `uc02-2026…` cannot be
+   either. `white-space: nowrap` keeps it on one line — the feed's card already
+   scrolls sideways, so the column may be wide. */
+.ref-cell { white-space: nowrap; }
+.ref-trace {
+  font: inherit;
+  color: var(--r-brand);
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted currentColor;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.ref-trace:hover, .ref-trace:focus-visible { border-bottom-style: solid; }
+
+#feed-empty-trace { padding-top: 0; }
+#feed-empty-trace .r-btn { margin-left: 8px; }
+
+/* -- access gate --------------------------------------------------------------- */
+
+.access-card { max-width: 560px; }
+.access-why { font-size: 13px; color: var(--r-text-secondary); }
+.access-howto { font-size: 13px; color: var(--r-text-secondary); padding-left: 20px; }
+.access-howto li { margin-bottom: 6px; }
+
+/* -- banners hold their shape on this page ------------------------------------- */
+
+#seeded-banner, #error-banner { margin-bottom: 18px; }
+
+/* The verdict a replay returned, beside the replay row itself. Quieter than the
+   action badge it follows — the action is what this row IS, the replayed
+   decision is what it handed back — and it wraps onto its own line in the
+   narrow decision column rather than forcing the table wider. */
+.replayed-chip { margin-left: 6px; opacity: 0.85; font-size: 11px; }
+
+/* R7-36: labels which clock an Attempts-table timestamp came from — see
+   traceTimeCell() in app.js. Quiet by design: it qualifies the time next to
+   it rather than competing with it, but the full explanation is one hover
+   away on its title. */
+.at-semantic-chip {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--r-text-muted);
+}
+
+/* R7-33: labels what KIND of value an Actor cell holds — email, the literal
+   "unauthenticated", a bare UUID, or this row's own employmentId reused as
+   the actor. See actorCell()/actorKindChip() in app.js. Inline rather than
+   block: an actor value is short, so the label reads as one unit with it
+   instead of stacking the row taller the way the (longer) timestamp label
+   above does. */
+.actor-kind-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  color: var(--r-text-muted);
+  background: var(--r-neutral-subtle, rgba(127, 127, 127, 0.14));
+  white-space: nowrap;
+}
+
+/* --- the id lookup ---------------------------------------------------------
+   `lookup-scope` is a <details> that opens itself when nothing was found: the
+   boundary of the search is only interesting when the search came back empty,
+   and that is precisely when a reader needs to see it rather than infer it. */
+.lookup-list { margin: 0; padding: 0 20px 16px 36px; font-size: 13.5px; color: var(--r-text-muted); }
+.lookup-list li { margin: 6px 0; line-height: 1.5; }
+.lookup-list li strong { color: var(--r-text); }
+.lookup-scope > summary { padding: 14px 20px; cursor: pointer; font-size: 13.5px; color: var(--r-text-muted); }
+.lookup-scope > summary strong { color: var(--r-text); }
+.lookup-scope-body { padding: 0 20px 4px; }
+.lookup-scope-body .r-card-title { font-size: 13px; margin: 10px 0 2px; }

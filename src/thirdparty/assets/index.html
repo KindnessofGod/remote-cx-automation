@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Verify Someone's Employment — Remote CX Automation (demo)</title>
+<!-- noindex: this page is publicly reachable and carries Remote's name and visual
+     language. It is a portfolio demonstration and is NOT operated by Remote, so it
+     must not accumulate search authority as though it were. -->
+<meta name="robots" content="noindex, nofollow" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="remote-ui.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<!-- D-29: this page has no second axis of navigation (no sidebar — anyone can
+     reach it, unauthenticated), so it takes the shared design tokens but NOT
+     the `.r-app` two-column grid shell the dashboard/portal/playground use.
+     `.r-app` is `display: grid; grid-template-columns: var(--r-sidebar-w) 1fr`
+     and expects an `<aside class="r-sidebar">` FIRST CHILD to occupy that
+     first (264px) track; with only `.tp-main` as a child, grid auto-placement
+     put THIS content column into the sidebar track instead, so the page
+     measured 216px wide at every viewport. Same fix chatdemo/'s index.html
+     already uses for the same reason (no sidebar to put there). -->
+<div class="tp-app">
+
+  <main class="r-main tp-main">
+    <!-- DEMONSTRATION BANNER — added 2026-08-28, before this page was pointed at
+         a public audience.
+         This door is unauthenticated BY DESIGN (VC-33: a bank enquiring must not
+         need an account, and every submission gets the identical acknowledgement).
+         That posture is correct and is not what this banner is about. The problem
+         it fixes is different: the page carries Remote's name and asks a stranger
+         for a THIRD PARTY's full legal name and date of birth, and nothing on it
+         said it was a demonstration. A visitor arriving from a video could enter a
+         real person's real details, about a real employer, into a portfolio
+         project's database — personal data this project has no business holding
+         (prime directive 5: no real customer data).
+         It is deliberately a STATIC banner. It says the same thing on every render
+         and is not selected by any branch, so it cannot become a side channel that
+         distinguishes one enquiry's outcome from another (VC-33). -->
+    <p class="tp-demo">
+      <strong>Demonstration only.</strong> This is a portfolio project, not operated by or
+      affiliated with Remote. It runs against a sandbox, and submissions are stored.
+      <strong>Please do not enter any real person's details</strong> — use the example
+      buttons below.
+    </p>
+
+    <header class="tp-head">
+      <h1 class="r-page-title">Verify someone's employment</h1>
+      <p class="r-page-sub">
+        For banks, landlords and background-check firms. No Remote account needed.
+      </p>
+    </header>
+
+    <!-- REPORTED 2026-08-28: "this page is hella long". The notice below used
+         to run to five lines of prose ABOVE the first field, so on a laptop the
+         form began below the fold. It still says the two things it has to —
+         we need the person's own permission, and this page tells you nothing
+         about what we found (VC-33) — in two sentences instead of five. -->
+    <p class="tp-notice">
+      <strong>Before you start:</strong> we never confirm or deny an employment without
+      that person's own permission, and we will follow up using the contact you give us.
+      Every submission gets the same reply, whatever we find — so this page can never
+      tell you whether a request is pending, was declined, or names nobody we know.
+    </p>
+
+    <!-- Quick-fills. The project owner asked for these directly, for the same
+         reason the request portal has them: a demo should be clickable and
+         readable aloud, not typed. Each chip is a DIFFERENT KIND of enquirer,
+         and the point of having four is that all four get the identical
+         acknowledgement — which is the one behaviour this page exists to hold. -->
+    <section class="tp-scenarios" aria-labelledby="scenario-label">
+      <span class="r-label tp-scenario-label" id="scenario-label">Quick-fill an example</span>
+      <div class="tp-scenario-row" id="scenario-row"></div>
+      <p class="r-hint tp-scenario-note" id="scenario-note" hidden></p>
+    </section>
+
+    <form id="request-form" class="r-card tp-form">
+      <div class="r-card-body">
+
+        <div class="tp-grid">
+          <div class="r-field">
+            <label class="r-label" for="requestingParty">Who are you? (organization)</label>
+            <input class="r-input" id="requestingParty" name="requestingParty" type="text"
+                   placeholder="e.g. First National Bank"
+                   autocomplete="organization" required />
+          </div>
+
+          <div class="r-field">
+            <label class="r-label" for="purpose">What is this for?</label>
+            <input class="r-input" id="purpose" name="purpose" type="text"
+                   placeholder="e.g. Mortgage application" required />
+          </div>
+        </div>
+
+        <!-- WHOSE EMPLOYMENT IS THIS ABOUT. Absent from this form until
+             2026-08-28, which was its largest gap: every canonical
+             verification form in the world carries it (Fannie Mae 1005 item 7,
+             VA 26-8497 item 2, the Dutch NHG werkgeversverklaring, Experian
+             Verify, Truework), and Remote's own standard letter prints the
+             employee's full name as its first line. It is what tells a
+             specialist WHOSE PERMISSION TO ASK — Remote answers a third party
+             only "after receiving permission from you (the employee)". It is
+             never a lookup key: this door does not resolve anyone by name. -->
+        <div class="tp-grid">
+          <div class="r-field">
+            <label class="r-label" for="subjectName">Their full legal name</label>
+            <input class="r-input" id="subjectName" name="subjectName" type="text"
+                   placeholder="As it appears on their contract" maxlength="120" required />
+          </div>
+
+          <!-- THE DISAMBIGUATOR. A name identifies nobody — there may be a
+               hundred people with it, and every real verification system
+               solves this the same way: one further fact THE SUBJECT supplied.
+               Which fact depends on the rail.
+                 * The automated US bureaus key on the Social Security Number.
+                   The Work Number's lookup is literally (employer code, SSN)
+                   with no name field at all; Experian Verify requires the full
+                   SSN plus the name.
+                 * THE STANDARD MORTGAGE FORMS DO NOT. Fannie Mae Form 1005 has
+                   no SSN field anywhere — item 7 is "Name and Address of
+                   Applicant (include employee or badge number)" — and VA Form
+                   26-8497 item 7 is headed "APPLICANT'S SIGNATURE AND EMPLOYEE
+                   IDENTIFICATION". The employee number IS the identifier there.
+                 * Where an employer refuses to touch SSNs, the fallback is full
+                   date of birth: BYU HR asks for name plus birth month and day;
+                   First Advantage's email intake makes full DOB mandatory and
+                   uses no SSN at all.
+               So we ask for name + date of birth + the Employee ID, which is
+               the mortgage-form shape rather than the credit-bureau shape —
+               the right one for a door with no verifier credentialing behind
+               it. -->
+          <div class="r-field">
+            <label class="r-label" for="subjectDateOfBirth">Their date of birth</label>
+            <input class="r-input" id="subjectDateOfBirth" name="subjectDateOfBirth" type="date" required />
+          </div>
+        </div>
+
+        <div class="tp-grid">
+          <!-- WHAT A BANK CAN ACTUALLY HOLD. This field used to say "the
+               reference number or id they provided", which named nothing real
+               — and the honest answer had never been established. It is
+               Remote's own Employee ID: a six-character code Remote publishes
+               to every employee in their own profile under Job and Pay
+               (support.remote.com article 20120956060941). Not the API's UUID
+               — nobody reads a UUID down a phone. Both are accepted; only one
+               is worth asking for. -->
+          <div class="r-field">
+            <label class="r-label" for="employmentReference">Their Remote Employee ID</label>
+            <input class="r-input" id="employmentReference" name="employmentReference" type="text"
+                   placeholder="6-character code, e.g. CZKYVH" minlength="6" required />
+            <p class="r-hint">
+              They will find it in their Remote profile, under Job and Pay. We cannot look
+              someone up by name alone.
+            </p>
+          </div>
+
+          <div class="r-field">
+            <label class="r-label" for="returnAddress">Your contact email</label>
+            <input class="r-input" id="returnAddress" name="returnAddress" type="email"
+                   placeholder="you@yourcompany.com" autocomplete="email" required />
+            <p class="r-hint">Only ever used for the same note everyone gets.</p>
+          </div>
+        </div>
+
+        <!-- WHAT THE APPLICANT TOLD YOU. A verification request is never "does
+             anyone called X work for you" — it is "your employee told us these
+             facts, confirm them". Fannie Mae's Form 1005 is built exactly this
+             way, and HomeLet's referencing form has the applicant declare
+             position, salary, hours and start date so the employer can verify
+             them. Optional, because an enquirer may have only a name and an
+             id, and refusing them would help nobody. -->
+        <div class="tp-grid">
+          <div class="r-field">
+            <label class="r-label" for="subjectClaimedStartDate">Start date they told you (optional)</label>
+            <input class="r-input" id="subjectClaimedStartDate" name="subjectClaimedStartDate" type="date" />
+            <p class="r-hint">We check what you were told against the record, rather than looking anyone up.</p>
+          </div>
+          <div class="r-field tp-noid">
+            <p class="r-hint">
+              <strong>We never ask for a national ID number</strong> — no Social Security, BSN, NIF or
+              National Insurance number. Neither does the standard US mortgage form, which asks for the
+              employee number instead. In Europe it is not merely unnecessary: the Dutch government tells
+              tenants to <em>cover</em> their BSN before handing over a payslip, and French law forbids a
+              landlord from asking for a social-security card at all.
+            </p>
+          </div>
+        </div>
+
+        <div class="r-field">
+          <label class="r-label" for="message">Tell us what you need, in your own words</label>
+          <textarea class="r-input" id="message" name="message" rows="4"
+                    placeholder="Dates covered, what you need confirmed, and any deadline."
+                    required></textarea>
+        </div>
+
+        <!-- Both fields below are optional, and both used to sit expanded in
+             the main column with a hint paragraph each — four elements of
+             height for two things most enquirers leave blank. Folded, not
+             deleted: an agency acting for a client (R7-45) and an enquirer who
+             already holds a signed release (D-25) each need one of them, and a
+             quick-fill that fills either one opens this section so nothing is
+             ever written into a box the reader cannot see. -->
+        <details class="tp-optional" id="optional-details">
+          <summary>Acting for a client, or already have their written authorisation?</summary>
+          <div class="tp-optional-body">
+            <div class="r-field">
+              <label class="r-label" for="actingOnBehalfOf">Who are you acting on behalf of?</label>
+              <input class="r-input" id="actingOnBehalfOf" name="actingOnBehalfOf" type="text"
+                     placeholder="The bank or landlord who instructed you — blank if asking on your own account" />
+            </div>
+
+            <div class="r-field">
+              <label class="r-label" for="consentEvidence">Their written authorisation</label>
+              <textarea class="r-input" id="consentEvidence" name="consentEvidence" rows="3" minlength="10"
+                        placeholder="What you hold and how we can check it — e.g. a signed release, its date, and a reference or link."></textarea>
+              <p class="r-hint">We will attach this for review. Leave blank if you don't have it yet.</p>
+            </div>
+          </div>
+        </details>
+
+        <button class="r-btn r-btn-primary" id="submit-btn" type="submit">Send request</button>
+        <!-- D-26: hidden until submit; says what is happening and what
+             leaving costs WHILE the 8-15s real gate run is in flight, in the
+             same words src/portal/assets/app.js's shared submit() uses. -->
+        <p id="submit-progress" class="r-hint" hidden></p>
+      </div>
+    </form>
+
+    <div id="result" class="r-card tp-result" hidden>
+      <div class="r-card-body">
+        <p id="result-message"></p>
+        <!-- D-25: its own element, never appended to #result-message — that
+             element must always read the fixed VC-33 ack verbatim (see
+             src/surfaceverify/surfaces/browser.js's check of it). -->
+        <p id="result-reference" class="r-hint" hidden></p>
+      </div>
+    </div>
+
+    <!-- OWNER DECISION 2026-08-28: the approved letter must reach the enquirer
+         HERE, not only by an email a specialist sends by hand. A third,
+         independent panel rather than an addition to the follow-up form below:
+         collecting a message and collecting a response are different acts, and
+         an enquirer chasing a document should not have to compose prose to get
+         it. Every state except "a specialist approved this" answers with one
+         constant — see NO_LETTER_YET_MESSAGE in src/thirdparty/server.js. -->
+    <details class="r-card tp-collect" id="collect-panel">
+      <summary class="r-card-note"><strong>Collect your response</strong> — the letter appears here once it has been approved.</summary>
+      <div class="r-card-body">
+        <form id="collect-form">
+          <p class="r-hint tp-collect-known" id="collect-known" hidden>
+            We remembered the reference from your last request on this browser, so
+            there is nothing to type — just check.
+            <a href="#" id="collect-forget">Forget this request</a>
+          </p>
+          <div class="r-field">
+            <label class="r-label" for="collectReference">Your reference</label>
+            <input class="r-input" id="collectReference" name="collectReference" type="text"
+                   placeholder="The reference we gave you when you first wrote in" minlength="6" required />
+            <p class="r-hint">
+              If a response is ready, it appears here. If nothing appears, there is
+              nothing we can share about this request — which is not the same as
+              there being nothing at all.
+            </p>
+          </div>
+          <button class="r-btn r-btn-primary" id="collect-submit-btn" type="submit">Check for a response</button>
+        </form>
+        <div id="collect-result" class="r-hint" hidden></div>
+        <div id="collect-letter" class="tp-letter" hidden></div>
+      </div>
+    </details>
+
+    <!-- R7-23: a second, independent form for an enquirer holding a reference
+         who just wants to add something. It does not disable or hide the form
+         above, and submitting it does not touch #result. -->
+    <details class="r-card tp-followup">
+      <summary class="r-card-note"><strong>Already sent us a request?</strong> Follow up on it here.</summary>
+      <div class="r-card-body">
+        <form id="followup-form">
+          <div class="r-field">
+            <label class="r-label" for="followupReference">Your reference</label>
+            <input class="r-input" id="followupReference" name="followupReference" type="text"
+                   placeholder="The reference we gave you when you first wrote in" minlength="6" required />
+          </div>
+          <div class="r-field">
+            <label class="r-label" for="followupMessage">What would you like to add?</label>
+            <textarea class="r-input" id="followupMessage" name="followupMessage" rows="3" minlength="10"
+                      placeholder="e.g. a deadline you're now facing, a correction, or just checking this reached someone."
+                      required></textarea>
+          </div>
+          <button class="r-btn r-btn-secondary" id="followup-submit-btn" type="submit">Send follow-up</button>
+        </form>
+        <div id="followup-result" class="r-hint" hidden></div>
+      </div>
+    </details>
+
+    <!-- R7-22, CORRECTED 2026-08-28. The mailbox is Remote's own and stands
+         [CONFIRMED]: support.remote.com article 19201215338509, "How to get
+         employment verification via 3rd party", fetched live today, names
+         lifecycle-support@remote.com and says Remote answers a third party
+         "after receiving permission from you (the employee)".
+
+         THE TURNAROUND FIGURE THIS FOOTER USED TO CARRY WAS NOT REMOTE'S, and
+         it was tagged [CONFIRMED] against this very article. The article
+         contains no "business day" anywhere; its only "15" is "15+ different
+         languages". The 1-15 day window belongs to a DIFFERENT AND
+         OPPOSITE-DIRECTION service — Remote's own outbound background checks
+         (articles 34566185236237, 34567220725901), where Remote is the party
+         doing the asking. A number lifted from a sibling article and stamped
+         with the neighbour's citation is the exact failure mode the ladder
+         exists to prevent, and it read as a confirmation for as long as
+         nobody re-fetched the page it named. Do not restore it.
+
+         What replaces it is what the article actually says. Remote publishes
+         NO field list, NO required id and NO turnaround for this path — the
+         channel is a mailbox, and consent is sought FROM THE EMPLOYEE BY
+         REMOTE rather than supplied by the enquirer. Every field on this form
+         beyond that is a rung-3 substitution, not something Remote asks for. -->
+    <p class="tp-footer">
+      Remote answers a third-party verification only after getting the employee's own
+      permission, so there is nothing to chase here until they have replied. To reach a
+      person directly, email
+      <a href="mailto:lifecycle-support@remote.com">lifecycle-support@remote.com</a>.
+    </p>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

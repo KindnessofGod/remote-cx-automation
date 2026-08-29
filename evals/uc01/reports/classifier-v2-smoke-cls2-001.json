@@ -1,0 +1,91 @@
+{
+  "evaluation": {
+    "version": "classifier-v2",
+    "dataset": "uc01-classifier-golden-v2-remote-aligned",
+    "evaluator": "uc01-classifier-evaluator-v2",
+    "mode": "SMOKE",
+    "selectedCase": "cls2-001",
+    "caseCount": 1
+  },
+  "summary": {
+    "exactPasses": 1,
+    "exactFailures": 0,
+    "exactMatchRate": 1
+  },
+  "results": [
+    {
+      "id": "cls2-001",
+      "category": "standard_self",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_GENERATE",
+        "HC_PROOF"
+      ],
+      "rationale": "Plain employee request for the standard employment/proof-of-employment letter.",
+      "input": {
+        "text": "Please send me a normal proof-of-employment letter that I can download and give to my bank.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "93ea14bc6beb006b"
+    }
+  ]
+}

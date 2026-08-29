@@ -1,0 +1,108 @@
+{
+  "name": "Remote CX Review",
+  "author": {
+    "name": "Remote CX Automation",
+    "email": "cx-automation@example.com"
+  },
+  "defaultLocale": "en",
+  "private": true,
+  "location": {
+    "support": {
+      "ticket_sidebar": {
+        "url": "assets/iframe.html",
+        "flexible": true
+      }
+    }
+  },
+  "version": "1.10.10",
+  "frameworkVersion": "2.0",
+  "parameters": [
+    {
+      "name": "apiBaseUrl",
+      "type": "text",
+      "required": true,
+      "secure": false,
+      "default": "http://localhost:4020",
+      "helpText": "Base URL of the review API (src/review/server.js). Must be reachable from the agent's browser."
+    },
+    {
+      "name": "uc06ApiBaseUrl",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "default": "",
+      "helpText": "Optional. Base URL of the UC-06 dual-approval API (src/uc06/server.js). Leave blank to disable UC-06 amendments in this sidebar."
+    },
+    {
+      "name": "uc08ApiBaseUrl",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "default": "",
+      "helpText": "Optional. Base URL of the UC-08 read-only dossiers API (src/uc08/server.js). Leave blank to disable UC-08 dossiers in this sidebar."
+    },
+    {
+      "name": "uc02ApiBaseUrl",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "default": "",
+      "helpText": "Optional. Base URL of the UC-02 read-only expenses API (src/uc02/server.js). Leave blank to disable UC-02 expenses in this sidebar."
+    },
+    {
+      "name": "uc03ApiBaseUrl",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "default": "",
+      "helpText": "Optional. Base URL of the UC-03 travel/workation router API (src/uc03/server.js). Leave blank to disable UC-03 cases in this sidebar."
+    },
+    {
+      "name": "uc04ApiBaseUrl",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "default": "",
+      "helpText": "Optional. Base URL of the UC-04 single-approver work-authorization API (src/uc04/server.js). Leave blank to disable UC-04 authorizations in this sidebar."
+    },
+    {
+      "name": "uc05ApiBaseUrl",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "default": "",
+      "helpText": "Optional. Base URL of the UC-05 single-sign-off resignation-notice API (src/uc05/server.js). Leave blank to disable UC-05 resignations in this sidebar."
+    },
+    {
+      "name": "uc07ApiBaseUrl",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "default": "",
+      "helpText": "Optional. Base URL of the UC-07 read-only dossiers API (src/uc07/server.js). Leave blank to disable UC-07 dossiers in this sidebar."
+    },
+    {
+      "name": "uc09ApiBaseUrl",
+      "type": "text",
+      "required": false,
+      "secure": false,
+      "default": "",
+      "helpText": "Optional. Base URL of the UC-09 multi-role off-cycle-payroll API (src/uc09/server.js). Leave blank to disable UC-09 adjustments in this sidebar."
+    },
+    {
+      "name": "cxSharedSecret",
+      "type": "text",
+      "required": false,
+      "secure": true,
+      "helpText": "Optional. The HS256 shared secret this app signs its requests with \u2014 reads as well as approve/decline (ZAF's client.request jwt block). Set the SAME value as ZAF_SHARED_SECRET on the API. Leave blank for a local demo \u2014 the sidebar then falls back to unsigned requests, which a deployed API refuses."
+    },
+    {
+      "name": "signWrites",
+      "type": "checkbox",
+      "required": false,
+      "secure": false,
+      "default": false,
+      "helpText": "Tick this AFTER saving the shared secret above. A secure setting is never sent to the browser, so the app cannot detect on its own that the secret exists \u2014 this box is how it is told. It signs every request, reads included, because a deployed API requires a signed identity to read a case as well as to approve one. Leave unticked for a local demo with no secret set."
+    }
+  ]
+}

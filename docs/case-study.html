@@ -1,0 +1,1580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Remote CX AI Automation — Case Study</title>
+
+<meta name="description" content="A CX automation layer for an Employer-of-Record platform: nine support use cases across three risk tiers, built against Remote's real API with n8n, Zendesk/ZAF, OpenAI and Supabase. AI interprets, deterministic code decides, humans control the exceptions.">
+<meta name="author" content="Portfolio case study — CX AI &amp; automation for global employment">
+
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Remote CX AI Automation">
+<meta property="og:title" content="Remote CX AI Automation — Case Study">
+<meta property="og:description" content="Nine CX use cases, three risk tiers, one architecture. AI interprets, deterministic code decides, humans control the exceptions — with a tier-aware metrics layer that can recommend 'stop'.">
+<meta property="og:url" content="https://github.com/KindnessofGod/remote-cx-automation">
+<meta property="og:locale" content="en_GB">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Remote CX AI Automation — Case Study">
+<meta name="twitter:description" content="Nine CX use cases, three risk tiers, one architecture. AI interprets, deterministic code decides, humans control the exceptions.">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* -------------------------------------------------------------------
+     Every colour's BASE definition lives here on bare :root, so the page
+     is complete without any media query. The two blocks below only
+     REDEFINE these tokens — never introduce a colour that exists in one
+     theme only.
+     ------------------------------------------------------------------- */
+  /* -------------------------------------------------------------------
+     THESE VALUES ARE src/shared/ui/remote-ui.css's, INLINED.
+
+     This page must stay a single self-contained file — it is meant to be
+     sent as one link or attached as one attachment, so it
+     cannot <link> a stylesheet from one of this repo's servers. That is why
+     it carries its own tokens rather than importing the design system.
+
+     What it must NOT do is carry its own DESIGN. It did: a green accent
+     (#0d6b4e) and its own greys, so the one page a reader opens first looked
+     like a different product from every screenshot inside it. The token NAMES
+     are kept (the page's ~1000 lines of CSS are written against them) and only
+     the VALUES are replaced, each with the corresponding --r-* token. Same
+     surfaces, same brand blue, same already-validated ok/warn/danger steps.
+     ------------------------------------------------------------------- */
+  :root {
+    --text: #0f1115;
+    --muted: #565c69;
+    --surface: #ffffff;
+    --page-bg: #f7f8fa;
+    --accent: #1f5eff;
+    --accent-light: #eaf1fe;
+    --border: #e6e7ec;
+
+    --green: #0f7a43;
+    --green-bg: #e4f4ec;
+    /* #a35400 not #e65100: the original failed WCAG AA at this font size. */
+    --amber: #9a5b00;
+    --amber-bg: #fdf0dc;
+    --red: #b3261e;
+    --red-bg: #fce9e7;
+    /* #8a4b00 not #f57f17: the original scored 2.49:1. */
+    --iter: #8a4b00;
+    --iter-bg: #fff8e1;
+
+    --neutral-bg: #eef0f4;
+    --code-bg: #f4f5f8;
+    --table-stripe: #f7f8fa;
+    --shadow: rgba(0, 0, 0, 0.05);
+    --max-width: 820px;
+  }
+
+  /* System-default dark (no explicit choice stamped on the root). */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --text: #f3f4f6;
+      --muted: #a8aebb;
+      --surface: #16191f;
+      --page-bg: #0e1013;
+      --accent: #5b92ff;
+      --accent-light: #17274a;
+      --border: #272c35;
+
+      --green: #46c98a;
+      --green-bg: #10301f;
+      --amber: #e0a250;
+      --amber-bg: #33240c;
+      --red: #f08a80;
+      --red-bg: #3a1512;
+      --iter: #e9c25c;
+      --iter-bg: #2a2410;
+
+      --neutral-bg: #21262e;
+      --code-bg: #1b1f26;
+      --table-stripe: #1b1f26;
+      --shadow: rgba(0, 0, 0, 0.5);
+    }
+  }
+
+  /* An explicit dark choice wins regardless of the OS setting. */
+  :root[data-theme="dark"] {
+    --text: #f3f4f6;
+    --muted: #a8aebb;
+    --surface: #16191f;
+    --page-bg: #0e1013;
+    --accent: #5b92ff;
+    --accent-light: #17274a;
+    --border: #272c35;
+
+    --green: #46c98a;
+    --green-bg: #10301f;
+    --amber: #e0a250;
+    --amber-bg: #33240c;
+    --red: #f08a80;
+    --red-bg: #3a1512;
+    --iter: #e9c25c;
+    --iter-bg: #2a2410;
+
+    --neutral-bg: #21262e;
+    --code-bg: #1b1f26;
+    --table-stripe: #1b1f26;
+    --shadow: rgba(0, 0, 0, 0.5);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--page-bg);
+    line-height: 1.6;
+  }
+
+  .page {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+    background: var(--surface);
+    min-height: 100vh;
+  }
+
+  h1 { font-size: 1.8rem; color: var(--text); margin-bottom: 4px; font-weight: 700; }
+  h2 { font-size: 1.25rem; color: var(--accent); margin: 34px 0 12px; font-weight: 600; border-bottom: 2px solid var(--accent-light); padding-bottom: 6px; scroll-margin-top: 16px; }
+  h3 { font-size: 1.05rem; color: var(--text); margin: 20px 0 8px; font-weight: 600; }
+
+  p, li { font-size: 0.95rem; color: var(--text); }
+  p { margin-bottom: 10px; }
+  .subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 24px; }
+
+  a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  a:hover, a:focus { text-decoration: underline; }
+
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    overflow-x: auto;
+    line-height: 1.5;
+    margin-bottom: 10px;
+    color: var(--text);
+  }
+  pre code { background: none; border: none; padding: 0; white-space: pre; }
+
+  .toc {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 18px;
+    margin-bottom: 24px;
+    background: var(--neutral-bg);
+  }
+  .toc h2 {
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    border: none;
+    margin: 0 0 6px;
+    padding: 0;
+  }
+  .toc ol { margin: 0; padding-left: 18px; }
+  .toc li { font-size: 0.88rem; margin-bottom: 2px; }
+
+  .table-scroll { overflow-x: auto; margin-bottom: 14px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    min-width: 520px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+  td .note { display: block; font-size: 0.8rem; color: var(--muted); margin-top: 3px; }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber); }
+  .badge-red { background: var(--red-bg); color: var(--red); }
+  .badge-built { background: var(--green-bg); color: var(--green); }
+  .badge-progress { background: var(--amber-bg); color: var(--amber); }
+  .badge-spec { background: var(--neutral-bg); color: var(--muted); }
+
+  .principle {
+    background: var(--accent-light);
+    border-left: 4px solid var(--accent);
+    padding: 14px 18px;
+    margin-bottom: 14px;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.95rem;
+  }
+
+  .highlight-box {
+    border: 2px solid var(--accent);
+    border-radius: 8px;
+    padding: 18px 22px;
+    margin-bottom: 14px;
+    background: var(--accent-light);
+  }
+
+  .highlight-box h3 { margin-top: 0; color: var(--accent); }
+
+  .status-box {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--amber);
+    border-radius: 0 6px 6px 0;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+    background: var(--neutral-bg);
+  }
+  .status-box h3 { margin-top: 0; }
+  .status-box p:last-child { margin-bottom: 0; }
+
+  /* Stat tiles. Per the dataviz form heuristic these are hero numbers, not a
+     chart: five unrelated scalars with no shared axis have nothing to plot.
+     Numbers wear text tokens, never a series colour. */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .stat {
+    background: var(--neutral-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .stat b {
+    display: block;
+    font-size: 1.5rem;
+    line-height: 1.15;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat span {
+    display: block;
+    margin-top: 3px;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  /* A defect found by running the system, not by testing it. */
+  .defect {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--red);
+    border-radius: 0 6px 6px 0;
+    padding: 14px 18px;
+    margin-bottom: 12px;
+    background: var(--surface);
+  }
+  .defect h4 {
+    margin: 0 0 6px;
+    font-size: 1rem;
+    color: var(--red);
+  }
+  .defect p { margin-bottom: 8px; font-size: 0.93rem; }
+  .defect p:last-child { margin-bottom: 0; }
+  .defect .lesson {
+    background: var(--neutral-bg);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 0.9rem;
+  }
+
+  .invariant {
+    background: var(--red-bg);
+    border-left: 4px solid var(--red);
+    padding: 10px 14px;
+    margin-bottom: 8px;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.9rem;
+  }
+
+  .tier-demo {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .tier-demo > div {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    text-align: center;
+  }
+  .tier-demo .label { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
+  .tier-demo .meaning { font-size: 0.8rem; color: var(--muted); }
+
+  ul, ol { padding-left: 20px; margin-bottom: 10px; }
+  li { margin-bottom: 4px; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .grid-2 > div {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+  }
+
+  .tag-key {
+    font-size: 0.82rem;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .tag-key code { font-size: 0.78rem; }
+
+  .verdict-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    align-items: center;
+  }
+  .verdict-row span.v {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+  }
+  .verdict-row .arrow { font-size: 0.8rem; color: var(--muted); }
+  .v-int { background: var(--red-bg); color: var(--red); }
+  .v-stop { background: var(--amber-bg); color: var(--amber); }
+  .v-iter { background: var(--iter-bg); color: var(--iter); }
+  .v-healthy { background: var(--green-bg); color: var(--green); }
+  .v-insuf { background: var(--neutral-bg); color: var(--muted); }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  @media (max-width: 600px) {
+    .page { padding: 24px 14px 48px; }
+    h1 { font-size: 1.4rem; }
+    .tier-demo, .grid-2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Remote CX AI Automation</h1>
+<p class="subtitle">
+  A portfolio case study in
+  <strong>CX AI &amp; automation for global employment</strong>.
+  Built against Remote&rsquo;s real API,
+  Zendesk, n8n, and OpenAI &mdash; one hybrid pipeline where
+  <strong>AI interprets, deterministic code decides, and humans control the
+  exceptions.</strong><br>
+  Source: <a href="https://github.com/KindnessofGod/remote-cx-automation">github.com/KindnessofGod/remote-cx-automation</a>
+</p>
+
+<div class="stats">
+  <div class="stat"><b>9</b><span>use cases, three risk tiers</span></div>
+  <div class="stat"><b>9</b><span>n8n workflows live &amp; active</span></div>
+  <div class="stat"><b>4,109</b><span>hermetic tests, 0 failing</span></div>
+  <div class="stat"><b>150</b><span>deployed n8n nodes</span></div>
+  <div class="stat"><b>0</b><span>write paths on UC-07 / UC-08</span></div>
+</div>
+
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#what-this-is">What this system is</a></li>
+    <li><a href="#architecture">Architecture: risk tiers select the execution path</a></li>
+    <li><a href="#status">Honest status &mdash; what is built, what is live, what is not</a></li>
+    <li><a href="#impact">Measuring impact</a></li>
+    <li><a href="#verification">How this was verified &mdash; and the round where the count went up</a></li>
+    <li><a href="#not-automating">Knowing when NOT to automate</a></li>
+    <li><a href="#reality">What broke when it met reality</a></li>
+    <li><a href="#tooling">Named tooling</a></li>
+    <li><a href="#documentation">Documentation as part of &ldquo;done&rdquo;</a></li>
+    <li><a href="#demonstrates">What the repo demonstrates</a></li>
+    <li><a href="#explore">How to explore the system</a></li>
+    <li><a href="#decisions">Design decisions worth defending</a></li>
+  </ol>
+</nav>
+
+<h2 id="what-this-is">What this system is</h2>
+
+<p>
+  A CX automation layer for an Employer-of-Record platform. Nine support use
+  cases, three risk tiers, one architecture. An LLM reads messy human language
+  and classifies intent. Every decision that changes anything &mdash; a
+  customer-facing reply, a payroll-amendment payload, a state change in a
+  case &mdash; is made by plain, testable JavaScript, with no AI in the loop
+  at decision time.
+</p>
+
+<div class="principle">
+  <strong>Prime directive:</strong> LLMs interpret; deterministic code
+  decides. An LLM may classify, extract and draft. It may never perform a
+  state change, and its output may never reach a gate unvalidated. Validate
+  against a strict shape, fall back to rules on any failure.
+</div>
+
+<h2 id="architecture">Architecture: risk tiers select the execution path</h2>
+
+<p>
+  The tier is not a label. It is a code branch. Every use case is assigned to
+  exactly one tier, and the tier determines how much automation is allowed at
+  all.
+</p>
+
+<div class="tier-demo">
+  <div>
+    <div class="label"><span class="badge badge-green">Low</span></div>
+    <div class="meaning">Validate &rarr; auto-execute &rarr; resolve.
+    Exception-gated only.</div>
+  </div>
+  <div>
+    <div class="label"><span class="badge badge-amber">Medium</span></div>
+    <div class="meaning">AI prepares + risk-scores &rarr; human approves in
+    ZAF sidebar &rarr; then execute. Dual approval for sensitive changes.</div>
+  </div>
+  <div>
+    <div class="label"><span class="badge badge-red">High</span></div>
+    <div class="meaning">AI compiles a dossier &rarr; escalate. No automated
+    execution &mdash; and for UC-07/08, no execution path exists at all.
+    Asserted by test, not by hope.</div>
+  </div>
+</div>
+
+<div class="table-scroll">
+<table>
+  <thead>
+    <tr>
+      <th scope="col">Use case</th>
+      <th scope="col">Tier</th>
+      <th scope="col">What it does &mdash; and what a human controls</th>
+      <th scope="col">Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>UC-01</td>
+      <td><span class="badge badge-green">Low</span></td>
+      <td>Employment verification letters. Auto-resolves in-scope requests;
+        a request for an out-of-scope field (e.g. salary) routes to a
+        specialist rather than being silently redacted.
+        <span class="note">ZAF panel: single approve/deny, reason required.</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">19-node n8n workflow, live and active</span></td>
+    </tr>
+    <tr>
+      <td>UC-02</td>
+      <td><span class="badge badge-green">Low</span></td>
+      <td>Expense &amp; receipt validation. 12 ordered deterministic gates;
+        the LLM classifies category only and is never trusted for money or
+        arithmetic. The one write (<code>PATCH /v1/expenses/:id</code>) is
+        durably audited before it fires.
+        <span class="note">ZAF panel: deliberately no controls &mdash; compliant
+        claims auto-approve, exceptions go to a Finance Ops queue outside this API.</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">24-node n8n workflow, live and active</span></td>
+    </tr>
+    <tr>
+      <td>UC-03</td>
+      <td><span class="badge badge-green">Low</span></td>
+      <td>Travel-support letter / workation router. A thin router only
+        (auto-resolve / human review / escalate / hand off to UC-04), with
+        deliberately no Schengen or 183-day compliance logic of its own.
+        <span class="note">ZAF panel: deliberately no controls &mdash; the API
+        has no write route at all.</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">20-node n8n workflow, live and active</span></td>
+    </tr>
+    <tr>
+      <td>UC-04</td>
+      <td><span class="badge badge-amber">Medium</span></td>
+      <td>Work authorization / workation. Deterministic origin&rarr;destination
+        risk matrix, with permanent-establishment risk and Schengen / US-CA
+        hard blocks.
+        <span class="note">ZAF panel: one mobility specialist approves &mdash;
+        single, not dual, because the spec names one role.</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">16-node n8n workflow, live and active</span></td>
+    </tr>
+    <tr>
+      <td>UC-05</td>
+      <td><span class="badge badge-amber">Medium</span></td>
+      <td>Resignation notice calculation. Nine-country statutory notice table
+        plus PTO payout reconciliation. We deliberately do not write back to Remote for
+        this, so the signed-off report &mdash; not an execution &mdash; is the
+        durable artifact.
+        <span class="note">ZAF panel: HR Ops <em>signs off</em>, a button
+        deliberately not named &ldquo;approve&rdquo;.</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">15-node n8n workflow, live and active</span></td>
+    </tr>
+    <tr>
+      <td>UC-06</td>
+      <td><span class="badge badge-amber">Medium</span></td>
+      <td>Contract amendment / payroll cutoff. Money &times;100, dynamic
+        per-country schema validation before any write, and a hard
+        deterministic cutoff-lock time gate. Real Supabase persistence.
+        <span class="note">ZAF panel: two independently-gated approval slots
+        (Customer Admin + Payroll Specialist).</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">16-node n8n workflow, live and active</span></td>
+    </tr>
+    <tr>
+      <td>UC-07</td>
+      <td><span class="badge badge-red">High</span></td>
+      <td>Global mobility / permanent relocation. Compiles a dossier for a
+        Tier-3 mobility legal specialist. <strong>No execution path
+        exists</strong> &mdash; the handler takes no Remote or Zendesk
+        dependency, the store has one write method and zero mutations, and
+        the API has no POST route.
+        <span class="note">ZAF panel: deliberately no controls &mdash; there is
+        nothing to approve.</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">11-node n8n workflow, live and active</span></td>
+    </tr>
+    <tr>
+      <td>UC-08</td>
+      <td><span class="badge badge-red">High</span></td>
+      <td>Cross-border tax &amp; social security. Deterministic presence-day
+        calculation, embedding-similarity treaty retrieval over pgvector
+        (keyword fallback when unconfigured), mandatory disclaimer.
+        <strong>No execution path exists</strong>, at four layers.
+        <span class="note">ZAF panel: deliberately no controls.</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">12-node n8n workflow, live and active</span></td>
+    </tr>
+    <tr>
+      <td>UC-09</td>
+      <td><span class="badge badge-red">High</span></td>
+      <td>Off-cycle payroll / adjustment. The one high-tier-framed use case that
+        <em>does</em> have a real execution path &mdash; gated behind a
+        multi-role approval floor of two (three when the risk assessor says
+        so), with segregation of duties enforced.
+        <span class="note">ZAF panel: one block per required role.</span></td>
+      <td><span class="badge badge-built">Built</span>
+        <span class="note">17-node n8n workflow, live and active</span></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="status">Honest status &mdash; what is built, what is live, what is not</h2>
+
+<p>
+  <strong>Scope was deliberately widened.</strong> The original plan was three
+  use cases built deep and nine specified, on the reasoning that three
+  complete builds read better than nine shallow ones. That decision was later
+  overturned on purpose, so that every tier is demonstrated by working code
+  rather than by a document. <strong>All nine use cases are now built:</strong>
+  core decision logic, a runnable HTTP API, a registered ZAF sidebar panel,
+  and an n8n workflow whose Code-node body is parity-tested in a
+  <code>node:vm</code> sandbox against the Node implementation it mirrors
+  (<code>test/n8nParity.test.js</code> plus one per use case).
+</p>
+
+<p>
+  <strong>All nine n8n workflows are active</strong> on a live n8n instance,
+  each credentialed against the same real OpenAI, Remote Sandbox, Zendesk and
+  Supabase accounts.
+</p>
+
+<div class="status-box">
+  <h3>What is proven &mdash; and what is not</h3>
+  <p>
+    Every figure below was re-verified on <strong>2026-08-18</strong> by
+    querying the live n8n instance and the live Postgres database directly,
+    rather than by trusting this project&rsquo;s own notes. Two of the claims
+    that used to sit here did not survive that check, and both corrections are
+    in <a href="#reality">&ldquo;What broke when it met reality&rdquo;</a>.
+  </p>
+  <p>
+    <strong>All nine workflows are live.</strong> Read back from the n8n API:
+    nine of nine <code>active: true</code>, and nine of nine with
+    <code>activeVersionId&nbsp;==&nbsp;versionId</code> &mdash; meaning the
+    version described here is the version actually serving traffic, not a
+    saved draft. 150 nodes across the nine.
+  </p>
+  <p>
+    <strong>All nine have written real rows to real tables.</strong> The
+    <code>audit_log</code> table holds rows for every one of UC-01&hellip;UC-09
+    from unpinned executions, alongside populated
+    <code>uc04_authorizations</code>, <code>uc05_resignations</code>,
+    <code>uc06_amendments</code>, <code>uc07_dossiers</code> and
+    <code>uc08_dossiers</code> tables, and a 71-row <code>audit_trace</code> of
+    individual API/LLM <em>attempts</em>. This is a stronger position than
+    earlier drafts of this page claimed, and it is stated only because the rows
+    were counted.
+  </p>
+  <p>
+    <strong>UC-01 is proven end to end from a real inbound ticket.</strong>
+    Zendesk ticket&nbsp;#6: a customer comment at 21:34:36 triggered the
+    workflow, and five seconds later the ticket was solved and tagged, with the
+    verification letter posted as rendered HTML containing no salary, and a real
+    <code>audit_log</code> row written before the customer-facing action.
+    Nothing pinned anywhere.
+  </p>
+  <p>
+    <strong>Not proven: inbound triggering for the other eight.</strong> UC-01
+    is the only one of the nine ever driven by a genuine inbound Zendesk ticket.
+    The other eight have been driven by webhook POSTs &mdash; real executions
+    against real services writing real rows, but not the same claim as
+    &ldquo;a customer did something and this happened.&rdquo;
+  </p>
+  <p>
+    <strong>Exactly-once: mechanism verified on all nine, redelivery observed on
+    one.</strong> The claim node is deployed and published on all nine graphs,
+    confirmed live (9 checked, 0 defective), including the wiring the guarantee
+    rests on &mdash; a failed claim ends the run rather than writing anyway.
+    Every doubly-driven reference has exactly one audit row. The redelivery half
+    was watched stopping at the no-op on <strong>UC-01, UC-04, UC-05 and
+    UC-07</strong>; of those, only UC-07&rsquo;s rows still survive to
+    corroborate it, because the others were purged with the rest of the test
+    data. For the remaining five it rests on row counts plus verified wiring
+    &mdash; strong, but inference rather than observation, and named as such.
+  </p>
+  <p>
+    <strong>The ZAF sidebar is installed and enabled in a live Zendesk
+    account.</strong> App <code>9990001</code>, at manifest
+    <strong>1.4.0</strong>, uploaded <code>2026-08-20T07:40:13Z</code> &mdash;
+    read from <code>GET /api/v2/apps/owned.json</code>, not from the manifest in
+    the repository, because an installed ZAF app is a <em>static upload</em> and
+    does not track the branch. On one occasion the two disagreed for eight
+    minutes and nothing about the code, the tests or a reviewer&rsquo;s reading
+    would have shown it. Approver identity is a verified signature whenever a
+    durable store is attached or the deployment is publicly reachable; the
+    trusted-header posture survives only for a seeded in-memory demo, so a fresh
+    clone still runs.
+  </p>
+</div>
+
+<div class="status-box">
+  <h3>Re-verified 2026-08-20 &mdash; three things on this page had gone stale in the system&rsquo;s favour</h3>
+  <p>
+    A status page that <em>understates</em> is still a status page that is
+    wrong, and this one was inviting the reading &ldquo;so none of it actually
+    runs.&rdquo; Each correction below was read from the live service named.
+  </p>
+  <ul>
+    <li><strong>The public deployment is fully configured.</strong>
+      <code>/__cx/health</code> reads <code>supabaseAttached: true</code>, reads
+      <strong>working</strong>, writes <strong>working</strong>, and three
+      browser surfaces mounted alongside the nine API prefixes &mdash;
+      <code>/portal</code> (intake), <code>/audit</code> (audit trail) and
+      <code>/queue</code> (approval queue), each behind a shared key. The
+      section below on the two days of refused approvals describes a window
+      that has closed; its reasoning is kept because the reasoning is the
+      design record.</li>
+    <li><strong>Approvals are accepted.</strong> For two days every approve on
+      that URL refused <code>approver_entitlement_not_configured</code> &mdash;
+      the intended fail-closed default of a new role-entitlement gate. The
+      roster is now provisioned:
+      <code>approverEntitlementSource: "APPROVER_ROLES"</code>.</li>
+    <li><strong>Every deployed n8n Code node is current.</strong> For a day the
+      live graphs ran superseded bodies &mdash; a sanctions gate, a jurisdiction
+      statement, and a routing table that labelled every routine approval as an
+      escalation. <code>verify-deployed</code>: <strong>39 nodes, 0
+      drifted</strong>.</li>
+  </ul>
+  <p>
+    <strong>Test suite, 2026-08-27:</strong> 4,111 tests, 4,109 passing, 2 skipped, 0
+    failing, 1 skipped, 16.4s, hermetic. Quoted with the tree state it was
+    measured on, because the count moves several times a day and this page has
+    carried a stale one before.
+  </p>
+</div>
+
+<h3>The nine APIs are deployed and public &mdash; and for two days refused every approval, by design</h3>
+
+<p>
+  The sidebar runs in the agent&rsquo;s browser inside Zendesk and fetches these
+  APIs directly, so &ldquo;the APIs are running&rdquo; has to mean running on the
+  public internet, not running while a laptop is open. All nine are deployed as
+  <strong>one Vercel serverless function</strong> at
+  <code>remote-cx-apis.vercel.app</code>, behind path prefixes
+  <code>/uc01</code>&hellip;<code>/uc09</code>.
+</p>
+
+<p>
+  <strong>The deployment is fully configured today</strong> &mdash; reads and
+  writes both working, verified live. What follows describes the two days before
+  the database and the identity verifier were attached, when
+  <strong>reads returned nothing and writes were refused, both on purpose</strong>.
+  The write refusal is the interesting half, and the reasoning is kept because it
+  is the design record &mdash; it is the reason nothing unsafe happened during
+  that window. The rule for whether a
+  signed approver identity is required is: <em>a durable store is attached</em>
+  <strong>OR</strong> <em>the deployment is publicly reachable</em>. The two
+  conditions are ORed so that the platform check can only ever <em>add</em> the
+  requirement, never remove one. Without that OR, this URL would have accepted a
+  payroll approval from anyone able to set an HTTP header, during exactly the
+  window where the URL is live but the database is not yet attached. The
+  deployment therefore answers every approve/deny with
+  <code>401 signed_identity_not_configured</code>, loudly, by design.
+</p>
+
+<h2 id="impact">1. Measuring impact</h2>
+
+<p>
+  Most automation projects can tell you what they built. Far fewer can tell
+  you whether it&rsquo;s working, and almost none can tell you when to
+  <strong>stop</strong>.
+</p>
+
+<p>
+  The metrics layer (<code>src/metrics/</code>, <code>npm run metrics</code>)
+  answers all three questions, and its central idea is that
+  <strong>every judgement is tier-aware</strong>. A dashboard that maximises
+  &ldquo;% automated&rdquo; would reward exactly what the architecture exists
+  to prevent:
+</p>
+
+<div class="tier-demo">
+  <div>
+    <div class="label">Green tier</div>
+    <div class="meaning">A high auto-resolution rate <strong>is</strong>
+    success. Measure it and push it up.</div>
+  </div>
+  <div>
+    <div class="label">Amber tier</div>
+    <div class="meaning">Auto-rate is <strong>meaningless</strong>. The human
+    gate IS the design. Measure specialist acceptance of AI recommendations
+    instead.</div>
+  </div>
+  <div>
+    <div class="label">Red tier</div>
+    <div class="meaning">An auto-resolution on a high-tier case is an
+    <strong>integrity violation</strong>. Count them &mdash; the number must
+    be zero.</div>
+  </div>
+</div>
+
+<h3>Five verdicts, in the order <code>recommend()</code> actually evaluates them</h3>
+
+<div class="verdict-row">
+  <span class="v v-int">integrity_violation</span>
+  <span class="arrow" aria-hidden="true">&rarr;</span>
+  <span class="v v-insuf">insufficient_data</span>
+  <span class="arrow" aria-hidden="true">&rarr;</span>
+  <span class="v v-stop">stop</span>
+  <span class="arrow" aria-hidden="true">&rarr;</span>
+  <span class="v v-iter">iterate</span>
+  <span class="arrow" aria-hidden="true">&rarr;</span>
+  <span class="v v-healthy">healthy</span>
+</div>
+
+<ol>
+  <li><strong>integrity_violation</strong> &mdash; any invariant breach at all.
+  Checked first, so it can never be masked by a good-looking rate.</li>
+  <li><strong>insufficient_data</strong> &mdash; two distinct checks, both
+  before any rate is judged. First: fewer cases than the configured minimum
+  sample size. Second, and the one that fixed a real bug: a medium- or high-tier use case
+  with <em>zero decided review rows</em>. That used to read as
+  <code>healthy</code>. There was no data to be healthy about.</li>
+  <li><strong>stop</strong> &mdash; below the floor. For low tier, the auto-rate is
+  so low that nearly every case reaches a human anyway, so the automation is
+  adding review load rather than removing it. For medium and high tier, specialists accept so
+  few AI recommendations that the recommendation is noise.</li>
+  <li><strong>iterate</strong> &mdash; above the floor but under target. The
+  same two rates, one threshold up.</li>
+  <li><strong>healthy</strong> &mdash; the fall-through, reached only when
+  every configured threshold is met.</li>
+</ol>
+
+<p>
+  <strong>&ldquo;Stop&rdquo; is a first-class verdict</strong>, not a
+  failure. A system that can only recommend &ldquo;build more&rdquo; is not a
+  measurement system. Two safety invariants are checked against every row and
+  reported as a count that must read zero, never as a rate:
+</p>
+
+<div class="invariant">
+  <strong>Flagged auto-resolution.</strong> A case that auto-resolved while
+  carrying escalation flags &mdash; evidence something bypassed the gates.
+  Count must be 0.
+</div>
+<div class="invariant">
+  <strong>Auto-resolution on a red-tier use case</strong> (UC-07/08/09).
+  No high-tier case may ever be resolved by the automation alone. UC-07 and
+  UC-08 have no execution path at all; UC-09 has one, but only behind a
+  multi-role approval floor &mdash; so an <code>auto_resolve</code> appearing
+  on any of the three means a gate was bypassed. Count must be 0.
+</div>
+
+<h3>What the dashboard actually reports</h3>
+
+<ul>
+  <li><strong>Auto-resolution rate</strong> &mdash; per use case and overall,
+  a headline number only for green-tier cases.</li>
+  <li><strong>Exception reasons, ranked</strong> &mdash;&nbsp;the top row
+  <em>is</em> the next thing worth engineering. Denominator is exceptions,
+  not all cases, so auto-resolutions never dilute the share.</li>
+  <li><strong>Specialist acceptance rate</strong> &mdash; of every human
+  approve/deny decision made in the sidebar, the share where the specialist
+  agreed with the AI&rsquo;s recommendation. Fed by real <code>audit_log</code>
+  rows written on every recorded decision. Pending cases are excluded; the
+  rate is <code>null</code> (not <code>0</code>) when nothing has been decided,
+  because &ldquo;no data&rdquo; and &ldquo;everyone rejected it&rdquo; are
+  opposite situations.</li>
+  <li><strong>Redundant-call detection</strong> &mdash; the audit trace records
+  every LLM/API <em>attempt</em>, not just the final decision. A trace group
+  whose attempt numbers are not a clean <code>1..n</code> sequence is flagged
+  as a genuine duplicate call, which is what distinguishes it from the retry
+  wrapper&rsquo;s own legitimate bookkeeping.</li>
+  <li><strong>Median handling time</strong> (zero-touch path only &mdash;
+  queued cases excluded, honestly labelled).</li>
+</ul>
+
+<p>
+  The offline dashboard runs ~120 tickets through the <em>real</em> workflow
+  gates when Supabase is unconfigured &mdash; not a hand-written fixture.
+  Change a gate in <code>policyEngine.js</code> and the numbers move, because
+  the seed is a run of the actual code, not a snapshot.
+</p>
+
+<h2 id="verification">How this was verified &mdash; and the round where the count went up</h2>
+
+<p>Six independent evaluation rounds were run against UC&#8209;01, each driving the
+real deployed product as the people who use it. The findings per round are
+published here rather than a green tick, because the shape of the series is the
+most useful thing this project produced.</p>
+
+<table>
+  <thead><tr><th>Round</th><th>Findings</th><th>What changed</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><strong>14</strong></td><td>first evaluation</td></tr>
+    <tr><td>2</td><td>5</td><td>fixes re&#8209;checked</td></tr>
+    <tr><td>3</td><td>5</td><td></td></tr>
+    <tr><td>4</td><td>4</td><td></td></tr>
+    <tr><td>5</td><td><strong>2</strong></td><td>12 of 12 required evidence items passing</td></tr>
+    <tr><td>6</td><td><strong>31</strong></td><td><strong>the instrument changed</strong></td></tr>
+  </tbody>
+</table>
+
+<p>Round&nbsp;5 said the use case was finished. Round&nbsp;6 replaced one evaluator
+playing four stakeholders in sequence with <strong>four isolated evaluators, each
+able to see only its own surface</strong>, and found thirty&#8209;one defects &mdash;
+five of which broke the journey outright. The first one:</p>
+
+<blockquote>
+  <p>An employee presses <strong>Get my letter</strong>. A complete, correct letter is
+  generated and returned in the HTTP response. The screen shows no letter, no
+  preview, no link &mdash; only <em>&ldquo;This is already final. Open &lsquo;My
+  requests&rsquo; to see it.&rdquo;</em> My requests does not list it, and never says
+  why.</p>
+  <p>In the evaluator&rsquo;s own words: <em>&ldquo;I would have refreshed this page for
+  a week.&rdquo;</em></p>
+</blockquote>
+
+<p><strong>The product had never once delivered a letter to the person who asked for
+it, and five rounds of testing reported it working.</strong> Nothing regressed
+between rounds&nbsp;5 and&nbsp;6 &mdash; the measurement got sharper.</p>
+
+<p>One evaluator playing every stakeholder knows too much. By the time it reached
+the employee&rsquo;s screen it had already read the audit log, the internal note and
+the decision record, so it knew the letter existed and never noticed the employee
+could not reach it. Isolation is not an optimisation of that process; it is what
+makes the stakeholder real. The cost was measured rather than assumed:</p>
+
+<table>
+  <thead><tr><th></th><th>Serial (round&nbsp;5)</th><th>Isolated (round&nbsp;6)</th></tr></thead>
+  <tbody>
+    <tr><td>Cost</td><td>$26.95</td><td><strong>$63.44 &mdash; 2.35&times;</strong></td></tr>
+    <tr><td>Findings</td><td>2</td><td><strong>31</strong></td></tr>
+    <tr><td>Context re&#8209;read, share of cost</td><td>74.9%</td><td>54.9%</td></tr>
+  </tbody>
+</table>
+
+<p>2.35&times; the money for roughly ten times the findings, and the one that
+mattered was invisible at any price on the old method. The falling
+context&#8209;re&#8209;read share was the <em>pre&#8209;registered</em> test for whether
+the isolation was real rather than cosmetic &mdash; stated before the round ran, not
+chosen after it. A prediction made before that round, that isolation would be
+<em>cheaper</em>, was wrong by a factor of three and is recorded as wrong.</p>
+
+<p class="note">Full write&#8209;up, including the three standing rules this produced
+and the defect that produced them: <code>docs/HOW-THIS-WAS-VERIFIED.md</code>.</p>
+
+<h2 id="not-automating">2. Knowing when NOT to automate</h2>
+
+<p>The clearest example was not a judgement call. It was produced by the impact
+dashboard, from live production data, and it says to switch something off:</p>
+
+<blockquote>
+  <p><strong>UC&#8209;02 &middot; STOP</strong> &mdash; Auto&#8209;resolution is 0%,
+  below the 15% floor. Nearly every case reaches a human anyway, so
+  <strong>the automation is adding review load, not removing it.</strong></p>
+</blockquote>
+
+<p>That verdict is computed, not written &mdash; the same run reports
+<code>ITERATE</code> for two use cases and <code>INSUFFICIENT_DATA</code> for six
+more, and refuses to grade a use case with fewer than ten cases on record.
+Regenerate it with <code>npm run metrics</code>; the rendered dashboard is
+<code>demo/metrics.html</code>.</p>
+
+<p>Three further decisions were taken not to automate, each argued from evidence
+rather than instinct:</p>
+
+<div class="highlight-box">
+  <h3>The strongest proof is UC-08</h3>
+  <p>
+    Cross-border tax and social security is exactly the kind of domain where
+    an AI that can write to a real record would be dangerous. UC-08 is
+    designed so that <strong>no execution path is even reachable</strong>,
+    enforced at four layers:
+  </p>
+  <ul>
+    <li><strong>Code:</strong> <code>handleTaxInquiry()</code> takes no
+    <code>remote</code> or <code>zendesk</code> dependency at all. There is no
+    parameter through which a write-capable client could ever be passed in.
+    Not a runtime check that could have a bug &mdash; the literal absence of
+    any object this code could call to change anything.</li>
+    <li><strong>Store:</strong> <code>dossierStore.js</code> has exactly one
+    write method (<code>createDossier</code>) and zero mutation methods &mdash;
+    no approve, no deny, no status column to flip, no <code>markExecuted</code>.
+    There is nothing on this store a bug could ever grow into a write against a
+    real record.</li>
+    <li><strong>API:</strong> <code>src/uc08/server.js</code> has a GET route
+    and no POST route in the file &mdash; not one that merely refuses at
+    runtime, simply absent. Any POST 404s.</li>
+    <li><strong>n8n graph:</strong> The n8n workflow has no Switch/IF node
+    anywhere. Every execution ends at the same single Zendesk internal-note
+    update, never an automated public reply.</li>
+  </ul>
+  <p>
+    A test asserts all of this &mdash; structurally (source-level, comments
+    stripped, asserting no reference to either REST client&rsquo;s write
+    methods) and behaviorally (the decision is always <code>"escalate"</code>
+    across varied inputs). <strong>A policy check that merely refuses to call
+    a write method is one bug away from calling it. Removing the parameter
+    entirely removes the bug&rsquo;s precondition.</strong>
+    UC-07 is the second build of the same shape, which is how it stays a
+    pattern rather than a one-off.
+  </p>
+</div>
+
+<h3>UC-09: when automating <em>is</em> right, but only behind a floor</h3>
+
+<p>
+  The mirror-image judgement matters just as much. UC-09 (off-cycle payroll
+  adjustments) is framed high-tier and moves real money &mdash; and it is the one
+  high-tier use case that <em>does</em> get a real execution path, because
+  refusing to build one would just push the work back to a spreadsheet.
+  What makes that defensible is where the floor sits:
+</p>
+
+<ul>
+  <li>The required approval count is
+  <code>Math.max(2, riskEvaluation.minApprovalSlots)</code>. Risk can raise it
+  to three (requester + approver + payment releaser); nothing can lower it
+  below two. The AI can never execute alone, whatever the risk assessor
+  returns.</li>
+  <li><strong>Segregation of duties is enforced, not documented</strong>: the
+  same person filling two roles is refused with
+  <code>same_person_cannot_fill_multiple_roles</code>.</li>
+  <li>The payload is validated against the employment&rsquo;s country schema
+  <em>before</em> the first approval slot is even offered &mdash; an adjustment
+  that could never legally be written has no business collecting human
+  sign-off first.</li>
+  <li>The employment record is re-read immediately before the write, so an
+  approval given days ago cannot execute against an employee who has since
+  been terminated.</li>
+</ul>
+
+<h3>The sidebar is built to refuse things</h3>
+
+<p>
+  The ZAF sidebar drives <strong>all nine</strong> use cases from one bundle
+  &mdash; a shared shell plus a per-use-case panel registry. The shell owns
+  the only question that decides whether <em>any</em> controls appear; a panel
+  is only ever asked what the controls should look like, never whether there
+  should be any. Four of the nine panels
+  (<strong>UC-02, UC-03, UC-07, UC-08</strong>) deliberately supply no
+  controls at all, each with its reason written down next to it: a compliant
+  expense auto-approves inside the workflow and its exceptions belong to a
+  Finance Ops queue elsewhere; UC-03 is a router with no write route in its
+  API; UC-07 and UC-08 have no execution path to approve.
+</p>
+
+<p>
+  On the panels that do have controls, the refusals are the point: a human can
+  see an escalation, but the approve/deny buttons that exist for human-review
+  cases are never rendered for it &mdash; the safe path must not double as a
+  dismiss button. A decided case cannot be decided twice. And an approval
+  re-reads the employment record first, because the gate checked &ldquo;is
+  this employee active?&rdquo; when the ticket arrived and approval can happen
+  days later. That is a freshness re-check, not a duplicated gate.
+</p>
+
+<h2 id="reality">What broke when it met reality</h2>
+
+<p>
+  Everything in this section was found by <strong>running the system against
+  live services and then reading the destination</strong> &mdash; the database
+  row, the rendered customer comment, the deployed graph &mdash; rather than by
+  reading a green status. None of it was caught by the test suite, and that is
+  the point: every one of the tests passed throughout, before and after.
+</p>
+
+<div class="principle">
+  <strong>The through-line:</strong> a system that fails closed and a system
+  that is structurally incapable of succeeding look <em>identical</em> from the
+  outside. Both refuse. Both log a reason. Both pass every safety assertion you
+  can write. Only a <strong>positive</strong> test &mdash; &ldquo;this
+  known-good input MUST succeed&rdquo; &mdash; can tell them apart.
+</div>
+
+<div class="defect">
+  <h4>1. UC-03 could never have said yes &mdash; and every test passed anyway</h4>
+  <p>
+    UC-03&rsquo;s supported-destination gate compared two-letter country codes
+    (<code>ES</code>) against a list built from the real API&rsquo;s
+    <code>code</code> field, which is the <strong>alpha-3</strong> form
+    (<code>ESP</code>). The field the code actually wanted,
+    <code>country_code</code>, does not exist on that endpoint at all, and the
+    rows sit directly under <code>data</code> rather than
+    <code>data.countries</code> as the comments claimed. A successful 224-row
+    fetch therefore yielded an empty supported list, and
+    <strong>not one request could ever auto-resolve.</strong>
+  </p>
+  <p>
+    It survived for weeks because every fail-closed assertion passed. An
+    escalation is what a cautious system does; it is also what a broken one
+    does. The fix is proven both ways now &mdash; Spain auto-resolves (the first
+    <code>auto_resolve</code> this use case has ever recorded) and an
+    unsupported destination still escalates.
+  </p>
+  <p>
+    <strong>Why the fixture did not catch it:</strong> the local mock server
+    served <code>{data:{countries:[&hellip;]}}</code> with flat
+    <code>country_code</code> rows &mdash; an envelope and a row shape the real
+    API does not use. The mock agreed with the code instead of with the API, so
+    it confirmed the bug rather than exposing it. Making the mock faithful then
+    broke three tests, all of them real findings, including one named
+    <em>&ldquo;falls back to the 3-letter code when alpha_2_code is
+    absent&rdquo;</em> &mdash; a test that had pinned the defect as intended
+    behaviour and passed for its entire life.
+  </p>
+  <p class="lesson">
+    <strong>Lesson:</strong> a fixture that disagrees with production is worse
+    than no fixture, because it manufactures confidence. And a test suite made
+    only of negative assertions cannot distinguish safety from paralysis.
+  </p>
+</div>
+
+<div class="defect">
+  <h4>2. Four identity gates verified a claim against itself</h4>
+  <p>
+    In UC-03, UC-05, UC-06 and UC-09, the n8n identity gate could report
+    <code>verified: true</code> having proved nothing. Two of them echoed the
+    <em>caller&rsquo;s own</em> <code>employmentId</code> back as the
+    &ldquo;authoritative&rdquo; record id and then compared the session against
+    it &mdash; a tautology. The other two compared
+    <code>session.companyId</code> against a <code>company_id</code> that
+    defaulted to <code>null</code>, so <code>null === null</code> passed.
+  </p>
+  <p>
+    All four still refused the request &mdash; but only <strong>by accident of
+    gate ordering</strong>, because a later status check happened to catch the
+    run first. An identity control whose correctness depends on a downstream
+    gate is not a control. The recorded <em>reason</em> was wrong even though
+    the decision was right, and an audit log full of confidently wrong reasons
+    sends people to fix the wrong thing.
+  </p>
+  <p>
+    Fixed at the construction site rather than at the comparison: no usable
+    record now yields a record object at all. Proven in production on UC-05 with
+    identical input either side of the fix, where the recorded reason moved from
+    <code>employee_not_active</code> to <code>identity_not_verified</code>.
+  </p>
+  <p class="lesson">
+    <strong>Lesson:</strong> &ldquo;it failed closed&rdquo; and &ldquo;the
+    control works&rdquo; are different claims. The reason field, not the
+    decision field, is the one worth auditing.
+  </p>
+</div>
+
+<div class="defect">
+  <h4>3. A failed API read was recorded as the customer failing identity checks</h4>
+  <p>
+    Four graphs carried <code>onError: continueRegularOutput</code> on their
+    Remote reads. That setting does <strong>not</strong> mark the node red: it
+    reports <code>success</code> and quietly emits an error object in place of
+    the data. Downstream gates then evaluated that error object as though it
+    were a record, escalated, and named the wrong cause &mdash; so an outage
+    upstream was written into the permanent audit trail as a customer identity
+    failure.
+  </p>
+  <p>
+    Three states are now distinct: <code>upstream_record_not_found</code> (a 404
+    &mdash; an authoritative answer <em>about the record</em>),
+    <code>upstream_unavailable</code> (403/5xx/transport &mdash; the request was
+    never evaluated at all), and an unchanged policy refusal. The attribution is
+    <strong>fail-closed by construction</strong>: every verdict it can return is
+    an escalation, and it is consulted only at gates that are already refusing,
+    so it can correct a refusal&rsquo;s recorded reason but can never manufacture
+    an approval.
+  </p>
+  <p class="lesson">
+    <strong>Lesson:</strong> &ldquo;I don&rsquo;t know&rdquo; is a distinct
+    answer from &ldquo;no&rdquo;, and collapsing the two corrupts every metric
+    computed downstream.
+  </p>
+</div>
+
+<div class="defect">
+  <h4>4. A duplicate webhook sent a second letter to a real customer</h4>
+  <p>
+    Zendesk ticket&nbsp;#5 fired its trigger three times in quick succession.
+    Nothing in the graph asked &ldquo;have I already handled this one?&rdquo;, so
+    it produced <strong>two <code>audit_log</code> rows 30&micro;s apart</strong>
+    and posted a second verification letter publicly to the customer.
+  </p>
+  <p>
+    Webhook delivery is at-least-once by definition; a retry or a double-fired
+    trigger is normal traffic, not an incident. Every path now claims
+    <code>(use_case, external_ref)</code> in one shared ledger before its first
+    durable write, and <strong>the guarantee is that table&rsquo;s PRIMARY
+    KEY</strong>, not application code &mdash; a check-then-insert in a Code node
+    has precisely the race that caused the bug. A redelivery leaves by the
+    error output and stops at a no-op, silently: paging a human every time
+    Zendesk behaves normally would train everyone to ignore the alert.
+  </p>
+  <p class="lesson">
+    <strong>Lesson:</strong> if correctness depends on not being called twice,
+    the constraint belongs in the database, not in the workflow.
+  </p>
+</div>
+
+<div class="defect">
+  <h4>5. &hellip;and the check on that fix was itself wrong &mdash; twice-learned</h4>
+  <p>
+    A draft of this page claimed the opposite of what is written above: that
+    UC-04&rsquo;s claim node was silently failing and the use case had no
+    exactly-once guarantee. The reasoning was that
+    <code>workflow_claims</code> held no UC-04 rows while UC-04&rsquo;s
+    <code>claim-proof</code> drives had written <code>audit_log</code> rows.
+  </p>
+  <p>
+    <strong>That inference was wrong, and the way it was wrong is the
+    interesting part.</strong> <code>workflow_claims</code> is a
+    <em>mutable</em> table whose test rows had been purged;
+    <code>audit_log</code> is append-only and survived. Absence in a deletable
+    table means &ldquo;no row now&rdquo;, never &ldquo;no row ever&rdquo;. The
+    disconfirming evidence was already on the screen and misread:
+    <code>claim-proof-uc07-a</code> has no claim row either, and UC-07 is the
+    one case demonstrated in both halves &mdash; which identifies a purge, not a
+    defect.
+  </p>
+  <p>
+    The graph was correct all along, and the wiring is what proves it: the claim
+    node&rsquo;s error output reaches a no-op that continues to nothing, and the
+    first durable write is reachable <em>only</em> through the claim. So a
+    failed claim ends the run, and an audit row for a reference is itself proof
+    that that reference&rsquo;s claim succeeded. All ten doubly-driven
+    <code>claim-proof</code> references have exactly one audit row each.
+  </p>
+  <p class="lesson">
+    <strong>Lesson:</strong> this project&rsquo;s standing rule is &ldquo;a
+    green run is not evidence &mdash; check the destination.&rdquo; It has a
+    mirror image that cost a wrong headline to learn: <strong>an empty
+    destination is not evidence either, when the table is mutable.</strong>
+    Match the strength of the claim to the durability of the table you read it
+    from.
+  </p>
+</div>
+
+<div class="defect">
+  <h4>6. A fully &ldquo;successful&rdquo; run delivered escaped HTML source to a customer</h4>
+  <p>
+    The n8n Zendesk node&rsquo;s <code>publicReply</code> field is plain text and
+    silently escapes HTML; its <code>internalNote</code> sibling is the one
+    documented as accepting HTML. The customer received the verification letter
+    as literal <code>&amp;lt;!doctype html&amp;gt;&hellip;</code> source. The
+    execution was green, every node succeeded, and nothing anywhere in n8n
+    indicated a problem.
+  </p>
+  <p class="lesson">
+    <strong>Lesson:</strong> for anything customer-facing, the artefact the
+    customer actually receives is the only acceptable evidence. A green run
+    status is not a rendering check.
+  </p>
+</div>
+
+<div class="highlight-box">
+  <h3>Why this section is in a portfolio at all</h3>
+  <p>
+    Because the alternative is a case study that describes a system nobody ever
+    pushed hard enough to break. All six were invisible to a passing test suite,
+    and several were <em>safe</em> &mdash; wrong reasons attached to correct
+    refusals, which is the hardest class of defect to notice precisely because
+    nothing looks wrong. Finding and publishing them is worth more than the
+    original claims were, and the corrections are dated rather than silently
+    edited out.
+  </p>
+  <p>
+    It also produced the one engineering rule most worth carrying into a real CX
+    org: <strong>measure the reason, not just the outcome.</strong> An
+    automation reporting 100&nbsp;% safe refusals may be perfectly calibrated or
+    completely broken, and the outcome column cannot tell you which.
+  </p>
+</div>
+
+<h2 id="tooling">3. Named tooling</h2>
+
+<p>
+  Every tool in the stack is used for a specific, defensible reason &mdash;
+  never because it&rsquo;s trendy.
+</p>
+
+<div class="grid-2">
+  <div>
+    <h3>n8n</h3>
+    <p>
+      The production orchestration backbone. All nine use cases have a built
+      n8n workflow, and all nine are <strong>active</strong> on a real n8n
+      instance with credentials attached for OpenAI, Remote Sandbox, Zendesk
+      (OAuth <code>client_credentials</code>), and Supabase. UC-01&rsquo;s is the reference graph (<code>WORKFLOW_UC01_ID</code>), now 19
+      nodes &mdash; 150 across the nine, all published. Every Code
+      node body lives as a real <code>.js</code> file in
+      <code>workflows/nodes*/</code>, compiled and parity-executed on every
+      test run &mdash; which catches the escaping bugs the n8n editor silently
+      accepts, and pins the fact that the gates now exist twice.
+    </p>
+  </div>
+  <div>
+    <h3>Zendesk + ZAF</h3>
+    <p>
+      The customer-facing channel and the human-in-the-loop interface. A ZAF v2
+      ticket sidebar (<code>zaf-app/</code>) drives all nine use cases from one
+      bundle &mdash; a shared shell with a per-use-case panel registry. The
+      sidebar itself holds no credentials: it POSTs the agent&rsquo;s decision
+      to the review API, which is the only side that can reach Supabase and
+      write the <code>audit_log</code> row. That split is deliberate &mdash;
+      a browser extension with database credentials in it would put the audit
+      trail one devtools console away from being forged.
+      Zendesk&rsquo;s REST API handles reply, resolve, internal notes, tags,
+      and ticket creation (for the live demo). OAuth
+      <code>client_credentials</code>, live-verified &mdash; a Zendesk MCP
+      doesn&rsquo;t exist, which is consistent with the deliberate choice to
+      use REST for every deterministic path.
+    </p>
+  </div>
+  <div>
+    <h3>Remote REST API</h3>
+    <p>
+      The system was built against Remote&rsquo;s real Sandbox API, not guessed
+      from the docs. Every request/response shape was verified live.
+      <code>normalizeEmployment()</code> bridges the real API&rsquo;s nested
+      shape to the mock&rsquo;s flat one so the policy engine and letter
+      generator never need to know which source answered. Remote&rsquo;s MCP
+      server is read-only here &mdash; not because it lacks writes (it has
+      them), but because it authenticates as a user via OAuth2 PKCE, which is
+      the wrong shape for an unattended backend service that must retry
+      idempotently and attribute actions to a system actor.
+    </p>
+  </div>
+  <div>
+    <h3>OpenAI</h3>
+    <p>
+      <code>gpt-4o-mini</code> for classification and summarisation only.
+      Every LLM call returns validated JSON with an exact schema; the call is
+      retried up to three times with backoff, and any continued failure (network
+      error, bad JSON, invalid shape) falls back to deterministic rule-based
+      logic. Every result is tagged <code>source: "llm"</code> or
+      <code>"rule_based_fallback"</code>, so which path answered is never
+      implicit. The LLM seam was deliberately kept narrower for UC-06 and UC-08
+      than for UC-01: there the LLM only drafts display/audit text from
+      already-decided facts, and the text is never read back into a decision or
+      a payload. A narrative-faithfulness judge checks whether the drafted
+      prose invented figures or dropped jurisdictions &mdash; its verdict is
+      attached for a specialist to see, never read by any gate, and it fails
+      open to an explicit <code>not_evaluated</code> rather than fabricating a
+      verdict.
+    </p>
+  </div>
+  <div>
+    <h3>Supabase (Postgres)</h3>
+    <p>
+      The durable operational state. <code>audit_log</code> (append-only
+      immutable trail), <code>audit_trace</code> (per-attempt, not just
+      per-decision), <code>cases</code> (mutable current state),
+      <code>review_queue</code>, <code>documents</code>,
+      <code>consent_records</code>, <code>request_artifacts</code>,
+      <code>extracted_requirements</code>, <code>uc06_amendments</code>,
+      <code>uc08_dossiers</code>, and <code>uc08_treaty_citation_vectors</code>
+      (pgvector for UC-08&rsquo;s embedding-similarity treaty retrieval). RLS
+      enabled with zero policies on every table &mdash; a backend-only service
+      model, not a per-user one. Two backends reach it: the Node app connects
+      as the <code>postgres</code> role over a direct connection string, and
+      n8n writes <code>audit_log</code> through a Supabase API-key credential,
+      because the raw host/port/user/password connection n8n&rsquo;s Postgres
+      node needs never existed for this account. <code>cases</code> and
+      <code>audit_log</code> are never conflated.
+    </p>
+  </div>
+  <div>
+    <h3>Webhooks</h3>
+    <p>
+      The live n8n workflows receive Zendesk ticket events via webhook
+      triggers, scoped to test-tagged tickets with a tag-based single-fire
+      guard: fire only while none of the automation&rsquo;s own outcome tags
+      are present. That guard replaced an original <code>status: new</code>
+      condition, which could never match &mdash; this Zendesk account moves
+      agent-created tickets straight to <code>Open</code>. That guard is now
+      <strong>confirmed firing on a real ticket</strong> &mdash; Zendesk
+      ticket&nbsp;#6 went from customer comment to solved, tagged and audited in
+      about five seconds. UC-01 is so far the only one of the nine triggered this
+      way; the other eight are driven by webhook POSTs.
+    </p>
+  </div>
+</div>
+
+<h2 id="documentation">4. Documentation as part of &ldquo;done&rdquo;</h2>
+
+<p>
+  This page is itself evidence of the discipline. Every build decision in the
+  repo carries a &ldquo;why&rdquo; entry in <code>docs/BUILD-LOG.md</code>&rsquo;s
+  decision log (§4), including bugs that were found only by running against
+  live services and the reasoning behind architectural choices.
+</p>
+
+<h3>The evidence-tagging system</h3>
+
+<div class="tag-key">
+  <p>
+    Every claim about Remote&rsquo;s API, Zendesk&rsquo;s behaviour, or the
+    underlying business logic is tagged with exactly the confidence it
+    deserves:
+  </p>
+  <p>
+    <code>[CONFIRMED]</code> &mdash; verified live against the real Sandbox
+    or real Zendesk account |
+    <code>[VENDOR-PUBLIC]</code> &mdash; from Remote's public product and support content |
+    <code>[INFERRED]</code> &mdash; reasoned from strong evidence |
+    <code>[PROPOSED]</code> &mdash; a design choice, not a discovered fact
+  </p>
+</div>
+
+<p>
+  This matters because <strong>a reviewer who catches one overstatement
+  discounts everything else</strong>. The status tables in
+  <code>README.md</code> and <code>docs/BUILD-LOG.md</code> are load-bearing:
+  if something says &ldquo;not built&rdquo; or &ldquo;not yet confirmed&rdquo;,
+  it really isn&rsquo;t. The same discipline has repeatedly been applied
+  against this project&rsquo;s own earlier claims &mdash; the note in
+  <code>workflows/README.md</code> correcting &ldquo;execution 10 ran through
+  to audit&rdquo; exists because that claim turned out to be false: the node
+  was pinned, and a pinned n8n node reports success without touching the
+  database. Finding and publishing that was more useful than the original
+  claim was.
+</p>
+
+<p>
+  The repo also shows how a system is documented for AI collaboration:
+  <code>CLAUDE.md</code> carries explicit continuity rules,
+  gotchas-already-paid-for, and a session log that tracks what changed in each
+  working session &mdash; because the project was built with AI assistance, and
+  documenting for AI-driven workflows is what makes that reproducible.
+</p>
+
+<h2 id="demonstrates">What the repo demonstrates</h2>
+
+<p>
+  Beyond the code, this project was built to demonstrate four things that are
+  genuinely hard in CX automation:
+</p>
+
+<ol>
+  <li>
+    <strong>Measuring impact, not just shipping features.</strong> The metrics
+    layer is tier-aware, includes &ldquo;stop&rdquo; as a first-class verdict,
+    distinguishes &ldquo;no data&rdquo; from &ldquo;bad data&rdquo;, and is fed
+    by real audit rows written on every recorded decision &mdash; not
+    simulated and not a vanity dashboard.
+  </li>
+  <li>
+    <strong>Knowing when NOT to automate.</strong> UC-07 and UC-08 have no
+    reachable execution path, asserted structurally and behaviorally by test
+    through the code, the store, the API surface and the n8n graph. Four of the
+    nine sidebar panels deliberately render no controls. And UC-09 shows the
+    other half of the judgement: automate the money path, but put an
+    unlowerable floor of two approvers under it.
+  </li>
+  <li>
+    <strong>Named tooling used for actual, defensible reasons.</strong> n8n as
+    the production orchestrator, Zendesk + ZAF as the channel and the HITL
+    interface, Remote&rsquo;s REST API as the backbone, and Supabase as the
+    operational store. Not a stack assembled to check boxes.
+  </li>
+  <li>
+    <strong>Documentation as a first-class deliverable.</strong>
+    <code>BUILD-LOG.md</code>, the evidence-tagging system, this page, and
+    the honesty discipline throughout &mdash; including the corrections.
+  </li>
+</ol>
+
+<h2 id="explore">How to explore the system</h2>
+
+<pre><code>git clone https://github.com/KindnessofGod/remote-cx-automation.git
+cd remote-cx-automation
+npm install                # required — openai, pg, dotenv
+
+npm test                   # 1,300+ tests, 0 failing, hermetic — no network calls ever
+npm run demo               # watch UC-01 decide three tickets, narrated
+npm run scenarios          # every UC-01 §12 scenario, one block each
+npm run metrics            # impact dashboard → demo/metrics.html
+npm run walkthrough        # drives the real HTTP surfaces end to end
+
+# --- the nine use-case APIs (all can run at the same time) ---
+npm run review-api         # UC-01 review API / ZAF sidebar backend → :4020
+npm run uc02-api  # :4050    npm run uc03-api  # :4051
+npm run uc04-api  # :4052    npm run uc05-api  # :4053
+npm run uc06-api  # :4021    npm run uc07-api  # :4054
+npm run uc08-api  # :4023    npm run uc09-api  # :4055
+
+npm run dashboard          # all nine use cases on one page → :4060
+                           #   (a viewer only — start the APIs above first)
+
+# --- hands-on ---
+npm run playground         # act as client, then as specialist, one page → :4030
+npm run chatdemo           # UC-01 as a chat, the real handler behind it → :4046
+npm run remoteui           # UC-06's amendment request from inside "Remote" → :4041
+npm run livedemo           # creates a REAL Zendesk ticket → :4040
+                           #   (needs real Zendesk credentials; everything above does not)</code></pre>
+
+<p>
+  The nine APIs are also <strong>already deployed</strong> at
+  <code>remote-cx-apis.vercel.app</code> (<code>/uc01</code>&hellip;<code>/uc09</code>,
+  plus <code>/__cx/health</code>), so the sidebar can be pointed at a real host
+  without anyone running anything locally. Both a database and an identity
+  verifier are attached, so reads and writes are live; before they were, that
+  deployment returned empty reads and refused every write &mdash; deliberately,
+  for the reasons described above.
+</p>
+
+<p>
+  <strong>Start reading at:</strong> <code>src/uc01/workflow.js</code> (the
+  entire flow, one screen), <code>src/uc01/policyEngine.js</code> (the
+  deterministic gates with no AI), <code>src/metrics/compute.js</code> (the
+  tier-aware verdicts), and <code>docs/BUILD-LOG.md</code> §4
+  (the decision log &mdash; why things are built the way they are).
+</p>
+
+<hr>
+
+
+<p>
+  <strong>Two written explanations exist alongside the code</strong>, because
+  &ldquo;documentation is part of done&rdquo; means different documents for
+  different readers.
+  <a href="WHY-THIS-SHAPE.md"><code>docs/WHY-THIS-SHAPE.md</code></a> is for an
+  engineer about to change something: why the system is shaped this way, taught
+  entirely through defects it actually shipped, because a principle stated in
+  the abstract is unfalsifiable and the same principle stated as
+  &ldquo;here is the row in the database and here is why the obvious fix was
+  wrong&rdquo; is checkable.
+  <a href="FOR-CX-LEADERS.md"><code>docs/FOR-CX-LEADERS.md</code></a> is for the
+  person who would own the queue this sits in front of: what a request is, who
+  decides it, what happens when nobody can, and what is measured &mdash; no code
+  anywhere in it.
+</p>
+<h2 id="decisions">Design decisions worth defending</h2>
+
+<div class="grid-2">
+  <div>
+    <strong>Money is an integer scaled ×100 everywhere.</strong>
+    One module, tested hard. Getting it wrong overpays someone by 100×.
+  </div>
+  <div>
+    <strong>Every n8n workflow is parity-tested against the Node one.</strong>
+    The gates exist twice; one parity test per use case executes the real n8n
+    Code node body in a sandbox and asserts it decides identically. Duplication
+    acknowledged and pinned, not hoped about.
+  </div>
+  <div>
+    <strong><code>cases</code> and <code>audit_log</code> are never conflated.</strong>
+    One is mutable current state, the other is append-only history.
+  </div>
+  <div>
+    <strong>Identity comes from an authenticated signal, never a claim.</strong>
+    In the Node path that&rsquo;s the Remote session; in the n8n path it&rsquo;s
+    the Zendesk-authenticated requester matched against the employment record.
+    Both fail closed.
+  </div>
+  <div>
+    <strong>The letter template has a hard field whitelist.</strong>
+    Compensation cannot leak regardless of what a request asks for.
+  </div>
+  <div>
+    <strong>The audit row is written before the customer-facing action.</strong>
+    True on both paths and <em>live</em>, not drafted: the deployed graph reads
+    gates &rarr; claim &rarr; audit &rarr; route, confirmed by
+    <code>activeVersionId&nbsp;==&nbsp;versionId</code>. Found by checking the
+    destination rather than trusting a green execution.
+  </div>
+  <div>
+    <strong>Every port is allocated in one registry, enforced by a test.</strong>
+    Three separate files each claimed in a comment to have picked a unique
+    port; three were wrong the same way. A comment asserting uniqueness
+    cannot be checked. A test can.
+  </div>
+  <div>
+    <strong>Every test stays hermetic.</strong> Dependencies are injected so no
+    test ever reaches a real network, regardless of what&rsquo;s in the local
+    <code>.env</code>. This was a bug twice &mdash; the fix was structural, not
+    procedural, and a sudden jump in the suite&rsquo;s runtime is now treated
+    as a hermeticity signal in its own right.
+  </div>
+</div>
+
+<footer>
+  Built against Remote&rsquo;s real Sandbox API, a real Zendesk account,
+  and a live n8n instance. Tests are hermetic and run with no credentials.
+  <strong>Status verified 2026-08-18 against the live n8n instance and the live
+  database, not against this project&rsquo;s own notes &mdash; two claims did not
+  survive that check and were corrected above.
+  <code>docs/BUILD-LOG.md</code> §1 is the authoritative snapshot.</strong>
+</footer>
+
+</div>
+</body>
+</html>

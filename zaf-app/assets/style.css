@@ -1,0 +1,777 @@
+/* ---------------------------------------------------------------------------
+ * style.css  —  what the Zendesk sidebar adds on top of the design system
+ * ---------------------------------------------------------------------------
+ * The tokens, cards, badges, buttons and form controls live in
+ * remote-ui.css, which sits NEXT TO this file rather than being fetched from
+ * a server — see the note in iframe.html for why a packaged ZAF bundle has to
+ * carry its own copy, and test/zafApp.test.js for the check that keeps the
+ * copy honest.
+ *
+ * What stays here is genuinely sidebar-specific. A Zendesk sidebar is roughly
+ * 320px wide and lives inside whatever theme the agent has chosen, so this is
+ * a single dense column: the shared `.r-app` shell, its sidebar and its
+ * page-level type scale are all deliberately unused, and everything below is
+ * tuned a size or two down from the full-page surfaces.
+ *
+ * Every class name here is one that main.js or panels.js writes.
+ *
+ * ---------------------------------------------------------------------------
+ * THE DESIGN, AND WHY IT WAS REDONE (2026-08-19)
+ * ---------------------------------------------------------------------------
+ * The project owner's reading of the previous version: "the UI in general is
+ * stressful to look at and not coherent, feels like multiple reports in one."
+ * That was accurate, and the cause was not any one rule below it. The panel had
+ * been built in seven passes — the case card, the WHY block, the gate ladder,
+ * the decision dimensions, the measurements, the role card, the settled
+ * decision — each internally good, and nobody had ever designed the whole page.
+ *
+ * Three decisions hold this version together. Each is a restriction, and the
+ * restriction is the point.
+ *
+ * 1. ONE TYPE SCALE, FOUR ROLES. 15px/600 for the title, 13px for everything
+ *    read as prose, 12px for evidence and secondary text, 11px for section
+ *    labels and identifiers. There used to be eight sizes between 10.5 and 15
+ *    and four weights between 500 and 700, which is what makes a page read as
+ *    several documents: a reader uses size to tell sections apart, and eight
+ *    sizes describe eight sections.
+ *
+ * 2. STATE COLOUR MEANS EXACTLY ONE THING: the state of a finding. Green =
+ *    checked, nothing found. Amber = something to weigh. Red = something no
+ *    approval overrides. A hollow ring = no verdict was reached. The tier glyph
+ *    is the one other coloured mark on the page, and it is a glyph rather than
+ *    a fill. Nothing else — no card, no heading, no rail, no disclosure — takes
+ *    a state colour, because a page where five different things are amber for
+ *    five different reasons has no colour language at all.
+ *
+ * 3. NO CARD INSIDE A CARD. The page is a sequence of bands, each with one
+ *    border. A finding is a ROW with a 2px state rail, not a bordered card
+ *    nested inside a bordered section inside the column. In 320px, three levels
+ *    of nesting costs 36px of horizontal padding and reads as three separate
+ *    documents; one level reads as a list.
+ *
+ * Colour comes entirely from remote-ui.css's tokens, in both themes. Nothing
+ * below defines a colour of its own: the sidebar renders inside the agent's
+ * Zendesk theme, and a palette invented here would be a fourth opinion about
+ * what grey means on a screen that already has two.
+ * ------------------------------------------------------------------------- */
+
+body {
+  margin: 0;
+  padding: 12px;
+  background: var(--r-bg);
+  color: var(--r-text);
+  font-family: var(--r-font);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.app { display: flex; flex-direction: column; gap: 12px; }
+
+/* -- 1. what am I deciding, and for whom ------------------------------------
+   The header answers that in four lines, in the order the question is asked:
+   what this is, who it is about, where it stands, and what a signature does. */
+
+.head { display: flex; flex-direction: column; gap: 6px; }
+
+.title { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+
+/* The employee and the requester. They were rows six lines into a card below
+   the fold; they are the SUBJECT of the decision and belong in its first
+   glance. */
+.r-subject { margin: 0; font-size: 12px; color: var(--r-text-secondary); overflow-wrap: anywhere; }
+
+.badges { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Decision badges match the unified dashboard's treatment exactly — a neutral
+   pill with a state dot and the decision word, not a saturated fill. Same
+   scale, same shape, so "amber dot = a human owes an action" carries from this
+   sidebar to the dashboard table without relearning. */
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+  background: var(--r-surface); border: 1px solid var(--r-border);
+  color: var(--r-text);
+}
+.badge[class*="decision-"]::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--r-dot, var(--r-neutral));
+  flex: none;
+}
+
+/* The state scale, never the chart series palette: an "escalate" that is red
+   here and green on the metrics dashboard is one fact drawn two ways. */
+.decision-auto_resolve { --r-dot: var(--r-dot-settled); }
+.decision-auto_approve { --r-dot: var(--r-dot-settled); }
+.decision-human_review { --r-dot: var(--r-dot-waiting); }
+.decision-route_to_uc04 { --r-dot: var(--r-dot-waiting); }
+.decision-ready_for_approval { --r-dot: var(--r-dot-waiting); }
+.decision-prepared_for_signoff { --r-dot: var(--r-dot-waiting); }
+.decision-dual_approval_required { --r-dot: var(--r-dot-waiting); }
+.decision-triple_approval_required { --r-dot: var(--r-dot-waiting); }
+.decision-off_cycle_adjustment_required { --r-dot: var(--r-dot-waiting); }
+.decision-escalate { --r-dot: var(--r-dot-stopped); }
+.decision-blocked { --r-dot: var(--r-dot-stopped); }
+
+/* A settled human review (main.js's REVIEW_STATUS_LABELS) — the badge state
+   for a case that has actually been decided, distinct from the automation's
+   own `decision-*` classes above so an "Approved" badge never inherits the
+   waiting-amber dot the underlying `human_review` decision would otherwise
+   still carry. */
+.decision-approved { --r-dot: var(--r-dot-settled); }
+.decision-rejected { --r-dot: var(--r-dot-stopped); }
+
+/* -- the posture rail --------------------------------------------------------
+   ONE RISK SENTENCE AND ONE AUTHORITY SENTENCE, in one block.
+
+   There used to be four risk statements on this screen — the tier's name, the
+   request's own level, the panel's `Risk level` row and the routing rollup —
+   each correct about a different subject, all four using the word "risk", and
+   three of them carrying different values. The owner read that as the page
+   contradicting itself. Two of the four moved into "The case record" below the
+   controls; what is left is the one verdict about the request in front of the
+   reader, and the one sentence about what their signature does.
+
+   The tier's colour survives on the rail's edge and its glyph, because the
+   glyph needs a scale to belong to. It is the only place on this page where a
+   state colour describes something other than a finding. */
+
+.r-tier-rail {
+  /* nowrap and flex-start override the shared full-page rule, which wraps a
+     baseline-aligned row of three spans. Here the body is a column, so wrapping
+     drops the glyph onto a line of its own. */
+  display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 9px;
+  padding: 10px 12px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-surface-subtle);
+  border-left: 3px solid var(--r-tier-color, var(--r-border-strong));
+}
+.r-tier-glyph { font-size: 11px; line-height: 1.6; flex: none; }
+.r-tier-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 auto; }
+.tier-low { --r-tier-color: var(--r-dot-settled); }
+.tier-medium { --r-tier-color: var(--r-dot-waiting); }
+.tier-high { --r-tier-color: var(--r-dot-stopped); }
+
+.r-case-risk, .r-tier-name { margin: 0; font-size: 12px; color: var(--r-text-secondary); }
+.r-case-risk strong, .r-tier-name { color: var(--r-text); font-weight: 600; }
+
+/* What a signature does. Divided from the risk sentence rather than run on
+   after it: it is a different kind of claim — a permission, not a finding —
+   and this panel has already paid once for letting those two share a line. */
+.r-tier-means {
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--r-border);
+  font-size: 12px; font-weight: 600; color: var(--r-text);
+}
+
+/* -- 0. what this document is not -------------------------------------------
+   THE ONE BLOCK ON THIS PAGE THAT IS NOT A FINDING, AND MUST STILL BE READ.
+   `dossier.framing` is the disclaimer UC-07 and UC-08 are forbidden to skip.
+   It qualifies everything under it, so it sits directly beneath the header and
+   is never inside a <details> — main.js's renderFraming carries the reasoning.
+
+   IT TAKES NO STATE COLOUR, on purpose (see rule 2 in this file's header).
+   Red here would read as "a finding no approval overrides" and would be the
+   fourth thing on the page competing for the same alarm, on the exact use
+   cases whose findings are the ones a specialist has to weigh. What makes it
+   unmissable instead is position, a full border rather than a rail, and the
+   weight of the text — the three cues nothing else at the top of this column
+   spends. */
+
+.r-framing {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid var(--r-border-strong);
+  border-radius: var(--r-radius-sm);
+  background: var(--r-surface-subtle);
+}
+.r-framing-text {
+  margin: 0;
+  font-size: 12px; font-weight: 600; line-height: 1.5;
+  color: var(--r-text);
+  overflow-wrap: anywhere;
+}
+
+/* -- bands -------------------------------------------------------------------
+   One border per band. Everything inside a band is a row, never another card.
+   `.card` comes from remote-ui.css; these are the sidebar's proportions. */
+
+.card {
+  background: var(--r-surface);
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  padding: 12px;
+  box-shadow: none;
+}
+
+.h2 {
+  margin: 0 0 8px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--r-text-secondary);
+}
+.h3 { margin: 0; font-size: 12px; font-weight: 600; }
+
+.rows { margin: 0; display: grid; grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr); gap: 5px 10px; font-size: 12px; }
+.rows dt { color: var(--r-text-secondary); overflow-wrap: break-word; }
+.rows dd { margin: 0; overflow-wrap: anywhere; }
+
+/* -- 2. what am I being asked ------------------------------------------------
+   The decision sentence and the subject of the request. The sentence used to be
+   700-weight, which turned a five-line paragraph into five lines of shouting;
+   weight is for the words inside a sentence that carry it, not for the
+   sentence. */
+
+.r-lead { display: flex; flex-direction: column; gap: 10px; }
+.reason { margin: 0; font-weight: 400; }
+
+.r-context { display: flex; flex-direction: column; gap: 4px; padding-top: 10px; border-top: 1px solid var(--r-border); }
+.r-trip { display: flex; flex-direction: column; gap: 2px; }
+.r-trip p { margin: 0; }
+.r-trip-route { font-size: 13px; font-weight: 600; }
+
+.flags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.flag {
+  font-family: var(--r-mono); font-size: 11px;
+  padding: 2px 7px; border-radius: 4px;
+  background: var(--r-surface-subtle); color: var(--r-text-secondary);
+  border: 1px solid var(--r-border);
+}
+
+/* -- 3. what needs weighing --------------------------------------------------
+   The point of the panel, and until 2026-08-19 the part a specialist reached
+   last: it sat under the case rows, the reason, the flag chips, a four-line
+   gate note and a 17-row gate table.
+
+   THE ONE RULE THIS BLOCK ENFORCES VISUALLY. A settled tone (a filled green
+   dot) is spent only on a state that means a check RAN and found nothing
+   against the case. Every state that is an ABSENCE of a verdict — unknown,
+   not held, not assessed, excused — is drawn in the OPEN tone as a HOLLOW
+   RING, so "nothing was measured" cannot be skim-read as "nothing was wrong".
+   The word is always rendered as text beside the mark, which is what keeps
+   this legible in monochrome and under CVD; the colour is the third cue, never
+   the carrier. Tones point at the shared STATE scale (--r-dot-*), never at
+   --r-series-*, which is the metrics charts' categorical palette. */
+
+.r-small { font-size: 12px; line-height: 1.45; }
+.muted { color: var(--r-text-muted); margin: 0; }
+.bad { color: var(--r-danger); }
+.state { margin: 0; padding: 12px; color: var(--r-text-secondary); }
+
+.r-basis > * + * { margin-top: 10px; }
+.r-basis, .r-basis * { min-width: 0; overflow-wrap: break-word; }
+
+.r-fact-state {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  color: var(--r-text);
+}
+.r-fact-state::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--r-state-dot, var(--r-neutral));
+}
+.r-fact-state.tone-settled { --r-state-dot: var(--r-dot-settled); }
+.r-fact-state.tone-waiting { --r-state-dot: var(--r-dot-waiting); }
+.r-fact-state.tone-stopped { --r-state-dot: var(--r-dot-stopped); }
+/* A hollow ring, so an absence of a verdict cannot be skim-read as one. */
+.r-fact-state.tone-open::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--r-border-strong);
+}
+.r-fact-state.tone-open { color: var(--r-text-secondary); }
+
+/* A finding is a ROW WITH A RAIL, not a card. See design decision 3 at the top
+   of this file: nesting a bordered card inside a bordered band inside a 320px
+   column is most of why this page read as several documents. */
+.r-basis-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column;
+}
+.r-dimension, .r-measurement, .r-basis-block {
+  padding: 10px 0 10px 10px;
+  border-left: 2px solid var(--r-state-rail, var(--r-border));
+}
+.r-basis-list > * + * { border-top: 1px solid var(--r-border); }
+
+/* THE RAIL IS THE STATE, and this is the one place on the page a state colour
+   is spent. It makes the list scannable in the way the state chips alone never
+   were: a specialist can see at a glance that two findings are open and one is
+   past a limit, before reading a word. The chip beside the label still carries
+   the word, so nothing here depends on colour. An OPEN rail is DASHED as well
+   as neutral — the same "no verdict was reached" grammar the hollow ring and
+   the not-reached gate rung already use. */
+.r-dimension.tone-settled, .r-measurement.tone-settled, .r-basis-block.tone-settled { --r-state-rail: var(--r-dot-settled); }
+.r-dimension.tone-waiting, .r-measurement.tone-waiting, .r-basis-block.tone-waiting { --r-state-rail: var(--r-dot-waiting); }
+.r-dimension.tone-stopped, .r-measurement.tone-stopped, .r-basis-block.tone-stopped { --r-state-rail: var(--r-dot-stopped); }
+.r-dimension.tone-open, .r-measurement.tone-open, .r-basis-block.tone-open {
+  --r-state-rail: var(--r-border-strong);
+  border-left-style: dashed;
+}
+.r-dimension p, .r-measurement p, .r-basis-block p { margin: 0; }
+.r-dimension p + p, .r-measurement p + p, .r-basis-block p + p { margin-top: 4px; }
+.r-dimension-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; flex-wrap: wrap;
+}
+.r-dimension-label { font-size: 12px; font-weight: 600; }
+.r-finding { font-size: 13px; overflow-wrap: anywhere; }
+.r-sub-sentence { color: var(--r-text-secondary); }
+
+/* The finding the decision turned on, marked where it already is rather than
+   restated in a block of its own above the list. The rail stays the STATE's —
+   overloading it with "this is the deciding one" would be the same colour
+   carrying two meanings, which is the habit this restyle is undoing. */
+.r-deciding-mark {
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--r-warn);
+}
+
+/* What an OPEN state IS — printed only for the four states that are absences of
+   a verdict, because those are the ones a reader can misread as a pass. */
+.r-state-means {
+  font-size: 12px; line-height: 1.45;
+  color: var(--r-text-secondary);
+  padding-left: 8px;
+  border-left: 2px solid var(--r-border-strong);
+}
+
+/* Evidence inside a finding: tighter than the record rows, and never bolder
+   than the sentence it supports. */
+.r-dimension .rows, .r-measurement .rows, .r-basis-block .rows {
+  margin-top: 6px;
+  grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr);
+  gap: 3px 10px;
+  font-size: 12px;
+}
+.r-dimension .rows dt, .r-measurement .rows dt, .r-basis-block .rows dt { color: var(--r-text-muted); }
+.r-dimension .rows dd, .r-measurement .rows dd, .r-basis-block .rows dd {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Where a table that EXCUSED a limit came from. Its own frame, because a
+   suppression whose basis a reader cannot see is a control removed in silence
+   — and because its four rows are deliberately full of stated absences
+   ("none named", "never") that must not read as rows nobody filled in. */
+.r-provenance {
+  margin-top: 8px; padding: 8px 10px;
+  background: var(--r-surface-subtle);
+  border-radius: var(--r-radius-sm);
+}
+.r-provenance-head { margin: 0 0 4px; font-size: 12px; font-weight: 700; }
+
+/* -- the rule behind a finding ----------------------------------------------
+   main.js's renderSources(). Attached to the finding it explains, one click
+   down — a citation list at the foot of the panel is a bibliography, and a
+   bibliography makes the reader work out which finding each document belongs
+   to. Collapsed because it is long and read rarely; three findings' worth of
+   citations open would be most of this page. */
+
+.r-sources { margin-top: 8px; }
+.r-source-group + .r-source-group { margin-top: 10px; }
+.r-source-finding { margin: 8px 0 4px; font-size: 12px; font-weight: 600; }
+.r-citation, .r-caveat { padding-left: 8px; border-left: 2px solid var(--r-border); }
+.r-citation + .r-citation, .r-citation + .r-caveat, .r-caveat + .r-caveat { margin-top: 8px; }
+.r-citation p, .r-caveat p { margin: 0; }
+.r-citation p + p, .r-caveat p + p { margin-top: 2px; }
+.r-citation-title { font-size: 12px; font-weight: 600; }
+.r-citation-standing { font-variant-numeric: tabular-nums; }
+.r-citation-path { font-family: var(--r-mono); font-size: 11px; overflow-wrap: anywhere; }
+/* A caveat is drawn as a caveat and never as a citation: a contradicted finding
+   is one whose basis you now know the limits of, not evidence for the opposite
+   conclusion. */
+.r-caveat { border-left-style: dashed; border-left-color: var(--r-dot-waiting); }
+.r-caveat-head { font-size: 12px; font-weight: 600; color: var(--r-warn); }
+
+/* The decision facts bundle (UC-02/UC-03), same row grammar as a finding. */
+.r-facts { display: flex; flex-direction: column; gap: 6px; }
+.r-fact { padding-left: 10px; border-left: 2px solid var(--r-border); }
+.r-fact p { margin: 0; }
+.r-fact-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.r-fact-label { color: var(--r-text-secondary); }
+.r-fact-value { font-weight: 600; overflow-wrap: anywhere; min-width: 0; font-variant-numeric: tabular-nums; }
+.r-fact.is-unknown { border-left-style: dashed; border-left-color: var(--r-border-strong); }
+.r-fact.is-unknown .r-fact-value { font-weight: 600; color: var(--r-text-secondary); font-style: italic; }
+
+/* WHO THIS IS ABOUT — the person the decision concerns, and who filed it.
+   Deliberately the SAME row grammar as the decision-facts bundle above: both
+   are a labelled value with the server's own sentence underneath, and inventing
+   a second grammar for one shape is where eight type sizes came from. No card
+   inside a card, no new colour, no new size — the block is new, the vocabulary
+   it is drawn in is not. */
+.r-subject-card { display: flex; flex-direction: column; gap: 6px; }
+.r-subject-card > .h2 { margin: 0; }
+.r-subject-card > .r-detail-head { margin: 4px 0 0; }
+
+/* What is NOT known, collected rather than left to be noticed by its absence. */
+.r-unknowns { padding-top: 4px; }
+.r-unknowns .h3 { margin: 0 0 6px; }
+.r-unknown { padding-left: 8px; border-left: 2px dashed var(--r-border-strong); }
+.r-unknown + .r-unknown { margin-top: 8px; }
+.r-unknown p { margin: 0; }
+.r-unknown p + p { margin-top: 2px; }
+.r-unknown-what { font-size: 12px; font-weight: 600; }
+
+/* The fallback block for a `deciding` that names no finding of its own. */
+.r-deciding { padding-left: 10px; border-left: 2px solid var(--r-dot-waiting); }
+.r-deciding p { margin: 0; }
+.r-deciding-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--r-text-secondary); }
+.r-deciding .r-finding { margin-top: 3px; }
+
+/* -- 4. the controls ---------------------------------------------------------
+   Nothing above this line is a control and nothing below it is a finding. */
+
+.hint { margin: 0 0 8px; color: var(--r-text-secondary); font-size: 12px; }
+
+.field { margin-bottom: 8px; }
+.field-label {
+  display: block; margin-bottom: 4px;
+  font-size: 11px; font-weight: 600; color: var(--r-text-secondary);
+}
+.note, .approver-input {
+  width: 100%; box-sizing: border-box;
+  padding: 7px 9px;
+  font: inherit; font-size: 12px;
+  color: var(--r-text);
+  background: var(--r-surface);
+  border: 1px solid var(--r-border-strong); border-radius: var(--r-radius-sm);
+}
+.note { resize: vertical; }
+.note:focus, .approver-input:focus { border-color: var(--r-brand); outline: none; }
+.note:focus-visible, .approver-input:focus-visible { outline: 2px solid var(--r-brand); outline-offset: 1px; }
+.approver-input { margin-bottom: 6px; }
+
+.buttons { display: flex; gap: 8px; margin-top: 8px; }
+.btn {
+  flex: 1;
+  padding: 8px 10px;
+  font: inherit; font-size: 12px; font-weight: 600;
+  border-radius: var(--r-radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.btn.approve { background: var(--r-brand); color: var(--r-on-brand); }
+.btn.decline,
+.btn.deny { background: var(--r-surface); color: var(--r-text); border-color: var(--r-border-strong); }
+.btn.decline:hover,
+.btn.deny:hover { background: var(--r-surface-hover); }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn:focus-visible { outline: 2px solid var(--r-brand); outline-offset: 2px; }
+
+.action-status { margin: 8px 0 0; font-size: 12px; min-height: 1em; color: var(--r-text-secondary); }
+.action-status.ok { color: var(--r-ok); font-weight: 600; }
+.action-status.bad { color: var(--r-danger); font-weight: 600; }
+
+.uc06-dual-approval { display: flex; flex-direction: column; gap: 12px; }
+.role-block {
+  margin: 0; padding: 10px 12px;
+  border: 1px solid var(--r-border); border-radius: var(--r-radius-sm);
+}
+.role-block .h3 { padding: 0 4px; margin-bottom: 6px; }
+.role-block.is-hidden { display: none; }
+
+.note-echo {
+  margin: 6px 0 0; padding: 8px 10px;
+  background: var(--r-surface-subtle); border-radius: var(--r-radius-sm);
+  font-size: 12px; color: var(--r-text-secondary);
+}
+
+/* -- the outcome badge -------------------------------------------------------
+   The first thing in the DECISION card. Every string is the server's; the tone
+   only picks which state colour the rail takes. */
+
+.r-outcome {
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-surface-subtle);
+  border-left: 3px solid var(--r-outcome-color, var(--r-border-strong));
+}
+.r-outcome.tone-settled { --r-outcome-color: var(--r-dot-settled); }
+.r-outcome.tone-waiting { --r-outcome-color: var(--r-dot-waiting); }
+.r-outcome.tone-stopped { --r-outcome-color: var(--r-dot-stopped); }
+.r-outcome-label {
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.05em; text-transform: uppercase;
+}
+.r-outcome-remote {
+  display: block; margin-top: 2px;
+  font-family: var(--r-mono); font-size: 11px; color: var(--r-text-secondary);
+}
+.r-outcome-detail { margin: 3px 0 0; font-size: 12px; color: var(--r-text-secondary); }
+
+/* -- approval meter ---------------------------------------------------------- */
+.r-approval-meter { margin-bottom: 10px; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+.r-approval-slots { display: flex; gap: 3px; }
+.r-approval-slot {
+  width: 18px; height: 4px; border-radius: 2px;
+  background: var(--r-border-strong);
+}
+.r-approval-slot.filled { background: var(--r-dot-settled); }
+
+/* -- who decides this, and in what capacity ---------------------------------
+   main.js's renderApprovalRoles(). It sits inside the DECISION card, above the
+   branch between the controls and the refusal sentence, so it is legible in
+   both states.
+
+   THE STATE WORD IS ALWAYS TEXT. "recorded" / "outstanding" are rendered as
+   words. The rail is neutral rather than coloured: on this page a state colour
+   means the state of a FINDING, and an unfilled approval slot is neither a
+   finding nor a risk — it is work somebody still owes. Colouring it amber was
+   one of the five different things that used to be amber here. */
+
+.r-capacity { margin-bottom: 10px; }
+.r-capacity .h3 { margin: 0 0 4px; }
+.r-capacity-summary { margin: 0; font-size: 12px; color: var(--r-text-secondary); }
+
+.r-capacity-list {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.r-capacity-role { padding-left: 10px; border-left: 2px solid var(--r-border); }
+.r-capacity-role p { margin: 2px 0 0; }
+.r-capacity-role.is-filled { border-left-color: var(--r-text-secondary); }
+.r-capacity-role.is-open { border-left-style: dashed; }
+.r-capacity-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.r-capacity-label { font-size: 12px; font-weight: 600; }
+.r-capacity-state {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--r-text-muted);
+}
+.r-capacity-role.is-open .r-capacity-state { color: var(--r-text); }
+.r-capacity-filled { color: var(--r-text-secondary); }
+.r-capacity-id { font-family: var(--r-mono); font-size: 11px; }
+.r-capacity-you.ok { color: var(--r-ok); font-weight: 600; }
+.r-capacity-you.bad { color: var(--r-danger); font-weight: 600; }
+.r-capacity-outstanding { margin-top: 8px; font-weight: 600; }
+.r-capacity-unknown { margin-top: 8px; }
+
+/* -- "Acting as": which role's form you are looking at -----------------------
+   main.js's attachRolePicker(). Shaped after src/portal/'s "Signed in as"
+   persona picker, which solves the same problem for requesters — a labelled
+   <select> and a one-line note saying what that role decides.
+
+   `is-hidden` is the whole switching mechanism, and it is display only: the
+   other role's form stays in the DOM, keeps its own fixed `role`, and is one
+   selection away. Nothing here is an authorisation. */
+
+.r-role-picker {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px dashed var(--r-border);
+}
+.r-role-picker .field { margin: 0; }
+.r-role-picker-select {
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit; font-size: 12px;
+  color: var(--r-text);
+  background: var(--r-surface);
+  border: 1px solid var(--r-border-strong); border-radius: var(--r-radius-sm);
+}
+.r-role-picker-select:focus-visible { outline: 2px solid var(--r-brand); outline-offset: 1px; }
+.r-role-picker-note { margin: 6px 0 0; }
+.r-role-picker p + p { margin-top: 4px; }
+
+/* -- a settled decision, as facts -------------------------------------------
+   main.js's renderActions(), non-actionable branch. The rows themselves reuse
+   .rows, so a closed decision reads like the rest of the panel rather than
+   like a paragraph of prose. */
+
+.r-settled-headline { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.r-capacity + .r-settled-headline { margin-top: 4px; }
+.r-settled-finality { margin-top: 8px; }
+
+/* -- 5. everything else, collapsed -------------------------------------------
+   main.js's renderDetails(). The cleared checks, the gate order, the audit
+   strings, the case record and the routing rollup.
+
+   Each is genuinely wanted, sometimes, by someone tracing a case afterwards.
+   None of them is wanted by the person deciding, before — and they were, all of
+   them, above the controls.
+
+   A DISCLOSURE IS A ROW, NOT A BUTTON. It should read as a line of the page
+   that can be opened, not as an action competing with Approve. */
+
+.r-details { display: flex; flex-direction: column; gap: 0; }
+.r-details > * + * { border-top: 1px solid var(--r-border); }
+
+details > summary {
+  cursor: pointer;
+  padding: 9px 0;
+  list-style: none;
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; font-weight: 600; color: var(--r-text);
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before {
+  content: "";
+  flex: none;
+  width: 0; height: 0;
+  border-left: 5px solid var(--r-text-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.12s ease;
+}
+details[open] > summary::before { transform: rotate(90deg); }
+details > summary:focus-visible { outline: 2px solid var(--r-brand); outline-offset: 2px; }
+details > *:not(summary) { margin-bottom: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  details > summary::before { transition: none; }
+}
+
+/* A citation disclosure sits inside a finding, so it is quieter than the
+   section-level ones and indents its contents under the marker. */
+.r-sources > summary { padding: 6px 0; font-weight: 600; color: var(--r-text-secondary); }
+
+/* -- long-form reference prose, inside a finding ----------------------------
+   main.js's renderNarrativeBlock(). Same weight and the same quiet as a
+   citation disclosure, because it is the same KIND of thing: material the
+   finding above points at, read once the reader knows they have a choice to
+   make, not to discover that they have one. The entries are rowed off a rail
+   so the list reads as a list of alternatives rather than as one long
+   paragraph that happens to have breaks in it — and the rail is deliberately
+   the neutral border and never a state colour, because none of these entries
+   is a verdict and nothing here ranks them. */
+.r-longform { margin-top: 6px; }
+.r-longform > summary { padding: 6px 0; font-weight: 600; color: var(--r-text-secondary); }
+.r-longform > .r-sub-sentence {
+  padding-left: 8px;
+  border-left: 2px solid var(--r-border);
+}
+.r-longform > .r-sub-sentence + .r-sub-sentence { margin-top: 8px; }
+
+.r-detail-head {
+  margin: 10px 0 4px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--r-text-secondary);
+}
+
+/* The machine-readable reason. Quieter than the prose it belongs to: the words
+   are the answer, the slug is the handle you search `audit_log` and the metrics
+   exception ranking by. */
+.reason-slug { font-family: var(--r-mono); font-size: 11px; }
+.r-case-id { font-family: var(--r-mono); font-size: 11px; overflow-wrap: anywhere; }
+
+/* -- which rung decided, and the ladder under it ----------------------------
+   A gate that never ran approved of NOTHING (docs/GATES.md rule 2). The dashed
+   rail and the muted name are the visual half of that distinction; the word
+   "not reached" beside it is the half that survives a monochrome screenshot. */
+
+.gate-ladder { margin-top: 4px; }
+.gate-ladder-list {
+  list-style: none; margin: 6px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.gate-rung { padding-left: 8px; border-left: 2px solid var(--r-border); }
+.gate-rung p { margin: 2px 0 0; }
+.gate-rung-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.gate-rung-no { font-family: var(--r-mono); color: var(--r-text-muted); font-size: 11px; }
+.gate-rung-name { font-size: 12px; font-weight: 600; }
+.gate-rung-status {
+  margin-left: auto;
+  font-size: 11px; color: var(--r-text-muted);
+  letter-spacing: 0.03em; text-transform: uppercase;
+}
+.gate-rung.is-passed { border-left-color: var(--r-dot-settled); }
+.gate-rung.is-decided { border-left-color: var(--r-dot-waiting); }
+.gate-rung.is-decided .gate-rung-status { color: var(--r-warn); font-weight: 700; }
+.gate-rung.is-not_reached { border-left-style: dashed; border-left-color: var(--r-border-strong); }
+.gate-rung.is-not_reached .gate-rung-name { color: var(--r-text-secondary); font-weight: 400; }
+
+/* The routing rollup, where a rollup belongs: with the provenance, not beside
+   the verdict about the request. It travels with the server's own sentence
+   saying it must not be read as the assessment itself. */
+.r-rollup { margin-top: 8px; }
+.r-rollup p { margin: 0; }
+.r-rollup-value { font-size: 12px; font-weight: 600; }
+
+/* -- states the sidebar can be in, other than showing a case ----------------- */
+
+.state-block {
+  padding: 12px 14px;
+  border-radius: var(--r-radius);
+  background: var(--r-surface);
+  border: 1px solid var(--r-border);
+  border-left: 3px solid var(--r-border-strong);
+}
+.state-block.state-bad { border-left-color: var(--r-dot-stopped); background: var(--r-danger-subtle); }
+.state-block.state-muted { border-left-color: var(--r-border-strong); }
+.state-block.state-loading { border-left-color: var(--r-brand); display: flex; align-items: center; gap: 9px; }
+
+.state-title { margin: 0; font-size: 13px; font-weight: 600; color: var(--r-text); }
+.state-body { margin: 6px 0 0; font-size: 12px; color: var(--r-text-secondary); }
+.state-detail {
+  margin: 8px 0 0; padding: 8px 10px;
+  background: var(--r-surface-subtle); border-radius: var(--r-radius-sm);
+  font-family: var(--r-mono); font-size: 11px;
+  color: var(--r-text-secondary);
+  overflow-wrap: anywhere;
+}
+.state-retry { margin-top: 10px; flex: none; width: 100%; }
+
+.spinner {
+  width: 14px; height: 14px; flex: none;
+  border: 2px solid var(--r-border-strong);
+  border-top-color: var(--r-brand);
+  border-radius: 50%;
+  animation: r-spin 0.7s linear infinite;
+}
+@keyframes r-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
+
+.also-matched {
+  margin: 0; padding: 8px 10px;
+  border-radius: var(--r-radius-sm);
+  background: var(--r-warn-subtle); color: var(--r-warn);
+  font-size: 12px;
+}
+
+/* Confirmation of a decision the agent just made.
+   Rendered above the header, and it persists — the panel re-reads from the
+   server after an approve/decline, and the inline status line under the buttons
+   is destroyed by that re-render. An approver on a payroll-adjacent control
+   must not have to go hunting for evidence that their click landed. */
+.flash {
+  border-radius: var(--r-radius-sm);
+  padding: 12px 14px;
+  border: 1px solid var(--r-ok-border, #9ccfae);
+  background: var(--r-ok-bg, #eaf6ee);
+  color: var(--r-ok-fg, #1c5230);
+}
+.flash strong { display: block; font-size: 13px; }
+.flash p { margin: 4px 0 0; font-size: 12px; opacity: 0.85; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .flash {
+    border-color: #2f6b45;
+    background: #14301f;
+    color: #b8e6c8;
+  }
+}
+:root[data-theme="dark"] .flash {
+  border-color: #2f6b45;
+  background: #14301f;
+  color: #b8e6c8;
+}
+
+/* ---------------------------------------------------------------------------
+   The travel letter this answer is allowed to become — READ-ONLY here
+   ---------------------------------------------------------------------------
+   An ordinary card, deliberately: it is information, not a control, and giving
+   it its own colour would read as a state the specialist is expected to act on.
+   The one thing it needs is air around the three trip rows, which sit between
+   two paragraphs of body copy and otherwise run into both of them.
+
+   Why there is no button rule here: there is no button. See renderLetterOffer
+   in main.js — accepting the offer needs the traveller's own authenticated
+   session, which this sidebar does not have and must not appear to. */
+.r-letter-offer .rows { margin: 10px 0; }
+.r-letter-offer p + p { margin-top: 8px; }

@@ -1,0 +1,642 @@
+[
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Classify Request (LLM)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Fetch Employment (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Reply + Solve Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Flag for Specialist Review",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Persist Case",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Carry Context After Records",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Queue Gate — Specialist Needed?",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Queue for Specialist Review",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Fetch Legal Entity (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Fetch Countries (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Out of Scope?",
+    "type": "n8n-nodes-base.if"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Write Out-of-Scope Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC01_ID",
+    "node": "Reply Out of Scope",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Expense Submission Webhook",
+    "type": "n8n-nodes-base.webhook"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Fetch Employment (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Fetch Expense (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Fetch Expense Categories (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Check Duplicate Receipt (Supabase)",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Classify Expense (LLM)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Append Audit Log",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Carry Context Forward",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Route by Decision",
+    "type": "n8n-nodes-base.switch"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Approve Expense (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Carry Context After Approve",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Resolve Expense Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Flag Blocked Expense",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Flag Expense For Review",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Escalate Expense Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Unrecognised Expense Decision",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Derive Receipt Fingerprint",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Fetch Receipt Matches (Supabase)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Create Expense Record",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC02_ID",
+    "node": "Carry Context After Expense Record",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Travel Inquiry Webhook",
+    "type": "n8n-nodes-base.webhook"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Fetch Employment (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Fetch Countries (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Classify Inquiry (LLM)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Append Audit Log",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Carry Context Forward",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Route by Decision",
+    "type": "n8n-nodes-base.switch"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Render Informational Answer",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Reply + Solve Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Flag For Formal Letter Review",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Escalate Travel Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Route To UC-04",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Unrecognised Travel Decision",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC03_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Workation Request Webhook",
+    "type": "n8n-nodes-base.webhook"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Fetch Employment (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Create Authorization Record",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Append Audit Log",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Route by Decision",
+    "type": "n8n-nodes-base.switch"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Flag Awaiting Specialist Approval",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Flag Blocked Workation",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Escalate Workation Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Unrecognised Workation Decision",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC04_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Resignation Request Webhook",
+    "type": "n8n-nodes-base.webhook"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Fetch Employment (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Create Resignation Record",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Append Audit Log",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Route by Decision",
+    "type": "n8n-nodes-base.switch"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Flag Awaiting HR Ops Sign-off",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Escalate Resignation Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Unrecognised Resignation Decision",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC05_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Amendment Request Webhook",
+    "type": "n8n-nodes-base.webhook"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Fetch Employment (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Fetch Country Schema (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Fetch Payroll Runs (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Create Amendment Record",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Append Audit Log",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Route by Decision",
+    "type": "n8n-nodes-base.switch"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Flag Awaiting Dual Approval",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Escalate Amendment Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC06_ID",
+    "node": "Unrecognised Amendment Decision",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC07_ID",
+    "node": "Relocation Request Webhook",
+    "type": "n8n-nodes-base.webhook"
+  },
+  {
+    "workflowId": "WORKFLOW_UC07_ID",
+    "node": "Create Dossier Record",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC07_ID",
+    "node": "Append Audit Log",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC07_ID",
+    "node": "Escalate Relocation Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC07_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC07_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC07_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC07_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Tax Inquiry Webhook",
+    "type": "n8n-nodes-base.webhook"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Classify Inquiry (LLM)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Create Dossier Record",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Append Audit Log",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Escalate Tax Inquiry Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC08_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Adjustment Request Webhook",
+    "type": "n8n-nodes-base.webhook"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Fetch Employment (Remote)",
+    "type": "n8n-nodes-base.httpRequest"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Create Adjustment Record",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Append Audit Log",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Carry Context Forward",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Route by Decision",
+    "type": "n8n-nodes-base.switch"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Flag Awaiting Dual Approval",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Flag Awaiting Triple Approval",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Escalate Adjustment Ticket",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Unrecognised Adjustment Decision",
+    "type": "n8n-nodes-base.zendesk"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Claim Ticket (Idempotency)",
+    "type": "n8n-nodes-base.supabase"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Carry Context After Claim",
+    "type": "n8n-nodes-base.code"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Duplicate Delivery — Stop",
+    "type": "n8n-nodes-base.noOp"
+  },
+  {
+    "workflowId": "WORKFLOW_UC09_ID",
+    "node": "Append Audit Trace",
+    "type": "n8n-nodes-base.supabase"
+  }
+]

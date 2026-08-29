@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>UC-01 Playground — Employment Verification</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!-- The shared design system first, this surface's own additions second, so a
+     local rule can still override a shared one. -->
+<link rel="stylesheet" href="/remote-ui.css" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="r-app">
+
+  <aside class="r-sidebar">
+    <div class="r-logo">
+      <span class="r-logo-mark" aria-hidden="true">R</span>
+      <span class="r-logo-word">remote</span>
+    </div>
+
+    <nav class="r-nav" aria-label="Scenario one-click fills">
+      <div class="r-nav-label">UC-01 §12 scenarios</div>
+      <!-- app.js fills this with one button per scenario; clicking one fills the
+           form on the right. They live in the sidebar because there are seven of
+           them and they are navigation, not part of the ticket being written. -->
+      <div class="scenario-list" id="examples"></div>
+    </nav>
+
+    <div class="r-spacer"></div>
+
+    <p class="sidebar-foot">
+      In-memory only — nothing here reaches Supabase or a real Zendesk ticket.
+      A demo/testing aid over the real UC-01 decision flow.
+    </p>
+  </aside>
+
+  <main class="r-main">
+    <header>
+      <h1 class="r-page-title">UC-01 Playground</h1>
+      <!-- The four numbered cards below already say what each step is and who
+           you are acting as; narrating them here said it twice. What is left is
+           the one thing the steps cannot tell you — that the decision is the
+           real one, not a demo re-implementation. -->
+      <p class="r-page-sub">
+        Every ticket sent here runs through the real classifier, identity check and policy gates —
+        <code>handleVerificationTicket()</code> itself, not a copy of it.
+      </p>
+    </header>
+
+    <div class="r-stack">
+
+      <section class="r-card">
+        <div class="r-card-head">
+          <h2 class="r-card-title"><span class="step-num" aria-hidden="true">1</span> Act as the client — send a ticket</h2>
+        </div>
+        <div class="r-card-body">
+          <form id="ticket-form">
+            <label class="field">
+              <span>What does the client say?</span>
+              <textarea id="ticket-text" rows="3" placeholder="Please send me a standard employment verification letter."></textarea>
+            </label>
+
+            <div class="field-row">
+              <label class="field">
+                <span>Logged in as</span>
+                <select id="logged-in-select">
+                  <option value="">Not logged in</option>
+                  <option value="emp_active_001">Amara Okafor (active, NG)</option>
+                  <option value="emp_active_003">Priya Nair (active, NG)</option>
+                  <option value="emp_terminated_002">Kofi Mensah (terminated)</option>
+                  <option value="emp_uk_001">Oliver Hughes (active, UK)</option>
+                  <option value="emp_de_001">Lena Müller (active, DE)</option>
+                  <option value="emp_de_probation_001">Marcus Becker (active, DE, probation)</option>
+                  <option value="emp_pl_001">Katarzyna Kowalski (active, PL)</option>
+                </select>
+              </label>
+
+              <!-- The one genuinely required field on this form: the workflow
+                   cannot run without an employment id to read. The select is
+                   pre-filled, but the requirement is real, so it is marked. -->
+              <label class="field">
+                <span>Request is about<span class="r-req" aria-hidden="true">*</span><span class="r-sr-only">required</span></span>
+                <select id="about-select">
+                  <option value="emp_active_001">Amara Okafor (active, NG)</option>
+                  <option value="emp_active_003">Priya Nair (active, NG)</option>
+                  <option value="emp_terminated_002">Kofi Mensah (terminated)</option>
+                  <option value="emp_uk_001">Oliver Hughes (active, UK)</option>
+                  <option value="emp_de_001">Lena Müller (active, DE)</option>
+                  <option value="emp_de_probation_001">Marcus Becker (active, DE, probation)</option>
+                  <option value="emp_pl_001">Katarzyna Kowalski (active, PL)</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="field-row">
+              <label class="field">
+                <span>Or custom employment ID</span>
+                <input type="text" id="custom-about-id" placeholder="e.g. emp_active_001" />
+              </label>
+              <label class="field">
+                <span>Or custom logged-in ID</span>
+                <input type="text" id="custom-logged-in-id" placeholder="leave blank to use dropdown" />
+              </label>
+            </div>
+
+            <div class="field-row checkboxes">
+              <label class="check"><input type="checkbox" id="attachment-checkbox" /> A file is attached</label>
+              <label class="check"><input type="checkbox" id="consent-checkbox" /> Third-party consent on record</label>
+            </div>
+
+            <details class="advanced">
+              <summary>Advanced</summary>
+              <label class="check">
+                <input type="checkbox" id="simulate-low-confidence" />
+                Simulate a low-confidence classification
+              </label>
+              <p class="muted small">
+                §12.6 (non-English / ambiguous request). The rule-based fallback classifier can't
+                naturally produce "standard-looking text + low confidence" together — its intent and
+                confidence signals come from the same text — so this injects a fixed low-confidence
+                result instead of calling the real classifier, the same technique
+                <code>src/uc01/scenarios.js</code> uses. Off by default so what you see is the real path.
+              </p>
+            </details>
+
+            <button type="submit" class="r-btn r-btn-primary" id="submit-btn">Send ticket</button>
+          </form>
+
+          <!-- The decision lands here with no focus change, so it is a live
+               region — otherwise a keyboard user submits and hears nothing. -->
+          <div id="ticket-result" role="status" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <div class="dashboard-grid">
+        <section class="r-card queue-card">
+          <div class="r-card-head">
+            <h2 class="r-card-title"><span class="step-num" aria-hidden="true">2</span> Review queue</h2>
+          </div>
+          <p class="empty-note" id="queue-empty">No cases yet — send a ticket above.</p>
+          <div class="r-table-wrap">
+            <table id="queue-table" class="r-table hidden">
+              <thead>
+                <tr>
+                  <th scope="col">Ticket</th><th scope="col">About</th><th scope="col">Requester</th>
+                  <th scope="col">Decision</th><th scope="col">Tier</th><th scope="col">Status</th>
+                  <th scope="col">Review</th>
+                </tr>
+              </thead>
+              <tbody id="queue-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="r-card detail-card">
+          <div class="r-card-head">
+            <h2 class="r-card-title"><span class="step-num" aria-hidden="true">3</span> Case detail — act as the specialist</h2>
+          </div>
+          <div class="r-card-body">
+            <div id="case-detail"><p class="muted small">Select a case from the queue.</p></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="r-card">
+        <div class="r-card-head">
+          <h2 class="r-card-title"><span class="step-num" aria-hidden="true">4</span> Audit log — immutable, append-only</h2>
+        </div>
+        <p class="empty-note" id="audit-empty">No audit entries yet.</p>
+        <div class="r-table-wrap">
+          <table id="audit-table" class="r-table hidden">
+            <thead>
+              <tr>
+                <th scope="col">At</th><th scope="col">Use case</th><th scope="col">Action</th>
+                <th scope="col">Actor</th><th scope="col">Tier</th><th scope="col">Reason</th>
+                <th scope="col">Details</th>
+              </tr>
+            </thead>
+            <tbody id="audit-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

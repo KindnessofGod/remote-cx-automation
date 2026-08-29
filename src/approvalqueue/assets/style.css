@@ -1,0 +1,110 @@
+/* ---------------------------------------------------------------------------
+   style.css — approval-queue specifics, on top of the shared design system
+   (remote-ui.css). Only what this surface needs and the system lacks: the tile
+   row, the item card, the ticket badge states and the three verdict tones.
+   Colours come from the system's tokens — nothing new is invented.
+   ------------------------------------------------------------------------- */
+
+/* `hidden` must WIN. The shared sheet gives banners and cards an explicit
+   display, which outranks the UA's `[hidden] { display: none }`. Paid for once
+   on the audit viewer; not paid for twice. */
+[hidden] { display: none !important; }
+
+.sidebar-foot { margin: 12px 6px 0; font-size: 12px; color: var(--r-text-secondary); line-height: 1.5; }
+.mode-box { display: flex; flex-direction: column; gap: 4px; padding: 0 6px; }
+.mode-line { margin: 0 0 6px; font-size: 13px; color: var(--r-text-secondary); }
+
+.view-head { margin: 0 0 18px; }
+
+/* -- the four counts -------------------------------------------------------
+   Three tones, because there are three answers: reachable, stuck, and cannot
+   tell. The third has a look of its own precisely so it can never be read as a
+   quiet zero. */
+/* NOT `.r-tile` — in the shared system that is a 44px icon chip, not a stat
+   card, and reusing it collapsed this row on top of the page heading. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 26px; }
+.stat { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; }
+.tile-num { font-size: 30px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tile-note { font-size: 12px; color: var(--r-text-secondary); line-height: 1.45; }
+.stat-bad .tile-num { color: var(--r-danger); }
+.stat-unknown .tile-num { color: var(--r-warn); }
+
+/* -- items ----------------------------------------------------------------- */
+
+.item-card { margin-bottom: 12px; }
+.item-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.item-ident { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.item-decision { font-weight: 600; }
+.item-age { text-align: right; display: flex; flex-direction: column; gap: 2px; }
+
+.fact { display: grid; grid-template-columns: 170px 1fr; gap: 12px; padding: 6px 0; align-items: start; }
+.fact-value { display: flex; flex-direction: column; gap: 3px; word-break: break-word; }
+.fact-value > .r-badge { align-self: flex-start; }
+.ticket-detail { font-size: 12px; line-height: 1.5; }
+.ticket-link { font-weight: 600; }
+
+/* The four ticket states, each visibly distinct — "not checked" must never
+   look like either "confirmed" or "no such ticket". */
+.ticket-confirmed { --r-dot: var(--r-dot-settled); }
+.ticket-not_found { --r-dot: var(--r-dot-stopped); }
+.ticket-none { --r-dot: var(--r-dot-stopped); }
+.ticket-unverified { --r-dot: var(--r-dot-waiting); }
+
+/* WHERE TO ACT / YOUR OPTIONS / NOT HERE.
+   The left border is the only thing this stylesheet decides: the two absences
+   render identical prose shapes and opposite facts, so "nothing may approve
+   this, by design" and "something must approve this and nothing can" must not
+   be the same colour on a page somebody skims. */
+.directions { margin: 10px 0 0; padding: 8px 0 2px 12px; border-left: 3px solid var(--r-border); }
+.directions-exists { border-left-color: var(--r-dot-settled); }
+.directions-none_by_design { border-left-color: var(--r-text-secondary); }
+.directions-none_missing { border-left-color: var(--r-danger); }
+.directions-unknown { border-left-color: var(--r-warn); }
+
+.item-why { margin: 10px 0 0; padding: 10px 12px; border-radius: 8px; line-height: 1.55; font-size: 13px; }
+.why-bad { background: var(--r-danger-subtle); color: var(--r-danger); }
+.why-unknown { background: var(--r-warn-subtle); color: var(--r-warn); }
+.why-ok { background: var(--r-surface-subtle); color: var(--r-text-secondary); }
+.item-also { margin: 6px 0 0; font-size: 12px; }
+
+.progress { margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; }
+
+/* -- stuck groups ---------------------------------------------------------- */
+
+.stuck-group { margin-bottom: 32px; }
+/* The count belongs BESIDE the heading it counts. The shared sheet spaces a
+   section head apart, which stranded the number at the far right of a wide
+   page where it read as a stray figure. */
+.stuck-group .r-section-head { justify-content: flex-start; align-items: center; }
+.stuck-group .r-counter {
+  align-self: center; font-weight: 650; padding: 2px 9px; border-radius: 999px;
+}
+.r-counter.tone-danger { background: var(--r-danger-subtle); color: var(--r-danger); }
+.r-counter.tone-warn { background: var(--r-warn-subtle); color: var(--r-warn); }
+.r-counter.tone-unknown { background: var(--r-warn-subtle); color: var(--r-warn); }
+
+.cell-bad { color: var(--r-danger); font-weight: 600; }
+
+/* The account-level provisioning verdict, printed in EVERY state — a block
+   that only appears when something is wrong is indistinguishable from a
+   check that never ran. */
+.team-verdict { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
+.team-verdict-ok { color: var(--r-text-secondary); }
+.team-verdict-bad { color: var(--r-danger); font-weight: 600; }
+.cell-unknown { color: var(--r-warn); font-weight: 600; }
+
+.surface-card { margin-bottom: 12px; }
+
+/* -- access gate ----------------------------------------------------------- */
+
+.access-card { max-width: 620px; }
+.access-why { font-size: 13px; color: var(--r-text-secondary); line-height: 1.6; }
+.access-howto { font-size: 13px; color: var(--r-text-secondary); line-height: 1.7; padding-left: 20px; }
+
+@media (max-width: 720px) {
+  .fact { grid-template-columns: 1fr; gap: 2px; }
+  .item-head { flex-direction: column; }
+  .item-age { text-align: left; }
+}
+
+.team-head { margin-top: 32px; }

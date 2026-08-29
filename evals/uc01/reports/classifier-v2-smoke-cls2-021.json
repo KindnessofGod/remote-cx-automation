@@ -1,0 +1,96 @@
+{
+  "evaluation": {
+    "version": "classifier-v2",
+    "dataset": "uc01-classifier-golden-v2-remote-aligned",
+    "evaluator": "uc01-classifier-evaluator-v2",
+    "mode": "SMOKE",
+    "selectedCase": "cls2-021",
+    "caseCount": 1
+  },
+  "summary": {
+    "exactPasses": 1,
+    "exactFailures": 0,
+    "exactMatchRate": 1
+  },
+  "results": [
+    {
+      "id": "cls2-021",
+      "category": "third_party_direct",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Direct verification request from an outside entity.",
+      "input": {
+        "text": "This is First Bank. We need to verify this applicant's employment directly with Remote.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "35600978b2dcf86a"
+    }
+  ]
+}

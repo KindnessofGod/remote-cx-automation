@@ -1,0 +1,3809 @@
+{
+  "evaluation": {
+    "version": "classifier-v2.2",
+    "dataset": "uc01-classifier-golden-v2-remote-aligned",
+    "evaluator": "uc01-classifier-evaluator-v2",
+    "evaluatorVersion": "v2-remote-aligned",
+    "mode": "FULL",
+    "selectedCase": null,
+    "caseCount": 48
+  },
+  "summary": {
+    "exactPasses": 48,
+    "exactFailures": 0,
+    "exactMatchRate": 1
+  },
+  "results": [
+    {
+      "id": "cls2-001",
+      "category": "standard_self",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_GENERATE",
+        "HC_PROOF"
+      ],
+      "rationale": "Plain employee request for the standard employment/proof-of-employment letter.",
+      "input": {
+        "text": "Please send me a normal proof-of-employment letter that I can download and give to my bank.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "ffe584f875fdfbf8"
+    },
+    {
+      "id": "cls2-002",
+      "category": "standard_self",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_PROOF"
+      ],
+      "rationale": "Remote explicitly documents mortgage as a standard proof-of-employment use case.",
+      "input": {
+        "text": "I need proof of employment for my mortgage application. The regular Remote employment letter is fine.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "9c67352a14e42c1a"
+    },
+    {
+      "id": "cls2-003",
+      "category": "standard_self",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_PROOF"
+      ],
+      "rationale": "Loan use case with no customization.",
+      "input": {
+        "text": "I need an employment letter for a loan application. I do not need any special wording or extra information.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "ec54f5842f9243a9"
+    },
+    {
+      "id": "cls2-004",
+      "category": "standard_self",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_PROOF"
+      ],
+      "rationale": "Remote explicitly lists visa as a standard employment-letter use case.",
+      "input": {
+        "text": "Can I get the standard employment letter for my visa application?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "56d02770c63c6d75"
+    },
+    {
+      "id": "cls2-005",
+      "category": "standard_template_fields",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "These details are documented as part of the standard template, so they are not extra requested fields.",
+      "input": {
+        "text": "Please provide an employment letter showing my full name, employment start date, and contract type.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "b7d712a576162eee"
+    },
+    {
+      "id": "cls2-006",
+      "category": "standard_template_fields",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Entity/contact details are documented as part of the standard template.",
+      "input": {
+        "text": "I only need the usual employment confirmation with the local Remote entity details and who can be contacted for more information.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "9eb83d790a27e65c"
+    },
+    {
+      "id": "cls2-007",
+      "category": "standard_language",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_GENERATE"
+      ],
+      "rationale": "Remote documents multiple language templates for the standard letter.",
+      "input": {
+        "text": "I need the standard employment letter in Spanish. No changes to the template are needed.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "74d4359ae2912a7a"
+    },
+    {
+      "id": "cls2-008",
+      "category": "standard_self",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_GENERATE",
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "The employee is not asking Remote to verify directly with the bank; this remains self-service standard-letter flow.",
+      "input": {
+        "text": "My bank needs proof of employment, but I will download the standard letter myself and send it to them.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "2d38cabaf85ef147"
+    },
+    {
+      "id": "cls2-009",
+      "category": "customized_specific_info",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Salary/compensation is not listed in the documented standard template; specific extra information belongs to the customized flow.",
+      "input": {
+        "text": "Please include my salary in the employment letter.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "compensation"
+        ]
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [
+          "compensation"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"compensation\"]; actual=[\"compensation\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "compensation_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden answer contains compensation and classifier detected compensation."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "78a4a79d39d61421"
+    },
+    {
+      "id": "cls2-010",
+      "category": "customized_specific_info",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Canonicalize salary/pay/current compensation to compensation.",
+      "input": {
+        "text": "My lender needs my current pay shown on the letter.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "compensation"
+        ]
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.95,
+        "requestedFields": [
+          "compensation"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"compensation\"]; actual=[\"compensation\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "compensation_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden answer contains compensation and classifier detected compensation."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "d30273e0b0d89e89"
+    },
+    {
+      "id": "cls2-011",
+      "category": "customized_specific_info",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Manager name is not part of the documented standard template.",
+      "input": {
+        "text": "Please add my manager's name to my employment letter.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "manager_name"
+        ]
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [
+          "manager_name"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"manager_name\"]; actual=[\"manager_name\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "132e8fa258c5b80d"
+    },
+    {
+      "id": "cls2-012",
+      "category": "customized_specific_info",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "These are specific extras beyond the documented standard template.",
+      "input": {
+        "text": "I need the letter to show my home address and my personal phone number.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "home_address",
+          "phone_number"
+        ]
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [
+          "home_address",
+          "phone_number"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"home_address\",\"phone_number\"]; actual=[\"home_address\",\"phone_number\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "bb999b4cdeef77f3"
+    },
+    {
+      "id": "cls2-013",
+      "category": "customized_specific_info",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Job title is not listed in Remote's standard employment-letter contents article.",
+      "input": {
+        "text": "Can the employment letter include my job title as an explicit field?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "job_title"
+        ]
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [
+          "job_title"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"job_title\"]; actual=[\"job_title\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "fdc7954f4aa2d73d"
+    },
+    {
+      "id": "cls2-014",
+      "category": "customized_specific_info",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_CUSTOMIZED"
+      ],
+      "rationale": "Specific information/wording not covered by the standard template belongs to customized-letter flow.",
+      "input": {
+        "text": "The embassy gave me specific wording that must appear in my employment letter. Can Remote prepare a customized version?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "cda7dd3baeb2ccc1"
+    },
+    {
+      "id": "cls2-015",
+      "category": "customized_form",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_FORM"
+      ],
+      "rationale": "Remote explicitly routes forms that Remote must complete through customized employment-letter requests.",
+      "input": {
+        "text": "I've attached an employment verification form that Remote needs to complete for my application.",
+        "hasAttachment": true
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": true,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=true; actual=true"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "aa49fa16c4278d7b"
+    },
+    {
+      "id": "cls2-016",
+      "category": "customized_form",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_FORM"
+      ],
+      "rationale": "Employee is asking Remote to complete a form; customized flow.",
+      "input": {
+        "text": "My landlord sent me a form for Remote to fill out and sign. I attached it here.",
+        "hasAttachment": true
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": true,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=true; actual=true"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "e0570f14ac13e5cb"
+    },
+    {
+      "id": "cls2-017",
+      "category": "customized_form",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_FORM"
+      ],
+      "rationale": "Need for a Remote-completed form is customized even before the file is attached.",
+      "input": {
+        "text": "My bank has its own employment verification form that they want Remote to complete. I have not attached it yet.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "2d69a8aabad5656d"
+    },
+    {
+      "id": "cls2-018",
+      "category": "customized_specific_info",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_CUSTOMIZED"
+      ],
+      "rationale": "Mirrors Remote's documented 'none of these templates fits my needs' customized route.",
+      "input": {
+        "text": "None of the standard templates fits what I need. I need a letter with several additional details for my application.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.8,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "bae2c16d0633f827"
+    },
+    {
+      "id": "cls2-019",
+      "category": "customized_mixed_fields",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Start date is standard; compensation is the extra field that makes the request customized.",
+      "input": {
+        "text": "Please include my start date and my salary in the same employment letter.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "compensation"
+        ]
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.95,
+        "requestedFields": [
+          "compensation"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"compensation\"]; actual=[\"compensation\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "compensation_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden answer contains compensation and classifier detected compensation."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "d0ff0aef2687b77e"
+    },
+    {
+      "id": "cls2-020",
+      "category": "customized_mixed_fields",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Only the non-standard fields are listed in requestedFields.",
+      "input": {
+        "text": "I need my contract type, start date, manager name, and current compensation on the letter.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "compensation",
+          "manager_name"
+        ]
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [
+          "manager_name",
+          "compensation"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"compensation\",\"manager_name\"]; actual=[\"compensation\",\"manager_name\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "compensation_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden answer contains compensation and classifier detected compensation."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "300d6928c21e0dd2"
+    },
+    {
+      "id": "cls2-021",
+      "category": "third_party_direct",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Direct verification request from an outside entity.",
+      "input": {
+        "text": "This is First Bank. We need to verify this applicant's employment directly with Remote.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "ac9c462953a69ca0"
+    },
+    {
+      "id": "cls2-022",
+      "category": "third_party_direct",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Direct company-to-Remote verification is the documented third-party route.",
+      "input": {
+        "text": "We are a mortgage lender requesting employment verification directly from your company for our applicant.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "55c1243c86fb8b96"
+    },
+    {
+      "id": "cls2-023",
+      "category": "third_party_direct",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Outside entity asks Remote directly for employment confirmation.",
+      "input": {
+        "text": "This is the applicant's landlord. Please confirm directly whether they are employed by Remote.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "3856544d7a8f48ea"
+    },
+    {
+      "id": "cls2-024",
+      "category": "third_party_employee_initiated",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Employee is the sender, but the requested fulfillment is direct third-party verification.",
+      "input": {
+        "text": "My bank says they must verify my employment directly with Remote. What should I tell them to do?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "297719da1b442555"
+    },
+    {
+      "id": "cls2-025",
+      "category": "third_party_employee_initiated",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Direct contact requirement selects third-party verification route.",
+      "input": {
+        "text": "The mortgage company wants to contact Remote directly instead of accepting a letter from me.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "ad943015e3f6a3e4"
+    },
+    {
+      "id": "cls2-026",
+      "category": "third_party_phone",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Remote documents telephone verification as a third-party verification path.",
+      "input": {
+        "text": "My lender wants telephone employment verification from Remote and needs a callback.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "00db3fa8db7de90d"
+    },
+    {
+      "id": "cls2-027",
+      "category": "third_party_phone",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Third party is requesting direct telephone verification.",
+      "input": {
+        "text": "We are a bank and would like Remote to call us back to verify the employee's employment.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 0.9,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "73f707145745b4fd"
+    },
+    {
+      "id": "cls2-028",
+      "category": "third_party_direct",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Direct third-party employment confirmation, even though no custom fields are requested.",
+      "input": {
+        "text": "This is a lender. We only need direct confirmation that the applicant currently works for Remote.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "a122d456ea6d01c2"
+    },
+    {
+      "id": "cls2-029",
+      "category": "third_party_direct_fields",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Start date is standard information, but direct outside-entity verification determines the route.",
+      "input": {
+        "text": "This is the applicant's bank. Please verify their employment start date directly with us.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "401e2df336a83e85"
+    },
+    {
+      "id": "cls2-030",
+      "category": "third_party_sensitive_fields",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_THIRD_PARTY",
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Direct third-party route takes precedence; compensation remains an extra requested field for policy review.",
+      "input": {
+        "text": "This is First Bank. Please verify the applicant's employment and current salary directly with us.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "compensation"
+        ]
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [
+          "compensation"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"compensation\"]; actual=[\"compensation\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "compensation_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden answer contains compensation and classifier detected compensation."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "7a4a094a28e4c086"
+    },
+    {
+      "id": "cls2-031",
+      "category": "third_party_sensitive_fields",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_THIRD_PARTY",
+        "HC_CUSTOMIZED",
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "Employee sender, but direct verification route plus sensitive extra information.",
+      "input": {
+        "text": "My bank needs to verify me directly with Remote and they also want my current pay confirmed.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "compensation"
+        ]
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [
+          "compensation"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"compensation\"]; actual=[\"compensation\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "compensation_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden answer contains compensation and classifier detected compensation."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "09ae5128ffc6220d"
+    },
+    {
+      "id": "cls2-032",
+      "category": "third_party_form",
+      "grounding": "uc01_safety_extension",
+      "sourceKeys": [
+        "HC_THIRD_PARTY",
+        "HC_FORM",
+        "UC01_EXTERNAL_ARTIFACT"
+      ],
+      "rationale": "Remote documents both direct third-party verification and form completion; this combination is treated as third-party route with artifact risk handled deterministically.",
+      "input": {
+        "text": "This is a lender. We attached our verification form and need Remote to complete it directly for the applicant.",
+        "hasAttachment": true
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": true,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=true; actual=true"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "ac7453799fa577ba"
+    },
+    {
+      "id": "cls2-033",
+      "category": "out_of_scope",
+      "grounding": "remote_help_center_domain",
+      "sourceKeys": [
+        "HC_HOME"
+      ],
+      "rationale": "Account-access support is not employment verification.",
+      "input": {
+        "text": "I forgot my Remote password and cannot sign in.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "out_of_scope",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "out_of_scope",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=out_of_scope; actual=out_of_scope"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "0d01f6d73eb39f38"
+    },
+    {
+      "id": "cls2-034",
+      "category": "out_of_scope",
+      "grounding": "remote_help_center_domain",
+      "sourceKeys": [
+        "HC_HOME"
+      ],
+      "rationale": "Expense support is outside UC-01 employment verification.",
+      "input": {
+        "text": "My expense reimbursement was rejected. Can you help me fix it?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "out_of_scope",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "out_of_scope",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=out_of_scope; actual=out_of_scope"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "9b467dbab314b84a"
+    },
+    {
+      "id": "cls2-035",
+      "category": "out_of_scope",
+      "grounding": "general_negative",
+      "sourceKeys": [],
+      "rationale": "Clearly unrelated negative control.",
+      "input": {
+        "text": "Will it rain tomorrow?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "out_of_scope",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "out_of_scope",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=out_of_scope; actual=out_of_scope"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "e4db62809b4797a8"
+    },
+    {
+      "id": "cls2-036",
+      "category": "out_of_scope",
+      "grounding": "remote_help_center_domain",
+      "sourceKeys": [
+        "HC_BACKGROUND_CHECK"
+      ],
+      "rationale": "Background checks are a separate Remote process.",
+      "input": {
+        "text": "When will my background check be completed?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "out_of_scope",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "out_of_scope",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=out_of_scope; actual=out_of_scope"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "a47c642c32412689"
+    },
+    {
+      "id": "cls2-037",
+      "category": "out_of_scope",
+      "grounding": "remote_help_center_domain",
+      "sourceKeys": [
+        "HC_RIGHT_TO_WORK"
+      ],
+      "rationale": "Right-to-work checks are separate from employment-letter verification.",
+      "input": {
+        "text": "Which documents do I need for my right-to-work check?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "out_of_scope",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "out_of_scope",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=out_of_scope; actual=out_of_scope"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "c284c9a4cb4005bd"
+    },
+    {
+      "id": "cls2-038",
+      "category": "out_of_scope",
+      "grounding": "remote_help_center_domain",
+      "sourceKeys": [
+        "HC_OFFER_LETTER"
+      ],
+      "rationale": "Offer letters are a separate onboarding workflow.",
+      "input": {
+        "text": "How do I create an offer letter for a new employee?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "out_of_scope",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "out_of_scope",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=out_of_scope; actual=out_of_scope"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "bc17cfb811b060ee"
+    },
+    {
+      "id": "cls2-039",
+      "category": "out_of_scope",
+      "grounding": "remote_help_center_domain",
+      "sourceKeys": [
+        "HC_HOME"
+      ],
+      "rationale": "Payslip support is not employment verification.",
+      "input": {
+        "text": "Where can I download my payslip?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "out_of_scope",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "out_of_scope",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=out_of_scope; actual=out_of_scope"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "3252110d97a60db7"
+    },
+    {
+      "id": "cls2-040",
+      "category": "out_of_scope",
+      "grounding": "remote_help_center_domain",
+      "sourceKeys": [
+        "HC_HOME"
+      ],
+      "rationale": "Payment-method support is outside UC-01.",
+      "input": {
+        "text": "I need help changing my payment method in Remote.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "out_of_scope",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "out_of_scope",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=out_of_scope; actual=out_of_scope"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "2a8d148da10da83d"
+    },
+    {
+      "id": "cls2-041",
+      "category": "boundary_bank_mentions",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_GENERATE",
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Mentioning a bank does not make it third-party verification when the employee will provide the letter themselves.",
+      "input": {
+        "text": "My bank needs proof of employment. Can I generate a standard letter myself and send it to them?",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "e556216139193c58"
+    },
+    {
+      "id": "cls2-042",
+      "category": "boundary_bank_direct",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Direct Remote-to-bank contact changes the route.",
+      "input": {
+        "text": "My bank will not accept a letter from me; they insist on verifying directly with Remote.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "66c2dc2329d4563f"
+    },
+    {
+      "id": "cls2-043",
+      "category": "boundary_form",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_CUSTOMIZED",
+        "HC_FORM"
+      ],
+      "rationale": "Employee-requested form completion is documented customized-letter behavior.",
+      "input": {
+        "text": "My bank sent me its own form for Remote to complete, and I attached it to this request.",
+        "hasAttachment": true
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": true,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=true; actual=true"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "ec2f48408a9f2361"
+    },
+    {
+      "id": "cls2-044",
+      "category": "boundary_external_portal",
+      "grounding": "uc01_safety_extension",
+      "sourceKeys": [
+        "HC_THIRD_PARTY",
+        "UC01_EXTERNAL_ARTIFACT"
+      ],
+      "rationale": "External portal is not explicitly documented by Remote Help Center; UC-01 treats it as a manual-risk artifact while direct third-party verification determines the semantic route.",
+      "input": {
+        "text": "My lender needs Remote to verify me directly through https://verify.example.com.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "self",
+        "hasExternalUrl": true,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": true,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=true; actual=true"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "d7f1f4b3c79068cf"
+    },
+    {
+      "id": "cls2-045",
+      "category": "boundary_standard_fields",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "These are standard-template details and should not trigger customization.",
+      "input": {
+        "text": "Please make sure the letter includes my start date and whether my contract is fixed-term or indefinite.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "1f3dd8c81677a88c"
+    },
+    {
+      "id": "cls2-046",
+      "category": "boundary_standard_plus_custom",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_STANDARD_CONTENTS",
+        "HC_CUSTOMIZED"
+      ],
+      "rationale": "One extra non-standard field is enough to make the request customized.",
+      "input": {
+        "text": "Please include my start date, contract type, and current salary.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "customized_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": [
+          "compensation"
+        ]
+      },
+      "actual": {
+        "intent": "customized_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 0.9,
+        "requestedFields": [
+          "compensation"
+        ],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=customized_letter; actual=customized_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[\"compensation\"]; actual=[\"compensation\"]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "compensation_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden answer contains compensation and classifier detected compensation."
+        },
+        {
+          "name": "customized_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is customized_letter and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "44d88ebeb3a0a92d"
+    },
+    {
+      "id": "cls2-047",
+      "category": "boundary_third_party_plain",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "Plain direct third-party verification, not a standard employee letter.",
+      "input": {
+        "text": "This is a mortgage company. We need employment verification for our applicant directly from Remote.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "d0e97e11a63c5090"
+    },
+    {
+      "id": "cls2-048",
+      "category": "boundary_third_party_authenticity",
+      "grounding": "remote_help_center_inference",
+      "sourceKeys": [
+        "HC_THIRD_PARTY"
+      ],
+      "rationale": "The fulfillment requested is still direct verification with the outside entity.",
+      "input": {
+        "text": "This is a bank. The employee gave us an employment letter, but we need Remote to confirm the employment directly with us.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "third_party_verification",
+        "requesterType": "third_party",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "third_party_verification",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "third_party",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party_verification; actual=third_party_verification"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=third_party; actual=third_party"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "third_party_route_recall_case",
+          "score": 1,
+          "label": "pass",
+          "explanation": "Golden route is third_party_verification and classifier selected that route."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "b25e5452fa2ba93c"
+    }
+  ]
+}

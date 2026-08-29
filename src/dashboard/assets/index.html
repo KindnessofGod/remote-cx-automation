@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Unified Dashboard — UC-01…09</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="/remote-ui.css" />
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<div class="r-app">
+
+  <aside class="r-sidebar">
+    <div class="r-logo">
+      <span class="r-logo-mark" aria-hidden="true">R</span>
+      <span class="r-logo-word">remote</span>
+    </div>
+
+    <nav class="r-nav" aria-label="Use cases">
+      <div class="r-nav-label">Use cases</div>
+      <div id="summary-bar"></div>
+    </nav>
+
+    <div class="r-spacer"></div>
+
+    <p class="sidebar-foot">
+      CX automation layer — a portfolio build against Remote's real API.
+      This is not Remote's product.
+    </p>
+  </aside>
+
+  <main class="r-main">
+    <header id="intro">
+      <h1 class="r-page-title">Unified Dashboard</h1>
+      <p class="r-page-sub">
+        Each section polls its own real list endpoint
+        directly from the browser — this page has no backend of its own and reads nothing it
+        didn't fetch live. A section whose API isn't running says so plainly instead of showing
+        a blank or a fabricated row. Start whichever <code>npm run uc0N-api</code> /
+        <code>npm run review-api</code> you want to see; each seeds its own demo rows on boot.
+      </p>
+      <!-- app.js appends the tier legend here: the tier decides the execution
+           path, so what each one means belongs on the page, not in the reader's
+           memory. -->
+    </header>
+
+    <div class="section-grid" id="sections"></div>
+  </main>
+
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

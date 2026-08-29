@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Approval queue — what is waiting, and what nobody can reach</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="remote-ui.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="r-app">
+
+  <!-- =====================================================================
+       Sidebar. Four views, and the order is the argument: the things nobody
+       can act on come before the things that are merely waiting.
+       ===================================================================== -->
+  <aside class="r-sidebar">
+    <div class="r-logo">
+      <span class="r-logo-mark" aria-hidden="true">R</span>
+      <span class="r-logo-word">remote</span>
+    </div>
+
+    <nav class="r-nav" aria-label="Views">
+      <div class="r-nav-label">Approvals</div>
+      <button type="button" class="r-nav-item is-active" id="nav-stuck" data-tab="stuck">
+        Nobody can act on these <span class="r-nav-count" id="count-stuck"></span>
+      </button>
+      <button type="button" class="r-nav-item" id="nav-waiting" data-tab="waiting">
+        Everything waiting <span class="r-nav-count" id="count-waiting"></span>
+      </button>
+      <button type="button" class="r-nav-item" id="nav-usecases" data-tab="usecases">By use case</button>
+      <button type="button" class="r-nav-item" id="nav-surfaces" data-tab="surfaces">Where approvals happen</button>
+    </nav>
+
+    <div class="r-spacer"></div>
+
+    <div class="mode-box">
+      <span class="r-label">Records</span>
+      <p class="mode-line" id="mode-line">Connecting…</p>
+      <span class="r-label">Tickets</span>
+      <p class="mode-line" id="verify-line"></p>
+    </div>
+
+    <p class="sidebar-foot">
+      Read-only, structurally: the server behind this page has no POST route at
+      all. Nothing here can approve, decline or dismiss anything — every verdict
+      shown was computed server-side and this page only renders it.
+    </p>
+  </aside>
+
+  <main class="r-main">
+
+    <div class="r-banner r-banner-warn" id="seeded-banner" hidden>
+      <span class="r-banner-icon" aria-hidden="true">⚠</span>
+      <span><strong>Demonstration data.</strong> No database is attached to this
+      process, so every row on this page is a labelled example — not real work.
+      Set <span class="r-mono">SUPABASE_DB_URL</span> to read the real queue.</span>
+    </div>
+
+    <!-- A read failure renders HERE, loudly. Never as an empty queue: "nothing
+         is waiting for anyone" is the most dangerous sentence this page could
+         print, so it is never printed by accident. -->
+    <div class="r-banner r-banner-danger" id="error-banner" hidden>
+      <span class="r-banner-icon" aria-hidden="true">✕</span>
+      <span><strong id="error-title">Read failed.</strong> <span id="error-detail"></span></span>
+    </div>
+
+    <!-- Access gate — renders the server's own refusal, holds no rule of its own. -->
+    <section id="access-gate" hidden>
+      <div class="r-card access-card">
+        <div class="r-card-body">
+          <h2 class="r-card-title">Access key required</h2>
+          <p class="r-card-note" id="access-reason"></p>
+          <p class="access-why" id="access-why"></p>
+          <ol class="access-howto" id="access-howto"></ol>
+          <form id="access-form">
+            <label class="r-field" for="access-key">
+              <span class="r-label">Access key</span>
+              <input type="password" class="r-input" id="access-key" autocomplete="off" />
+            </label>
+            <button type="submit" class="r-btn r-btn-primary">Unlock</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <div id="views" hidden>
+
+      <!-- The four counts, and the third one is the point: an item this view
+           could not check is neither reachable nor stuck, and it is never
+           folded into either. -->
+      <section class="tiles" id="tiles">
+        <div class="r-card stat">
+          <span class="r-label">Waiting on a person</span>
+          <strong class="tile-num" id="tile-waiting">—</strong>
+          <span class="tile-note" id="tile-waiting-note"></span>
+        </div>
+        <div class="r-card stat stat-bad">
+          <span class="r-label">Nobody can act on</span>
+          <strong class="tile-num" id="tile-stuck">—</strong>
+          <span class="tile-note">waiting, with no reachable place to be approved</span>
+        </div>
+        <div class="r-card stat stat-unknown">
+          <span class="r-label">Cannot tell</span>
+          <strong class="tile-num" id="tile-unknown">—</strong>
+          <span class="tile-note">not checked — counted as neither reachable nor stuck</span>
+        </div>
+        <div class="r-card stat">
+          <span class="r-label">Reachable</span>
+          <strong class="tile-num" id="tile-reachable">—</strong>
+          <span class="tile-note">waiting, and someone can get to it</span>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           TAB 1 — the headline. Everything awaiting a human with no reachable
+           place to be approved, grouped by what is wrong.
+           ================================================================= -->
+      <section id="tab-stuck">
+        <header class="view-head">
+          <h1 class="r-page-title">Nobody can act on these</h1>
+          <!-- The heading says what these are; the tile above it says how the
+               count was derived. What is left here is the ORDER and what an
+               absent group means — neither of which is visible anywhere else. -->
+          <p class="r-page-sub">
+            Grouped worst first. A group that is absent has no items — not
+            "none found".
+          </p>
+        </header>
+        <div id="stuck-groups"></div>
+        <div class="r-empty" id="stuck-empty" hidden>
+          <p class="r-empty-title">Nothing is stuck.</p>
+          <p class="r-empty-body" id="stuck-empty-body"></p>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           TAB 2 — everything waiting, oldest first.
+           ================================================================= -->
+      <section id="tab-waiting" hidden>
+        <header class="view-head">
+          <h1 class="r-page-title">Everything waiting on a person</h1>
+          <!-- The scope and the sort order are not visible from the cards; the
+               list of what each card carries is — every one of those facts is
+               a labelled row on the card itself. -->
+          <p class="r-page-sub">Across all nine use cases, oldest first.</p>
+        </header>
+        <div id="waiting-rows"></div>
+        <div class="r-empty" id="waiting-empty" hidden>
+          <p class="r-empty-title">Nothing is waiting on a person.</p>
+          <p class="r-empty-body">Every record in every use case has been decided, or was never queued for one.</p>
+        </div>
+      </section>
+
+      <!-- =================================================================
+           TAB 3 — the nine, side by side.
+           ================================================================= -->
+      <section id="tab-usecases" hidden>
+        <header class="view-head">
+          <h1 class="r-page-title">By use case</h1>
+          <!-- No sub-heading: the sentence that stood here named the table's
+               own columns back to the reader ("what is waiting where, and
+               whether that use case has an approval control"), and every one
+               of them is a column header two lines below. -->
+        </header>
+        <div id="usecase-table"></div>
+      </section>
+
+      <!-- =================================================================
+           TAB 4 — the approval surfaces themselves, from the server's table.
+           Rendered even when the queue is empty, because "UC-03 has nowhere to
+           approve" is true whether or not anything is waiting on it today.
+           ================================================================= -->
+      <section id="tab-surfaces" hidden>
+        <header class="view-head">
+          <h1 class="r-page-title">Where approvals happen</h1>
+          <p class="r-page-sub">
+            One row per use case: who decides, on which screen, and — where there
+            is no screen — which of the two kinds of absence that is.
+          </p>
+        </header>
+        <div id="surface-cards"></div>
+
+        <header class="view-head team-head">
+          <h2 class="r-page-title">Teams and their queues</h2>
+          <!-- What is left is the only sentence here carrying a REASON. The
+               one that stood above it ("every team the routing table hands work
+               to, and whether this account has a group to hand it to") is the
+               heading again, and the server's own account-level verdict prints
+               directly below in those same words. -->
+          <p class="r-page-sub">
+            A team with no group is a standing hole — it is shown whether or not
+            anything is sitting in it right now.
+          </p>
+        </header>
+        <div id="team-table"></div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

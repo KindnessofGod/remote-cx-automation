@@ -1,0 +1,6 @@
+{
+  "name": "your-sandbox-standin",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,1342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Request portal — seven intake forms, seven real workflows</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="remote-ui.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="r-app">
+
+  <!-- =====================================================================
+       Sidebar. The nav is EMPTY here on purpose: app.js builds it from
+       GET /api/context, grouped by tier, so the seven request types and
+       their tiers exist in exactly one place (src/portal/requestTypes.js).
+       A hard-coded list here would be an eighth copy to drift.
+       ===================================================================== -->
+  <aside class="r-sidebar">
+    <button type="button" class="r-logo r-logo-button" id="home-link" aria-label="All request types">
+      <span class="r-logo-mark" aria-hidden="true">R</span>
+      <span class="r-logo-word">remote</span>
+    </button>
+
+    <nav class="r-nav" id="request-nav" aria-label="Request types">
+      <div class="r-nav-label">Loading…</div>
+    </nav>
+
+    <div class="r-spacer"></div>
+
+    <!-- The persona picker. The browser sends a persona KEY; the server looks
+         it up and builds the session itself. Nothing here is a role claim —
+         see src/portal/personas.js. -->
+    <div class="persona-picker">
+      <label class="r-field" for="persona">
+        <span class="r-label">Signed in as</span>
+        <select id="persona" class="r-select"></select>
+      </label>
+      <p class="persona-note" id="persona-note"></p>
+    </div>
+
+    <!-- ONE LINE, BECAUSE THE FULL VERSION IS ALREADY ON THE PAGE.
+         This slot used to hold two paragraphs — one on the mock being called
+         in-process and exactly which fields of each persona mirror the
+         Sandbox and which are this repo's own, one on the page sending a
+         persona KEY rather than a role claim. Both are still stated in full,
+         and stated FIRST, inside the home page's own disclosure ("What that
+         means, and what it does not"), which is the surface whose job is to
+         say them. The second paragraph is besides an engineering property of
+         the request body, proved by src/portal/personas.js and its tests, not
+         something a person filling a form can act on. What survives here is
+         the one fact that changes how a reader should read every figure on
+         the page. -->
+    <p class="sidebar-foot">
+      <strong>These are stand-in employee records, not a real Remote account.</strong>
+      Nothing you do here can read or change anyone's real employment. The home
+      page says exactly which details are mirrored from a real account and which
+      are made up.
+    </p>
+  </aside>
+
+  <main class="r-main">
+
+    <!-- =====================================================================
+         HOME. The disclosure and the "what is this page" framing live HERE
+         and only here — a use case's own page is that use case's page, not
+         this page with a card taped underneath it. Shown on load and on
+         returning via the logo/back-link; hidden the moment a request type
+         is activated. The tile grid below is built by app.js from the same
+         /api/context data the sidebar nav reads, so there is still exactly
+         one place these seven request types are described.
+         ===================================================================== -->
+    <section id="home-panel">
+      <header>
+        <h1 class="r-page-title">Request portal</h1>
+        <p class="r-page-sub">
+          Eight kinds of request. Pick one below or from the left. Every answer
+          comes back from the system that really decides it — this page never
+          makes one up.
+        </p>
+      </header>
+
+      <!-- R7-17: nothing on this page used to say a consent decision was
+           waiting on the signed-in employee unless they happened to click the
+           "Consent requests" tab out of curiosity — the exact gap a real
+           employee found and reported. Hidden until refreshConsentBadge()
+           (app.js) finds a pending request for the CURRENT persona; the
+           sidebar badge on that same nav tab carries the same count, so the
+           notice survives even after this banner is left behind by
+           navigating to a use-case card. -->
+      <div class="r-banner r-banner-warn consent-badge-banner" id="consent-badge-banner" role="status" hidden>
+        <span class="r-banner-icon" aria-hidden="true">🔏</span>
+        <span id="consent-badge-banner-text"></span>
+        <button type="button" class="r-btn r-btn-primary r-btn-small" id="consent-badge-banner-action">Review now</button>
+      </div>
+
+      <!-- Collapsed by default. The three paragraphs inside are unchanged —
+           every honesty claim this page makes is still here, still first,
+           still reachable in one click. -->
+      <details class="r-banner r-banner-neutral standin-notice" role="note">
+        <summary>
+          <span class="r-banner-icon" aria-hidden="true">ℹ</span>
+          <strong>This page stands in for a Remote screen with no public API.</strong>
+          <span class="disclosure-more">What that means, and what it does not</span>
+        </summary>
+        <div class="standin-notice-body">
+          <p>
+            <strong>This stands in for Remote product surfaces that have no public API.</strong>
+            An expense, a trip, a resignation, a relocation — in the real product these
+            requests begin inside Remote, and Remote emits no public event for any of them.
+            This page is that missing surface, and it is not Remote's product, design or endpoint.
+          </p>
+          <p>
+            <strong>The gates it runs are the real ones.</strong> Every submission calls the use
+            case's actual <span class="r-mono">handle*()</span> function in this process; nothing
+            is re-implemented here.
+          </p>
+          <p>
+            <strong>The employee records are mock fixtures, not your Remote Sandbox.</strong>
+            Remote reads here are served by this repo's mock Remote server, called
+            in-process, because a page anyone can reach must not read or write a real
+            account. Decisions are still real, and still audited.
+          </p>
+          <p>
+            <strong>Every employee persona carries a real Sandbox employment id.</strong>
+            Chris Lee (<span class="r-mono">8ab12460-b568-4c1e-af9d-09b1fabd8f46</span>, US),
+            Emma Thompson (<span class="r-mono">d73cff71-ced7-4bcf-b764-b9899abc6340</span>, GB),
+            Carlos Silva (<span class="r-mono">c2cd77da-d576-423f-b4f1-f9e40b313353</span>, BR, contractor),
+            Anna Müller (<span class="r-mono">09b65526-643b-4956-959b-916e6429bd23</span>, DE),
+            Thomas Weber (<span class="r-mono">9927057d-c8bc-4c71-940d-a5bc4ccf877e</span>, DE, archived),
+            James Wilson (<span class="r-mono">7ec6a5e4-909d-47c1-a442-0688c5cc1f2b</span>, GB) and
+            João Silva (<span class="r-mono">378eee6b-c6db-4484-ba32-7283bd0e2de9</span>, PT)
+            are all keyed by ids that genuinely exist in the project owner's Remote Sandbox,
+            so a tester recognises the people on this page and can cross-check any id.
+            Only the name, id, country, employment type and status are mirrored — every
+            other field, including salary and start date, is this repo's own fixture data
+            and should never be quoted as something the Sandbox returned. The reads are
+            still the mock's, so the safety property is unchanged.
+          </p>
+          <p>
+            <strong>One substitution is not like-for-like, and is said out loud.</strong>
+            The scenario showing a statutory notice bracket clashing with a short leaving
+            date used to be Poland. There is no Polish employment in the Sandbox, so it is
+            Portugal instead, on Portugal's own rule — 60 calendar days past two years'
+            service. It is not Poland's rule relabelled.
+          </p>
+          <p>
+            <strong>Submissions land in this process's own stores.</strong> They will
+            <strong>not</strong> appear in <span class="r-mono">npm run dashboard</span>, which
+            reads the nine <span class="r-mono">npm run ucNN-api</span> servers' separately
+            seeded stores. That is a real boundary, not a bug.
+          </p>
+        </div>
+      </details>
+
+      <div class="home-tiles" id="home-tiles" aria-label="Request types"></div>
+    </section>
+
+    <!-- =====================================================================
+         The seven cards. Each one's FORM FIELDS are static markup, because
+         the field names are the contract with that adapter in server.js.
+         Everything DESCRIPTIVE — title, description, tier, humanControl,
+         record label — is left blank and filled by app.js from /api/context.
+         ===================================================================== -->
+
+    <!-- ---------- UC-01 (L-14: the self-service letter) ----------------- -->
+    <section class="r-card uc-card" id="card-uc01" data-type="uc01" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true" data-field="icon"></span>
+        <div class="card-head-main">
+          <h2 class="r-card-title" data-field="title"></h2>
+          <p class="r-card-note" data-field="description"></p>
+        </div>
+        <span class="r-spacer"></span>
+        <span class="r-tier" data-field="tier"></span>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" data-field="humanControl"></p>
+
+        <div class="scenario-row">
+          <span class="r-label scenario-label">Quick-fill a scenario</span>
+          <div class="r-inline" data-scenarios="uc01"></div>
+        </div>
+
+        <!-- NO IDENTITY FIELD, and that is the point rather than a shortcut.
+             This letter is about the employee currently signed in — the
+             persona picker at the top of the page IS the identity, exactly
+             the way a real Requests-tab click would be. Nothing here asks
+             for an employment id, because typing one would be a claim, and
+             src/uc01/selfServiceLetter.js re-verifies the session against
+             itself server-side regardless.
+
+             rca-etp9 (round-7 R7-03): the one thing this card WAS missing is
+             a way to say anything at all — every sibling card lets the
+             employee add words of their own, and this one didn't even offer
+             the box. The note below is carried and stored for whoever reads
+             the request, never read by a model and never a gate: the letter's
+             content and whether it issues are decided the same way with or
+             without it (src/uc01/selfServiceLetter.js's own header). -->
+        <form id="form-uc01">
+          <p class="r-hint">
+            This is issued for whichever employee is currently selected above — the same
+            person the "Requests tab" itself would already know you are.
+          </p>
+
+          <!-- THE ONE FIELD REMOTE'S OWN FORM ACTUALLY ASKS FOR.
+               support.remote.com article 4422684040461, fetched live 2026-08-28:
+               "We have employment letter templates in about 11 languages. Choose
+               the language you want and click on Create and download." That is
+               the whole standard-letter form — a language, and a button. There is
+               no name box, no date box, no reason box, because the platform
+               already holds every fact the template prints (article 8429306915085
+               enumerates them; docs/UC01-INTAKE-FIELDS.md maps that list against
+               STANDARD_LETTER_FIELDS).
+
+               WHY THE OPTIONS SAY WHAT THEY SAY. Remote states the count four
+               different ways across four of its own articles — "about 11",
+               "15+", "20", "24" — and the only ENUMERATED list it publishes is
+               for the offer letter, a different document. So the list below is a
+               ladder rung-3 substitution and is labelled as one rather than
+               presented as Remote's verification-letter list.
+
+               AND ONLY ENGLISH RENDERS. src/uc01/letter.js has one template. A
+               picker that silently produced an English letter for a Dutch choice
+               would be a fake control, which is worse than no control — so the
+               choice is carried and shown back, and the hint says so before the
+               click rather than after. -->
+          <label class="r-field">
+            <span class="r-label">Letter language
+              <span class="r-hint">(Remote's standard form asks for this and nothing else)</span>
+            </span>
+            <select id="uc01-language" class="r-select">
+              <option value="en" selected>English</option>
+              <option value="hy">Armenian</option>
+              <option value="bg">Bulgarian</option>
+              <option value="hr">Croatian</option>
+              <option value="nl">Dutch</option>
+              <option value="fr">French</option>
+              <option value="ka">Georgian</option>
+              <option value="de">German</option>
+              <option value="el">Greek</option>
+              <option value="hu">Hungarian</option>
+              <option value="it">Italian</option>
+              <option value="no">Norwegian</option>
+              <option value="pl">Polish</option>
+              <option value="pt-BR">Portuguese (Brazil)</option>
+              <option value="pt-PT">Portuguese (Portugal)</option>
+              <option value="ro">Romanian</option>
+              <option value="es-419">Spanish (Latin America)</option>
+              <option value="es-ES">Spanish (Spain)</option>
+              <option value="sv">Swedish</option>
+              <option value="tr">Turkish</option>
+            </select>
+            <span class="r-hint">
+              Only the English template is rendered here — anything else is recorded on the
+              request and handed on, never quietly answered in English.
+            </span>
+          </label>
+
+          <label class="r-field">
+            <span class="r-label">Anything you'd like to add?
+              <span class="r-hint">(optional — who it's for, or why you need it)</span>
+            </span>
+            <textarea id="uc01-note" class="r-textarea" rows="3" maxlength="500"
+              placeholder="e.g. This is for a mortgage application with my bank."></textarea>
+          </label>
+
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Get my letter</button>
+        </form>
+
+        <div class="result" id="result-uc01" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ---------- UC-02 ------------------------------------------------ -->
+    <section class="r-card uc-card" id="card-uc02" data-type="uc02" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true" data-field="icon"></span>
+        <div class="card-head-main">
+          <h2 class="r-card-title" data-field="title"></h2>
+          <p class="r-card-note" data-field="description"></p>
+        </div>
+        <span class="r-spacer"></span>
+        <span class="r-tier" data-field="tier"></span>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" data-field="humanControl"></p>
+
+        <div class="scenario-row">
+          <span class="r-label scenario-label">Quick-fill a scenario</span>
+          <div class="r-inline" data-scenarios="uc02"></div>
+        </div>
+
+        <form id="form-uc02">
+          <label class="r-field">
+            <!-- THE HINT SAYS THE CONSEQUENCE; THE REASON IS HERE. Every
+                 figure — amount, currency, category, who it belongs to — is
+                 read off the expense record when the request runs, and this
+                 form carries none of them. That is deliberate: an amount typed
+                 into a browser and trusted downstream is the shape of the ×100
+                 money bug src/shared/money.js exists to prevent. What the
+                 reader needs from it is only that they cannot edit the money
+                 here. -->
+            <span class="r-label">Expense to claim
+              <span class="r-hint">(the amount and category come from the expense itself — you cannot change them here)</span>
+            </span>
+            <select id="uc02-expenseId" class="r-select"></select>
+          </label>
+
+          <!-- WHY THIS CONTROL EXISTS. UC-02 asks "have I already decided this
+               expense?" before its gates run and replays the stored decision
+               when it has — an expense is decided once, and a second decision
+               would mean a second approval write. The fixture list above is
+               fixed, so without this every scenario here is a one-shot: the
+               first submission is decided and every one after it replays, no
+               matter what request reference is used. This files the same expense
+               again as a NEW expense (new id, same employee, same money, same
+               category, same receipt evidence), which is the fixture equivalent
+               of the employee buying another dinner. It changes the SUBJECT;
+               the reference control below changes the DELIVERY.
+
+               DEFAULT ON, deliberately, and symmetric with the reference
+               control below it — that defaults to "generate a new one" and
+               offers reuse as the explicit choice, and this does the same for
+               the subject. Off by default meant a tester had to already know
+               this box existed before any UC-02 scenario would run twice, and
+               "I tick every option I can find and still get the replay" was
+               the report that produced it. Making the working case the default
+               and the demonstration the deliberate act is the right way round;
+               unticking still shows the replay, on purpose. -->
+          <label class="r-field checkbox-field">
+            <input type="checkbox" id="uc02-freshCopy" checked />
+            <span class="r-label">File this as a new expense (recommended)
+              <span class="r-hint">(on: it goes in as a new expense, so it is checked properly. Off: you get back the answer this same expense already got — which is what stops one claim being paid twice. Untick it to see that happen.)</span>
+            </span>
+          </label>
+
+          <div class="upload-field">
+            <!-- No OCR runs anywhere in this repo, and the fingerprint below
+                 is computed from the file's real bytes (see wireReceiptUpload()
+                 in app.js) — so uploading the same receipt twice is a genuine
+                 duplicate rather than a staged one. The reader needs both
+                 halves of that, and neither needs the word OCR. -->
+            <span class="r-label">Receipt
+              <span class="r-hint">(optional. Nothing is read out of the picture — the file is only used to recognise the same receipt being claimed twice.)</span>
+            </span>
+            <label class="upload-drop" for="uc02-receiptFile">
+              <input type="file" id="uc02-receiptFile" class="upload-input" accept="image/*,.pdf" />
+              <span class="upload-drop-text">Choose a file, or drag one here</span>
+              <span class="upload-drop-name" id="uc02-receiptFileName"></span>
+            </label>
+          </div>
+
+          <label class="r-field">
+            <span class="r-label">Receipt fingerprint
+              <span class="r-hint">(filled in for you when you upload a file above, or type one in yourself — this is what gets compared against receipts already claimed)</span>
+            </span>
+            <input type="text" id="uc02-receiptHash" class="r-input" placeholder="e.g. hash-seed-001" />
+          </label>
+
+          <label class="r-field">
+            <span class="r-label">Reference <span class="r-hint">(optional ticket/reference id)</span></span>
+            <input type="text" id="uc02-externalRef" class="r-input" placeholder="e.g. ticket-2001" />
+          </label>
+
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Submit for validation</button>
+        </form>
+
+        <div class="result" id="result-uc02" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ---------- UC-03 ------------------------------------------------ -->
+    <section class="r-card uc-card" id="card-uc03" data-type="uc03" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true" data-field="icon"></span>
+        <div class="card-head-main">
+          <h2 class="r-card-title" data-field="title"></h2>
+          <p class="r-card-note" data-field="description"></p>
+        </div>
+        <span class="r-spacer"></span>
+        <span class="r-tier" data-field="tier"></span>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" data-field="humanControl"></p>
+
+        <div class="scenario-row">
+          <span class="r-label scenario-label">Quick-fill a scenario</span>
+          <div class="r-inline" data-scenarios="uc03"></div>
+        </div>
+
+        <form id="form-uc03">
+          <label class="r-field">
+            <!-- The LLM classifier reads this text to DESCRIBE the request
+                 and never to decide it — CLAUDE.md prime directive #1, enforced
+                 in src/uc03/workflow.js, where every gate runs on structured
+                 values. That is a promise about our own code, not an
+                 instruction to the person typing. -->
+            <span class="r-label">What do you need?
+              <span class="r-hint">(in your own words)</span>
+            </span>
+            <textarea id="uc03-text" class="r-textarea" rows="4"
+              placeholder="e.g. I'm travelling to Spain for a client meeting from September 14 to October 2, 2026."></textarea>
+          </label>
+
+          <!-- THE TRIP, STATED RATHER THAN READ OUT OF THE PROSE ABOVE.
+               docs/TRAVEL-LETTER-INPUTS.md §6: the letter prints the
+               destination and the two dates today from a model's reading of
+               the box above, on a path with no human between it and a
+               consulate. These three boxes let the traveller state them.
+
+               ALL THREE ARE OPTIONAL, and that is structural rather than
+               promised: none is in REQUIRED_FIELDS, none carries `required`,
+               and each submits null when untouched, so a request that fills
+               nothing behaves exactly as it did before these boxes existed.
+               They are an OVERRIDE, never a new precondition — no request that
+               succeeds today can start failing because of them.
+
+               The picker is the same `data-country-select` control as UC-04's
+               three, filled by app.js from the one server-side list
+               (src/portal/countries.js): value alpha-2, label the country's
+               name. Not a text box, for the reason that file's header gives.
+               The dates are date inputs, which is also the format fix — a date
+               input emits YYYY-MM-DD and nothing else, where prose reaches the
+               document as whatever a model returned. -->
+          <div class="field-grid">
+            <label class="r-field">
+              <span class="r-label">Which country are you travelling to?
+                <span class="r-hint">(optional)</span>
+              </span>
+              <select id="uc03-destinationCountry" class="r-select" data-country-select data-blank="not stated"></select>
+            </label>
+            <label class="r-field">
+              <span class="r-label">First day of the trip <span class="r-hint">(optional)</span></span>
+              <input type="date" id="uc03-startDate" class="r-input" />
+            </label>
+            <label class="r-field">
+              <span class="r-label">Last day of the trip <span class="r-hint">(optional)</span></span>
+              <input type="date" id="uc03-endDate" class="r-input" />
+            </label>
+          </div>
+
+          <!-- THE ADDRESSEE. §6.3's own question, and its own advice: "leave it
+               blank" is the one thing here a person would otherwise get wrong,
+               because an addressee named wrongly is worse than none at all and
+               only the traveller can get it right. Length-capped in the markup
+               per §6.3's second precondition. -->
+          <label class="r-field">
+            <span class="r-label">If you already know which embassy or consulate you will hand this to, name it here.
+              <span class="r-hint">(optional)</span>
+            </span>
+            <input type="text" id="uc03-addressee" class="r-input" maxlength="120"
+              placeholder="e.g. Spanish Consulate General, Amsterdam" />
+          </label>
+          <p class="r-hint field-note">
+            Leave it blank and the letter will say &ldquo;To Whom It May Concern&rdquo;, which
+            most posts accept.
+          </p>
+
+          <label class="r-field">
+            <span class="r-label">Reference <span class="r-hint">(optional)</span></span>
+            <input type="text" id="uc03-externalRef" class="r-input" placeholder="e.g. 9001" />
+          </label>
+
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Send the inquiry</button>
+        </form>
+
+        <div class="result" id="result-uc03" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ---------- UC-04 ------------------------------------------------ -->
+    <section class="r-card uc-card" id="card-uc04" data-type="uc04" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true" data-field="icon"></span>
+        <div class="card-head-main">
+          <h2 class="r-card-title" data-field="title"></h2>
+          <p class="r-card-note" data-field="description"></p>
+        </div>
+        <span class="r-spacer"></span>
+        <span class="r-tier" data-field="tier"></span>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" data-field="humanControl"></p>
+
+        <!-- Filled by app.js when an employee continues here from a UC-03
+             routing. Empty and hidden otherwise, and every word inside it is
+             written with textContent — this element carries no copy of its own.
+             What app.js puts here is two sentences of plain instruction and one
+             closed "Why are some boxes blank?" disclosure whose every reason is
+             the server's own sentence; a paragraph about what carried across
+             must come from the thing that carried it, and the carried values
+             themselves are shown where they landed, in the boxes below. -->
+        <div class="continuation-banner" id="uc04-continuation" hidden></div>
+
+        <div class="scenario-row">
+          <span class="r-label scenario-label">Quick-fill a scenario</span>
+          <div class="r-inline" data-scenarios="uc04"></div>
+        </div>
+
+        <form id="form-uc04">
+          <details class="manual-fields">
+            <summary>Fill in the fields yourself</summary>
+            <div class="manual-fields-body">
+          <label class="r-field">
+            <!-- The id is a real Sandbox employment id and what it resolves
+                 to here is the mock's fixture; the sidebar and the home
+                 disclosure both say so, once, for every form on the page. -->
+            <span class="r-label">Travelling employee
+              <span class="r-hint">(their id in Remote — Chris Lee by default)</span>
+            </span>
+            <input type="text" id="uc04-employmentId" class="r-input" value="8ab12460-b568-4c1e-af9d-09b1fabd8f46" />
+          </label>
+
+          <div class="field-grid">
+            <!-- COUNTRY PICKERS, NOT TYPED CODES. Every box on this page that
+                 takes a country is a <select> whose option VALUE is the ISO
+                 alpha-2 code the gates compare and whose LABEL is the country's
+                 name, because "ES" is not what a person means and "Spain" is
+                 not what a Set.has() can read. The options are written in by
+                 app.js from GET /api/context (src/portal/countries.js), so the
+                 list exists once, server-side. The "(two-letter code)" hints
+                 that used to sit here are gone with the typing they described.
+                 Why the list is ISO's 249 and not Remote's 224 — and why
+                 offering a country no risk rule covers is the honest choice —
+                 is in src/portal/countries.js's header. -->
+            <label class="r-field">
+              <span class="r-label">Home country</span>
+              <select id="uc04-homeCountry" class="r-select" data-country-select data-blank="not stated"></select>
+            </label>
+            <label class="r-field">
+              <span class="r-label">Nationality</span>
+              <select id="uc04-nationality" class="r-select" data-country-select data-blank="not stated"></select>
+            </label>
+            <label class="r-field">
+              <span class="r-label">Destination country</span>
+              <select id="uc04-destinationCountry" class="r-select" data-country-select data-blank="choose a country"></select>
+            </label>
+          </div>
+
+          <div class="field-grid">
+            <label class="r-field">
+              <span class="r-label">Start date</span>
+              <input type="date" id="uc04-startDate" class="r-input" />
+            </label>
+            <label class="r-field">
+              <span class="r-label">End date</span>
+              <input type="date" id="uc04-endDate" class="r-input" />
+            </label>
+            <label class="r-field">
+              <span class="r-label">Evaluate as at <span class="r-hint">(optional — treat this date as today)</span></span>
+              <input type="date" id="uc04-now" class="r-input" />
+            </label>
+          </div>
+
+          <div class="field-grid">
+            <label class="r-field">
+              <span class="r-label">Visa / permit</span>
+              <!-- EVERY value below is a member of VALID_VISA_TYPES in
+                   src/uc04/policyEngine.js, and test/uc04Portal.test.js
+                   asserts that from this file. Three of the five options this
+                   list used to carry were values that engine REFUSES:
+                   `digital_nomad` (it wants `digital_nomad_visa`), `none`
+                   (not a visa type at all) and the empty default — each one
+                   returning `blocked / factors_invalid` with
+                   `invalid_visa_type`, which reads as a policy refusal and was
+                   a vocabulary mismatch. `work_permit` was missing entirely,
+                   and it is the ONLY visa type that clears the matrix's US and
+                   Canada hard blocks, so no US or Canadian workation could
+                   ever be approved from this page. -->
+              <select id="uc04-visaType" class="r-select">
+                <option value="">not stated</option>
+                <option value="schengen_short_stay">Schengen short stay</option>
+                <option value="business_visa">Business visa</option>
+                <option value="digital_nomad_visa">Digital nomad visa</option>
+                <option value="work_permit">Work permit</option>
+                <option value="tourist_visa">Tourist visa</option>
+                <option value="esta_usa">US ESTA / visa waiver</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label class="r-field">
+              <span class="r-label">Duties while abroad</span>
+              <!-- Same rule, same test. `management` was not a category the
+                   engine knows; the traveller it describes is `executive`,
+                   which is the matrix's HIGHEST permanent-establishment risk.
+                   So the one duty most likely to need a mobility specialist
+                   was rejected as malformed input instead of escalated, and
+                   `legal` — the matrix's other client-negotiation role — could
+                   not be stated at all. -->
+              <select id="uc04-jobDuties" class="r-select">
+                <option value="">not stated</option>
+                <option value="engineering">Engineering</option>
+                <option value="support">Support</option>
+                <option value="operations">Operations</option>
+                <option value="sales">Sales</option>
+                <option value="legal">Legal</option>
+                <option value="executive">Executive</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="r-field checkbox-field">
+            <input type="checkbox" id="uc04-hasContractSigningAuthority" />
+            <!-- Signing authority abroad is one of the two inputs that move a
+                 trip into permanent-establishment territory in
+                 src/uc04/policyEngine.js's matrix (the other is the duty
+                 category beside it). Naming the tax doctrine on the form asked
+                 the reader to know it; what they need to know is that ticking
+                 it changes the answer. -->
+            <span class="r-label">Can sign contracts on the company's behalf
+              <span class="r-hint">(this changes the answer — please do not tick it as a formality)</span>
+            </span>
+          </label>
+
+          <!-- PRIOR STAYS — the day-count inputs, stated by the traveller.
+               Nothing in Remote records where somebody has been, so these
+               cannot be looked up; src/portal/server.js's UC-04 adapter takes
+               them from here and drops any row left untouched, which is why two
+               blank rows are safe to render always. The `.period-row` layout is
+               UC-08's, reused rather than reinvented. -->
+          <span class="r-label">Prior stays abroad
+            <span class="r-hint">(optional — you tell us these; nothing is looked up)</span>
+          </span>
+          <!-- THE ROW THE PROJECT OWNER POINTED AT: "the country should be a
+               drop down menu". It is the same picker as the three above, and
+               its first option is EMPTY on purpose — an untouched row still
+               submits "" and is still dropped server-side, so "blank means
+               unknown, never zero" survives the change unaltered. -->
+          <div class="period-row">
+            <select id="uc04-h1-country" class="r-select" data-country-select data-blank="country"></select>
+            <input type="date" id="uc04-h1-startDate" class="r-input" />
+            <input type="date" id="uc04-h1-endDate" class="r-input" />
+          </div>
+          <div class="period-row">
+            <select id="uc04-h2-country" class="r-select" data-country-select data-blank="country"></select>
+            <input type="date" id="uc04-h2-startDate" class="r-input" />
+            <input type="date" id="uc04-h2-endDate" class="r-input" />
+          </div>
+          <!-- THIS NOTE USED TO SAY PRIOR TRIPS WERE SENT EMPTY, and that
+               stopped being true the moment the boxes above existed. Both facts
+               it carried are still here, said about the boxes rather than about
+               their absence: a blank is UNKNOWN and never a confirmed zero (the
+               result reports a floor), and a stay that cannot be read is
+               refused BY NAME rather than quietly dropped, because a count
+               missing a stay is not a smaller count. -->
+          <p class="r-hint field-note">
+            Leave the stays above blank and the days counted are a floor, not a confirmed
+            total — we do not know where you have been unless you say. A stay we cannot
+            read is named and refused rather than quietly skipped: a count missing a stay
+            is not a smaller count.
+          </p>
+
+          <label class="r-field">
+            <span class="r-label">Reason <span class="r-hint">(optional — read by whoever reviews this, and never used to decide it)</span></span>
+            <textarea id="uc04-reasonText" class="r-textarea" rows="2" placeholder="e.g. two weeks with the Madrid team"></textarea>
+          </label>
+
+          <label class="r-field">
+            <span class="r-label">Reference <span class="r-hint">(optional)</span></span>
+            <input type="text" id="uc04-externalRef" class="r-input" placeholder="e.g. 4001" />
+          </label>
+
+          
+            </div>
+          </details>
+
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Request work authorization</button>
+        </form>
+
+        <div class="result" id="result-uc04" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ---------- UC-05 ------------------------------------------------ -->
+    <section class="r-card uc-card" id="card-uc05" data-type="uc05" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true" data-field="icon"></span>
+        <div class="card-head-main">
+          <h2 class="r-card-title" data-field="title"></h2>
+          <p class="r-card-note" data-field="description"></p>
+        </div>
+        <span class="r-spacer"></span>
+        <span class="r-tier" data-field="tier"></span>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" data-field="humanControl"></p>
+
+        <div class="scenario-row">
+          <span class="r-label scenario-label">Quick-fill a scenario</span>
+          <div class="r-inline" data-scenarios="uc05"></div>
+        </div>
+
+        <form id="form-uc05">
+          <details class="manual-fields">
+            <summary>Fill in the fields yourself</summary>
+            <div class="manual-fields-body">
+          <div class="field-grid">
+            <label class="r-field">
+              <span class="r-label">Proposed last working day
+                <span class="r-hint">(the date you have in mind)</span>
+              </span>
+              <input type="date" id="uc05-proposedEndDate" class="r-input" />
+            </label>
+            <label class="r-field">
+              <span class="r-label">Evaluate as at <span class="r-hint">(optional — treat this date as today)</span></span>
+              <input type="date" id="uc05-now" class="r-input" />
+            </label>
+          </div>
+
+          <label class="r-field">
+            <!-- The extractor reads only the date the letter STATES. The
+                 statutory date is always computed from the notice table, never
+                 lifted out of prose — CLAUDE.md prime directive #1, and the
+                 reason src/uc05/ has an extractor and a calculator rather than
+                 one function.
+
+                 THE HINT USED TO OVERSTATE THIS. It said the date in the letter
+                 "is read out of it", full stop. src/uc05/workflow.js skips the
+                 extractor ENTIRELY when either the date box or the reason box
+                 above is filled — so a person who typed a date and also pasted
+                 a letter was told their letter had been read when it had not
+                 been opened. The two quick-fills "From the letter alone" and
+                 "Letter and box disagree" show both halves, and the result's
+                 own "Date came from" line names which path answered. -->
+            <span class="r-label">Or paste the resignation letter
+              <span class="r-hint">(leave the date box above empty and the date you gave in the letter is read out of it instead. Either way your notice period is worked out from your contract, never taken from the letter.)</span>
+            </span>
+            <textarea id="uc05-letterText" class="r-textarea" rows="3"
+              placeholder="e.g. Please accept my resignation. My last working day will be 15 September 2026."></textarea>
+          </label>
+
+          <label class="r-field">
+            <span class="r-label">Reason <span class="r-hint">(optional)</span></span>
+            <input type="text" id="uc05-reason" class="r-input" placeholder="e.g. new opportunity" />
+          </label>
+
+          <fieldset class="sub-block">
+            <legend class="sub-block-title">Accrued time off (for the payout you are owed)</legend>
+            <div class="field-grid">
+              <label class="r-field">
+                <span class="r-label">Type</span>
+                <input type="text" id="uc05-ptoType" class="r-input" placeholder="vacation" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Days accrued</span>
+                <input type="number" id="uc05-ptoDaysAccrued" class="r-input" step="0.5" placeholder="e.g. 18" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Days used</span>
+                <input type="number" id="uc05-ptoDaysUsed" class="r-input" step="0.5" placeholder="e.g. 6" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Hourly rate</span>
+                <input type="number" id="uc05-ptoHourlyRate" class="r-input" step="0.01" placeholder="e.g. 32.50" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Currency</span>
+                <input type="text" id="uc05-currency" class="r-input" value="USD" />
+              </label>
+            </div>
+            <p class="r-hint field-note">
+              Leave &ldquo;days accrued&rdquo; blank and no balance is sent at all — the result
+              then says the balance is unknown, rather than showing a zero nobody worked out.
+            </p>
+          </fieldset>
+
+          <label class="r-field">
+            <span class="r-label">Reference <span class="r-hint">(optional)</span></span>
+            <input type="text" id="uc05-externalRef" class="r-input" placeholder="e.g. 5001" />
+          </label>
+
+          
+            </div>
+          </details>
+
+          <button type="submit" class="r-btn r-btn-primary submit-btn">File the resignation</button>
+        </form>
+
+        <div class="result" id="result-uc05" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ---------- UC-07 ------------------------------------------------ -->
+    <section class="r-card uc-card" id="card-uc07" data-type="uc07" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true" data-field="icon"></span>
+        <div class="card-head-main">
+          <h2 class="r-card-title" data-field="title"></h2>
+          <p class="r-card-note" data-field="description"></p>
+        </div>
+        <span class="r-spacer"></span>
+        <span class="r-tier" data-field="tier"></span>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" data-field="humanControl"></p>
+
+        <div class="scenario-row">
+          <span class="r-label scenario-label">Quick-fill a scenario</span>
+          <div class="r-inline" data-scenarios="uc07"></div>
+        </div>
+
+        <form id="form-uc07">
+          <details class="manual-fields">
+            <summary>Fill in the fields yourself</summary>
+            <div class="manual-fields-body">
+          <label class="r-field">
+            <span class="r-label">Describe the relocation</span>
+            <textarea id="uc07-text" class="r-textarea" rows="3"
+              placeholder="e.g. We're permanently relocating our engineer from Spain to the Netherlands."></textarea>
+          </label>
+
+          <div class="field-grid">
+            <label class="r-field">
+              <span class="r-label">Employee&rsquo;s id in Remote <span class="r-hint">(optional)</span></span>
+              <input type="text" id="uc07-employmentId" class="r-input" placeholder="8ab12460-b568-4c1e-af9d-09b1fabd8f46" />
+            </label>
+            <label class="r-field">
+              <span class="r-label">Reference <span class="r-hint">(optional)</span></span>
+              <input type="text" id="uc07-externalRef" class="r-input" placeholder="e.g. 9001" />
+            </label>
+          </div>
+
+          <fieldset class="sub-block">
+            <legend class="sub-block-title">Money and term</legend>
+            <div class="field-grid">
+              <label class="r-field">
+                <span class="r-label">Destination salary <span class="r-hint">(a year&rsquo;s pay, before tax)</span></span>
+                <input type="number" id="uc07-salary" class="r-input" step="0.01" placeholder="64800" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Visa salary minimum <span class="r-hint">(a year&rsquo;s pay, before tax)</span></span>
+                <input type="number" id="uc07-minimumVisaSalary" class="r-input" step="0.01" placeholder="54000" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Currency</span>
+                <input type="text" id="uc07-currency" class="r-input" placeholder="EUR" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Contract months</span>
+                <input type="number" id="uc07-months" class="r-input" step="1" placeholder="12" />
+              </label>
+            </div>
+            <!-- WHY BOTH BOXES ARE ANNUAL, kept off the form because it is an
+                 argument about our own units. Annual gross is the period
+                 Remote's own POST /v1/cost-calculator/estimation takes
+                 (`annual_gross_salary`, in cents) and the period every
+                 statutory visa minimum is published in. The monthly management
+                 fee and the PTO daily rate are derived from it downstream — the
+                 fee by dividing by 12, the daily rate by dividing by 12 and
+                 then by 22 working days. This box once said MONTHLY while the
+                 visa-minimum comparison used an annual threshold, so one figure
+                 meant two things and every derived amount came out roughly
+                 twelvefold. Pinned now by test/n8nUc07Parity.test.js, which
+                 asserts the key's own name carries its period
+                 (`annualGrossSalaryRemoteInteger`).
+
+                 AND WHY NO FEE BOXES: transfer and mobility fees are quoted by
+                 Remote, never computed here, so the estimate carries an explicit
+                 QUOTE_REQUIRED marker instead of a silent zero. The reader meets
+                 that marker in the result, in context, with the line it belongs
+                 to — which is a better place to learn it than a paragraph above
+                 an empty form. -->
+            <p class="r-hint field-note">
+              Both salary boxes are a whole year&rsquo;s pay before tax. Transfer and visa
+              fees are not asked for: Remote quotes those, so the estimate says a quote is
+              needed rather than counting them as nothing.
+            </p>
+          </fieldset>
+
+          <fieldset class="sub-block">
+            <legend class="sub-block-title">Dates</legend>
+            <div class="field-grid">
+              <label class="r-field">
+                <span class="r-label">Request raised</span>
+                <input type="date" id="uc07-creationDate" class="r-input" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Proposed start</span>
+                <input type="date" id="uc07-proposedStartDate" class="r-input" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Destination start</span>
+                <input type="date" id="uc07-destinationStartDate" class="r-input" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Source termination</span>
+                <input type="date" id="uc07-sourceTerminationDate" class="r-input" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Source last working day</span>
+                <input type="date" id="uc07-sourceLastWorkingDay" class="r-input" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Original hire date
+                  <span class="r-hint">(what preserved seniority is counted from)</span>
+                </span>
+                <input type="date" id="uc07-originalHireDate" class="r-input" />
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="sub-block">
+            <legend class="sub-block-title">Confirmed facts</legend>
+            <div class="check-grid">
+              <label class="checkbox-field"><input type="checkbox" id="uc07-destinationSupported" /><span>Destination is a supported country</span></label>
+              <label class="checkbox-field"><input type="checkbox" id="uc07-immigrationSupportRequired" /><span>Immigration support is required</span></label>
+              <label class="checkbox-field"><input type="checkbox" id="uc07-immigrationConfirmed" /><span>Immigration assessment confirmed</span></label>
+              <label class="checkbox-field"><input type="checkbox" id="uc07-rightToWorkConfirmed" /><span>Right to work confirmed</span></label>
+              <label class="checkbox-field"><input type="checkbox" id="uc07-destinationStartDateConfirmed" /><span>Destination start date confirmed</span></label>
+              <label class="checkbox-field"><input type="checkbox" id="uc07-sourceExitPlanValidated" /><span>Source exit plan validated</span></label>
+              <label class="checkbox-field"><input type="checkbox" id="uc07-employerPresenceInDestination" /><span>Employer already present in destination</span></label>
+              <label class="checkbox-field"><input type="checkbox" id="uc07-taxTreatyNexusConfirmed" /><span>Tax treaty nexus confirmed</span></label>
+              <label class="checkbox-field"><input type="checkbox" id="uc07-ptoTransferAllowed" /><span>PTO balance may transfer</span></label>
+            </div>
+          </fieldset>
+
+          <div class="field-grid">
+            <label class="r-field">
+              <span class="r-label">PTO days at source</span>
+              <input type="number" id="uc07-sourcePtoDays" class="r-input" step="0.5" placeholder="12" />
+            </label>
+            <label class="r-field">
+              <span class="r-label">Seniority preservable
+                <span class="r-hint">(&ldquo;Unknown&rdquo; is a real answer — it sends the question to legal to settle, rather than being assumed either way)</span>
+              </span>
+              <select id="uc07-seniorityPreservable" class="r-select">
+                <option value="unknown">Unknown</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </label>
+          </div>
+
+          
+            </div>
+          </details>
+
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Compile the feasibility dossier</button>
+        </form>
+
+        <div class="result" id="result-uc07" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ---------- UC-08 ------------------------------------------------ -->
+    <section class="r-card uc-card" id="card-uc08" data-type="uc08" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true" data-field="icon"></span>
+        <div class="card-head-main">
+          <h2 class="r-card-title" data-field="title"></h2>
+          <p class="r-card-note" data-field="description"></p>
+        </div>
+        <span class="r-spacer"></span>
+        <span class="r-tier" data-field="tier"></span>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" data-field="humanControl"></p>
+
+        <div class="scenario-row">
+          <span class="r-label scenario-label">Quick-fill a scenario</span>
+          <div class="r-inline" data-scenarios="uc08"></div>
+        </div>
+
+        <form id="form-uc08">
+          <details class="manual-fields">
+            <summary>Fill in the fields yourself</summary>
+            <div class="manual-fields-body">
+          <label class="r-field">
+            <span class="r-label">The tax or social-security question</span>
+            <textarea id="uc08-text" class="r-textarea" rows="3"
+              placeholder="e.g. I've been splitting my time between Germany and Spain — am I a dual resident?"></textarea>
+          </label>
+
+          <div class="field-grid">
+            <label class="r-field">
+              <span class="r-label">Employee&rsquo;s id in Remote <span class="r-hint">(optional)</span></span>
+              <input type="text" id="uc08-employmentId" class="r-input" placeholder="8ab12460-b568-4c1e-af9d-09b1fabd8f46" />
+            </label>
+            <label class="r-field">
+              <span class="r-label">Reference <span class="r-hint">(optional)</span></span>
+              <input type="text" id="uc08-externalRef" class="r-input" placeholder="e.g. 8002" />
+            </label>
+          </div>
+
+          <fieldset class="sub-block">
+            <legend class="sub-block-title">Presence day count (optional)</legend>
+            <div class="field-grid">
+              <label class="r-field">
+                <span class="r-label">Count days in</span>
+                <select id="uc08-targetCountry" class="r-select" data-country-select data-blank="not stated"></select>
+              </label>
+              <label class="r-field">
+                <span class="r-label">Window start</span>
+                <input type="date" id="uc08-windowStart" class="r-input" />
+              </label>
+              <label class="r-field">
+                <span class="r-label">Window end</span>
+                <input type="date" id="uc08-windowEnd" class="r-input" />
+              </label>
+            </div>
+
+            <span class="r-label">Periods of presence</span>
+            <div class="period-row">
+              <select id="uc08-p1-country" class="r-select" data-country-select data-blank="country"></select>
+              <input type="date" id="uc08-p1-startDate" class="r-input" />
+              <input type="date" id="uc08-p1-endDate" class="r-input" />
+            </div>
+            <div class="period-row">
+              <select id="uc08-p2-country" class="r-select" data-country-select data-blank="country"></select>
+              <input type="date" id="uc08-p2-startDate" class="r-input" />
+              <input type="date" id="uc08-p2-endDate" class="r-input" />
+            </div>
+            <p class="r-hint field-note">
+              A row you leave completely empty is ignored. A row you start but do not
+              finish is never guessed at — the count comes back &ldquo;not counted&rdquo;,
+              naming that row, because a count missing a stay is not a smaller count.
+            </p>
+          </fieldset>
+
+          
+            </div>
+          </details>
+
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Compile the tax dossier</button>
+        </form>
+
+        <div class="result" id="result-uc08" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- ---------- UC-09 ------------------------------------------------ -->
+    <section class="r-card uc-card" id="card-uc09" data-type="uc09" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true" data-field="icon"></span>
+        <div class="card-head-main">
+          <h2 class="r-card-title" data-field="title"></h2>
+          <p class="r-card-note" data-field="description"></p>
+        </div>
+        <span class="r-spacer"></span>
+        <span class="r-tier" data-field="tier"></span>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" data-field="humanControl"></p>
+
+        <div class="scenario-row">
+          <span class="r-label scenario-label">Quick-fill a scenario</span>
+          <div class="r-inline" data-scenarios="uc09"></div>
+        </div>
+
+        <form id="form-uc09">
+          <label class="r-field">
+            <!-- The id must belong to the admin's OWN company: UC-09's identity
+                 gate compares the employment's company against the session's and
+                 refuses a mismatch. That refusal is a scenario on this page, and
+                 the result says which gate refused it. -->
+            <span class="r-label">Employee to be paid
+              <span class="r-hint">(their id in Remote — Chris Lee by default; they must be at your own company)</span>
+            </span>
+            <input type="text" id="uc09-employmentId" class="r-input" value="8ab12460-b568-4c1e-af9d-09b1fabd8f46" />
+          </label>
+
+          <label class="r-field">
+            <!-- FREE TEXT ON PURPOSE. A box labelled "amount" would sit exactly
+                 on top of the ×100 money trap src/uc09/workflow.js's own comment
+                 records: a number typed by a person and a number Remote's API
+                 wants are two different things, and a form that blurs them is
+                 where a 12,500 becomes a 125.00. -->
+            <span class="r-label">The request, including the amount
+              <span class="r-hint">(write it as you would to a colleague — the amount goes in this text)</span>
+            </span>
+            <textarea id="uc09-requestText" class="r-textarea" rows="3"
+              placeholder="e.g. Process a $5,000 performance bonus for the Q2 cycle."></textarea>
+          </label>
+
+          <!-- Said here rather than discovered by a puzzled tester. UC-09 is the
+               one use case with NO rule-based fallback for its LLM seam, and that
+               is deliberate: adjustmentParser.js refuses rather than guessing,
+               because the number it returns is the number that gets paid. The
+               consequence is that with no OPENAI_API_KEY reachable, every
+               free-text request stops at the parser — so the two amount-bearing
+               scenarios below cannot reach the approval gates they exist to
+               demonstrate, and say so in the result panel when they do not. -->
+          <p class="r-hint field-note">
+            The amount is read out of your text by a model, and nothing guesses at it if
+            that fails — a wrong number here would be a wrong payment. So if the model
+            cannot be reached the request stops there and says so, and the checks that
+            need no amount still run and still report what they found.
+          </p>
+
+          <label class="r-field">
+            <span class="r-label">Reason <span class="r-hint">(optional context)</span></span>
+            <input type="text" id="uc09-reasonText" class="r-input" placeholder="e.g. annual performance bonus" />
+          </label>
+
+          <div class="field-grid">
+            <label class="r-field">
+              <span class="r-label">Reference <span class="r-hint">(optional)</span></span>
+              <input type="text" id="uc09-externalRef" class="r-input" placeholder="e.g. 9001" />
+            </label>
+            <label class="r-field">
+              <span class="r-label">Evaluate as at <span class="r-hint">(optional — treat this date as today)</span></span>
+              <input type="date" id="uc09-now" class="r-input" />
+            </label>
+          </div>
+
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Request the adjustment</button>
+        </form>
+
+        <div class="result" id="result-uc09" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         The access-key prompt. Hidden unless the SERVER says a key is needed:
+         the page never decides that for itself, it renders the refusal the
+         server sent (src/portal/access.js). The value is kept in
+         sessionStorage for this browser session only and is never baked into
+         this bundle — a key in a shipped asset is a published key.
+         ===================================================================== -->
+    <section class="r-card" id="access-gate" hidden>
+      <div class="r-card-head">
+        <div>
+          <h2 class="r-card-title">This portal needs an access key</h2>
+          <p class="r-card-note" id="access-reason"></p>
+        </div>
+      </div>
+      <div class="r-card-body">
+        <p class="small r-secondary" id="access-why"></p>
+        <form id="access-form" autocomplete="off">
+          <label class="r-field">
+            <span class="r-label">Access key
+              <span class="r-hint">(kept for this browser session only — never stored in the page's code)</span>
+            </span>
+            <input type="password" id="access-key" class="r-input" spellcheck="false" />
+          </label>
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Unlock this session</button>
+        </form>
+        <ul class="small r-secondary" id="access-howto"></ul>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         MY REQUESTS — read-only, and deliberately so.
+         This panel answers "what happened to what I filed?" and offers no
+         control that could change any of it. Every approve/decline lives in the
+         ZAF sidebar and each use case's own approval endpoint; a second place
+         to decide would be a second, unaudited place to decide. The copy below
+         says that out loud rather than leaving the absence to be noticed.
+         ===================================================================== -->
+    <section class="r-card" id="card-my-requests" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true">📋</span>
+        <div class="card-head-main">
+          <h2 class="r-card-title">My requests</h2>
+          <!-- NOT "in this session". The list is read from each use case's
+               own durable store on every load, so it survives a restart and
+               works on the serverless deployment, where a fresh process is
+               built for every request. It used to say "session" and mean it,
+               which is why this panel was permanently empty in production. -->
+          <p class="r-card-note">
+            Everything this persona has filed through this portal, and what has
+            happened to it since — including anything that went to a human.
+            Read live from each record, never remembered.
+          </p>
+        </div>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control" id="my-requests-boundary"></p>
+        <p class="small r-secondary" id="my-requests-scope"></p>
+
+        <!-- This view POLLS. It cannot be told when a decision is made — the
+             decision happens in the ZAF sidebar or a use case's own approval
+             endpoint, in another process entirely — so it asks, and the copy
+             below says so rather than implying a push. -->
+        <div class="live-bar">
+          <button type="button" class="live-toggle" id="my-requests-live" aria-pressed="true">Live</button>
+          <span class="small r-secondary" id="my-requests-checked"></span>
+          <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="my-requests-refresh">Check now</button>
+        </div>
+        <p class="small r-secondary">
+          <strong>The table scrolls sideways.</strong> What happened, when, and
+          who decided it are the first columns; the record id and the raw
+          stored state are off to the right. The
+          <strong>reference</strong> — the id that ties every record of a
+          request together, and the one to quote when asking anyone to trace
+          it — stays pinned to the right edge so it is visible without
+          scrolling. Every id also has its own Copy button.
+        </p>
+        <p class="small r-secondary">
+          This page checks for changes every few seconds; it is not a live push,
+          so a decision made elsewhere can take a moment to appear here. Nothing
+          on this page can make one.
+        </p>
+
+        <!-- WHAT CHANGED WHILE YOU WERE AWAY, in one line, above the list.
+             The list stays in filing order — reordering someone's own history
+             under them every time a specialist touched something would be
+             unreadable — so this is what stops a decision being scrolled past.
+             The sentence is composed by the server (`decided.summary`); this
+             element is empty until there is one, and hidden while it is. -->
+        <p class="decided-summary" id="my-requests-decided" hidden></p>
+
+        <!-- WHY A TABLE, AND WHY IT SCROLLS SIDEWAYS.
+             This used to be a column of cards. A card is fine for one request
+             and unreadable for twelve: the eye cannot compare "decided at"
+             across rows when each one sits at a different height inside its own
+             box. So this is the same shape as the Execution & Audit Trail
+             viewer's live feed — one row per request, the columns that answer
+             "what happened to mine?" first, the identifiers after them, and the
+             CARD scrolling sideways rather than the page. `.r-table-wrap` owns
+             the overflow; `.my-requests-table` has the floor width that makes
+             it engage instead of crushing every column to one word per line. -->
+        <div id="my-requests-list">
+          <div class="r-table-wrap">
+            <table class="r-table my-requests-table">
+              <thead>
+                <tr>
+                  <th scope="col">Filed</th>
+                  <th scope="col">Use case</th>
+                  <th scope="col">Request</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">What happened</th>
+                  <th scope="col">Document</th>
+                  <th scope="col">Decided at</th>
+                  <th scope="col">Decided by</th>
+                  <th scope="col">Their note</th>
+                  <th scope="col">At intake</th>
+                  <th scope="col">Reason</th>
+                  <th scope="col">Waiting on</th>
+                  <th scope="col">Record</th>
+                  <th scope="col">Reference</th>
+                  <th scope="col">Raw state</th>
+                </tr>
+              </thead>
+              <tbody id="my-requests-rows"></tbody>
+            </table>
+          </div>
+        </div>
+        <p class="empty-note" id="my-requests-note" role="status" aria-live="polite"></p>
+
+        <!-- A use case the portal could not read is NAMED here rather than
+             quietly missing from the table above. The server already sends
+             `notListed` for both reasons it can happen (this persona owns no
+             scope for that use case, or its store threw); nothing rendered it,
+             so a failed read looked exactly like a requester who had filed
+             nothing — which is the confusion that made a malformed UC-05 query
+             read as "my approved claim vanished". -->
+        <div id="my-requests-unavailable" hidden></div>
+      </div>
+    </section>
+
+    <!-- =====================================================================
+         CONSENT REQUESTS — F-2/L-13: the surface that did not exist.
+         The round trip already worked at the API level
+         (GET/POST /api/consent-requests…, src/portal/server.js) before this
+         panel existed; nothing here decides anything a server-side gate does
+         not already decide. This is an ACT ABOUT ONE'S OWN CONSENT, not a
+         specialist approval — deliberately distinct from "My requests" above,
+         which stays read-only on purpose. See server.js's own comment on
+         GET /api/consent-requests for why granting or refusing a disclosure
+         about yourself is not the same kind of control the sidebar's
+         approve/decline is.
+         ===================================================================== -->
+    <section class="r-card" id="card-consent-requests" hidden>
+      <button type="button" class="back-link" data-home-link>&larr; All request types</button>
+      <div class="r-card-head">
+        <span class="r-tile" aria-hidden="true">🔏</span>
+        <div class="card-head-main">
+          <h2 class="r-card-title">Consent requests</h2>
+          <p class="r-card-note">
+            Third parties who have asked to have your own employment confirmed, and have not yet
+            been answered. Only you can grant or refuse a request about yourself — nobody else can
+            decide this for you, and it never happens anywhere else on this page.
+          </p>
+        </div>
+      </div>
+      <div class="r-card-body">
+        <p class="human-control">
+          Deciding here answers exactly ONE request, from ONE party, for ONE stated purpose — never a
+          standing "yes to anyone, forever". A different party asking, or the same party asking for
+          something else, is a different request and asks again. Granting still does not disclose
+          anything by itself: it records that you said yes, and the request that asked is what acts
+          on it next.
+        </p>
+
+        <div class="live-bar">
+          <button type="button" class="live-toggle" id="consent-requests-live" aria-pressed="true">Live</button>
+          <span class="small r-secondary" id="consent-requests-checked"></span>
+          <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="consent-requests-refresh">Check now</button>
+        </div>
+
+        <p class="decided-summary" id="consent-requests-decided" hidden></p>
+
+        <div id="consent-requests-list">
+          <div class="r-table-wrap">
+            <table class="r-table consent-requests-table">
+              <thead>
+                <tr>
+                  <th scope="col">Asked</th>
+                  <th scope="col">Who is asking</th>
+                  <th scope="col">What for</th>
+                  <th scope="col">Waiting</th>
+                  <th scope="col">Decide</th>
+                </tr>
+              </thead>
+              <tbody id="consent-requests-rows"></tbody>
+            </table>
+          </div>
+        </div>
+        <p class="empty-note" id="consent-requests-note" role="status" aria-live="polite"></p>
+
+        <!-- Shown only for a persona this API refuses outright (a company
+             admin — the server's own `persona_cannot_view_consent_requests`)
+             rather than leaving an empty table that looks like "nobody has
+             asked", which would be a different fact. -->
+        <div id="consent-requests-unavailable" hidden></div>
+      </div>
+    </section>
+
+    <div class="r-empty" id="boot-error" hidden>
+      <span class="r-tile" aria-hidden="true">⚠</span>
+      <p class="r-empty-title">The portal could not load its request types</p>
+      <p class="r-empty-body" id="boot-error-body"></p>
+    </div>
+
+  </main>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>

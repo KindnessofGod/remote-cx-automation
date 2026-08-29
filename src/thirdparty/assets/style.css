@@ -1,0 +1,156 @@
+/* Additions to the shared design system (remote-ui.css) for this one page. */
+
+.tp-main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+.tp-head { margin-bottom: 14px; }
+.tp-head .r-page-sub { margin: 4px 0 0; }
+
+/* REPORTED 2026-08-28 ("the formatting of text is off"). The notice was a
+   `.r-card` wrapping an `.r-card-note`, which gave a five-line paragraph the
+   same visual weight as the form itself — a full bordered card, at the top of
+   the page, saying something nobody reads twice. It keeps a left rule and the
+   brand's own subtle ground instead: still unmissable, a third of the height,
+   and no longer competing with the card that actually does something. */
+.tp-notice {
+  margin: 0 0 20px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--r-brand);
+  border-radius: 0 8px 8px 0;
+  background: var(--r-brand-subtle);
+  color: var(--r-text-secondary);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.tp-notice strong { color: var(--r-text); }
+
+/* Demonstration banner. Warning colours rather than the brand's, deliberately:
+   .tp-notice below is page furniture a reader learns to skip, and this one has
+   to survive being seen second. Slim on purpose — the form must stay above the
+   fold on a laptop, which is the constraint that shrank .tp-notice too. */
+.tp-demo {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--r-warning-border, #e0b44a);
+  border-radius: 8px;
+  background: var(--r-warning-subtle, #fff8e6);
+  color: var(--r-text-secondary);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.tp-demo strong { color: var(--r-text); }
+
+/* --- quick-fills ----------------------------------------------------------- */
+.tp-scenarios { margin-bottom: 16px; }
+.tp-scenario-label { display: block; margin-bottom: 8px; }
+.tp-scenario-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.tp-scenario-row .r-btn { font-size: 13px; padding: 7px 12px; }
+
+/* WHICH QUICK-FILL IS LOADED RIGHT NOW — the same rule the portal's own
+   `.is-chosen` follows, and for the same reported reason: a reader who cannot
+   see which chip is active reads one scenario's values as another's leaking
+   in. Colour is never the only carrier — `#scenario-note` names it in words. */
+.tp-scenario-row .r-btn.is-chosen {
+  border-color: var(--r-brand);
+  box-shadow: inset 0 0 0 1px var(--r-brand);
+  background: var(--r-brand-subtle);
+  color: var(--r-brand);
+  font-weight: 600;
+}
+.tp-scenario-note { margin: 10px 0 0; max-width: 92ch; }
+
+/* --- form ------------------------------------------------------------------ */
+/* Two short fields per row above 620px. This is most of the height the page
+   lost: four single-column inputs, each with its own label and hint, became
+   two rows. Below that width it collapses back to one column — a phone has no
+   room for two, and the fields were never the thing that was too narrow. */
+.tp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 620px) { .tp-grid { grid-template-columns: 1fr; } }
+
+.tp-form .r-field { margin-bottom: 16px; }
+.tp-form .r-input { padding: 11px 12px; }
+.tp-form textarea.r-input {
+  resize: vertical;
+  font-family: inherit;
+}
+.tp-form .r-hint { margin: 0; }
+
+/* The optional pair. Styled as a quiet inline disclosure rather than a card,
+   so it reads as "more of this form" and not as a second form. */
+.tp-optional {
+  margin: 2px 0 18px;
+  border: 1px solid var(--r-border);
+  border-radius: 10px;
+}
+.tp-optional > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--r-text-secondary);
+}
+.tp-optional[open] > summary { border-bottom: 1px solid var(--r-border); }
+.tp-optional-body { padding: 14px 12px 0; }
+.tp-optional-body .r-field:last-child { margin-bottom: 14px; }
+
+.tp-result { margin-top: 16px; }
+
+.tp-followup { margin-top: 16px; }
+.tp-followup summary {
+  cursor: pointer;
+  padding: 0.85rem 1.1rem;
+}
+.tp-followup textarea.r-input {
+  resize: vertical;
+  font-family: inherit;
+}
+
+/* Was a bordered card of its own for two sentences. It is a footnote, and now
+   looks like one. */
+.tp-footer {
+  margin: 18px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--r-text-muted);
+}
+
+/* --- the approved response ------------------------------------------------ */
+/* The letter is a complete HTML document with its own <style>, so it is shown
+   in a sandboxed iframe rather than injected: injecting it would let its rules
+   escape into this page, and `sandbox=""` (no scripts, no same-origin) means a
+   document we hand to an outside party can do nothing to the page it arrives
+   on. Fixed height with its own scroll — a verification letter is one page, and
+   letting it grow unbounded pushes the download button off screen. */
+.tp-letter { margin-top: 14px; }
+.tp-letter-frame {
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--r-border);
+  border-radius: 8px;
+  background: #fff;
+  display: block;
+}
+.tp-letter-download { margin-top: 12px; display: inline-block; }
+.tp-letter-hash {
+  margin: 10px 0 0;
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--r-text-muted);
+}
+.tp-collect > summary {
+  cursor: pointer;
+  padding: 0.85rem 1.1rem;
+}
+
+/* The "we remembered it" line. Quiet, but it has to be visible enough that a
+   reader stops looking for something to paste. */
+.tp-collect-known {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--r-brand);
+  background: var(--r-brand-subtle);
+}
+.tp-collect-known a { margin-left: 6px; }

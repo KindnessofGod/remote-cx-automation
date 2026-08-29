@@ -1,0 +1,90 @@
+{
+  "evaluation": {
+    "version": "classifier-v2",
+    "dataset": "uc01-classifier-golden-v2-remote-aligned",
+    "evaluator": "uc01-classifier-evaluator-v2",
+    "mode": "SMOKE",
+    "selectedCase": "cls2-045",
+    "caseCount": 1
+  },
+  "summary": {
+    "exactPasses": 1,
+    "exactFailures": 0,
+    "exactMatchRate": 1
+  },
+  "results": [
+    {
+      "id": "cls2-045",
+      "category": "boundary_standard_fields",
+      "grounding": "remote_help_center",
+      "sourceKeys": [
+        "HC_STANDARD_CONTENTS"
+      ],
+      "rationale": "These are standard-template details and should not trigger customization.",
+      "input": {
+        "text": "Please make sure the letter includes my start date and whether my contract is fixed-term or indefinite.",
+        "hasAttachment": false
+      },
+      "expected": {
+        "intent": "standard_letter",
+        "requesterType": "self",
+        "hasExternalUrl": false,
+        "requestedFields": []
+      },
+      "actual": {
+        "intent": "standard_letter",
+        "hasAttachment": false,
+        "hasExternalUrl": false,
+        "requesterType": "self",
+        "confidence": 1,
+        "requestedFields": [],
+        "source": "llm"
+      },
+      "grades": [
+        {
+          "name": "intent_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=standard_letter; actual=standard_letter"
+        },
+        {
+          "name": "requester_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=self; actual=self"
+        },
+        {
+          "name": "attachment_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected_from_input_metadata=false; actual=false"
+        },
+        {
+          "name": "external_url_correct",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=false; actual=false"
+        },
+        {
+          "name": "fields_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "expected=[]; actual=[]"
+        },
+        {
+          "name": "case_exact_match",
+          "score": 1,
+          "label": "pass",
+          "explanation": "All classifier dimensions matched their correct sources of truth."
+        },
+        {
+          "name": "llm_path",
+          "score": 1,
+          "label": "pass",
+          "explanation": "classifier source=llm"
+        }
+      ],
+      "spanId": "0713223485a5e2b0"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Remote CX Review</title>
+    <!--
+      The ZAF SDK is loaded from Zendesk's own CDN — this is the documented way
+      to bootstrap a v2 app, and the only external script the sidebar loads.
+      Everything else in this app is local and dependency-free.
+    -->
+    <script src="https://static.zdassets.com/zendesk_app_framework_sdk/2.0/zaf_sdk.min.js"></script>
+    <!--
+      remote-ui.css is the shared design system (src/shared/ui/remote-ui.css).
+      Every other surface in this repo fetches it from its own server at
+      /remote-ui.css; a ZAF app cannot, because `zcli apps:package` uploads a
+      self-contained zip that Zendesk serves — there is no server of ours in
+      the path, and reaching out to one would put the sidebar's appearance at
+      the mercy of a host the agent's browser may not even be able to see.
+
+      So this bundle carries a copy, and test/zafApp.test.js asserts it stays
+      byte-identical to the original. Same "it exists twice, and a test — not
+      a promise — keeps the copies honest" pattern as the n8n Code node
+      bodies (test/n8nParity.test.js).
+    -->
+    <link rel="stylesheet" href="remote-ui.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="root" class="app">
+      <p class="state" id="boot">Loading case…</p>
+    </main>
+    <!--
+      countryNames.js is GENERATED from src/shared/countryNames.js and holds
+      nothing but data; country.js is the only file that reads it and is what
+      turns a code into a name at the point of rendering. Both load before the
+      panels and the shell, because both of those render countries.
+    -->
+    <script src="countryNames.js"></script>
+    <script src="country.js"></script>
+    <script src="panels.js"></script>
+    <script src="main.js"></script>
+  </body>
+</html>
