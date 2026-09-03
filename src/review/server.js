@@ -48,6 +48,7 @@ import { describeEmployee } from "../shared/employeeSubject.js";
 import { describeDecisionFacts } from "../uc01/policyEngine.js";
 import { approvalMayDisclose } from "../uc01/disclosureFields.js";
 import { remoteFor } from "../shared/remoteWorld.js";
+import { byTicketAccountRefusal } from "../shared/byTicketAccountGuard.js";
 
 /**
  * Build the request handler. Everything it needs is injected, so tests drive
@@ -130,6 +131,12 @@ export function createReviewHandler({
       // GET /api/review/ticket/:ticketId
       if (req.method === "GET" && isPath(parts, ["api", "review", "ticket"]) && parts[3]) {
         const view = await getReviewView({ ticketId: parts[3] }, { store });
+        // ACCOUNT COLLISION GUARD — a bare ticket number means nothing without
+        // the account it was issued by. Checked against the CASE ROW's own
+        // createdAt, which getReviewView carries through untouched.
+        // See src/shared/byTicketAccountGuard.js.
+        const foreignAccount = view.found ? byTicketAccountRefusal(view.case, parts[3]) : null;
+        if (foreignAccount) return send(res, 404, foreignAccount);
         // WHO IS THIS ABOUT — the specialist's first question (L-17, VC-17,
         // DRIFT-042).
         //

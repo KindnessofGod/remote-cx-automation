@@ -22,7 +22,8 @@
 // ---------------------------------------------------------------------------
 
 import { createServer } from "node:http";
-import { evaluateAmendmentActionability } from "./dualApprovalPolicy.js";
+import { evaluateAmendmentActionability, settledFacts } from "./dualApprovalPolicy.js";
+import { handoffFor } from "../shared/escalationRouting.js";
 import { submitAmendmentApproval } from "./workflow.js";
 import { classifyRisk, describeRiskPosture } from "../shared/riskEngine.js";
 import { describeEmployee } from "../shared/employeeSubject.js";
@@ -31,6 +32,8 @@ import { readJsonBody } from "../shared/httpBody.js";
 import { resolveApprover, resolveReader } from "../shared/approverAuth.js";
 import { describeDecidingGate, describeGateLadder } from "./policyEngine.js";
 import { describeAmendmentBasis } from "./decisionFacts.js";
+import { byTicketAccountRefusal } from "../shared/byTicketAccountGuard.js";
+import { remoteFor } from "../shared/remoteWorld.js";
 
 /**
  * @param {object} deps
@@ -93,6 +96,10 @@ export function createUc06Handler({ amendmentStore, audit, remote, allowedOrigin
       // would otherwise be read as an amendment id.
       if (req.method === "GET" && isPath(parts, ["api", "amendments", "by-ticket"]) && parts[3] && parts.length === 4) {
         const amendmentRow = await amendmentStore.findByExternalRef(parts[3]);
+        // ACCOUNT COLLISION GUARD — a bare ticket number means nothing without the
+        // account it was issued by. See src/shared/byTicketAccountGuard.js.
+        const foreignAccount = byTicketAccountRefusal(amendmentRow, parts[3]);
+        if (foreignAccount) return send(res, 404, foreignAccount);
         if (!amendmentRow) return send(res, 404, { found: false });
         const actionability = evaluateAmendmentActionability({ amendmentRow });
         return send(res, 200, {
@@ -109,6 +116,16 @@ export function createUc06Handler({ amendmentStore, audit, remote, allowedOrigin
           tier: classifyRisk("UC-06", amendmentRow.flags ?? []).tier,
           actionable: actionability.allowed,
           actionableReason: actionability.reason,
+          // THE SETTLED DECISION, AS FACTS — null while the amendment is open.
+          // Its `badge` is what the sidebar puts at the top of the panel once
+          // both signatures (or one decline) have landed; without it the header
+          // read "Awaiting dual approval" over an executed row (2026-09-02).
+          settled: settledFacts(amendmentRow),
+          // WHO OWNS IT WHEN IT IS NOT OPEN HERE. On an escalation the panel
+          // used to print the two approval slots as "Held by", which is the
+          // wrong answer to "who owns this now"; the routing table's answer is
+          // Payroll Ops, and it is read from there rather than restated.
+          handoff: handoffFor({ useCase: "UC-06", decision: amendmentRow.decision ?? null }),
           ...describeDecision(amendmentRow),
         });
       }
@@ -132,6 +149,16 @@ export function createUc06Handler({ amendmentStore, audit, remote, allowedOrigin
           tier: classifyRisk("UC-06", amendmentRow.flags ?? []).tier,
           actionable: actionability.allowed,
           actionableReason: actionability.reason,
+          // THE SETTLED DECISION, AS FACTS — null while the amendment is open.
+          // Its `badge` is what the sidebar puts at the top of the panel once
+          // both signatures (or one decline) have landed; without it the header
+          // read "Awaiting dual approval" over an executed row (2026-09-02).
+          settled: settledFacts(amendmentRow),
+          // WHO OWNS IT WHEN IT IS NOT OPEN HERE. On an escalation the panel
+          // used to print the two approval slots as "Held by", which is the
+          // wrong answer to "who owns this now"; the routing table's answer is
+          // Payroll Ops, and it is read from there rather than restated.
+          handoff: handoffFor({ useCase: "UC-06", decision: amendmentRow.decision ?? null }),
           ...describeDecision(amendmentRow),
         });
       }
@@ -229,9 +256,17 @@ function describeDecision(row) {
  * REJECTED: `start_date` — no UC-06 gate reads tenure.
  */
 async function employeeAndRequester(row, remote) {
+  // THE SAME WORLD THE ROW WAS DECIDED IN (2026-09-02). A row filed through the
+  // Remote-product stand-in (`source: "remoteui"`) or the portal was decided
+  // against the in-process mock; reading its employee from the gateway Sandbox
+  // answered "NO SUCH EMPLOYMENT RECORD" on every one of ten live cases, in a
+  // headed card two inches above "Every check passed … what is left is the
+  // signature". remoteFor() is what the approve path already used for its
+  // freshness re-check; the panel's read now asks the same question first.
+  const remoteForRow = remoteFor(remote, row.source);
   return {
     employee: await describeEmployee({
-      remote,
+      remote: remoteForRow,
       employmentId: row.employmentId,
       fields: ["full_name", "job_title", "status", "contract_type", "country_code"],
     }),

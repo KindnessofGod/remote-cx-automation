@@ -46,7 +46,7 @@
 import { startPortalServer } from "./server.js";
 import { resolveChromiumPath } from "../shared/chromiumPath.js";
 import { REQUEST_TYPES } from "./requestTypes.js";
-import { buildPortalStores, portalLlmDefaults } from "./wiring.js";
+import { buildPortalStores, portalLlmDefaults, portalReceiptReader } from "./wiring.js";
 import { portalAccessPosture, PORTAL_KEY_ENV } from "./access.js";
 import { startMockServer } from "../remote/mockServer.js";
 import { ZendeskClient } from "../zendesk/restClient.js";
@@ -81,6 +81,7 @@ async function main() {
   // `npm run dashboard` because of it.
   const stores = buildPortalStores({ pgPool });
   const llm = portalLlmDefaults();
+  const receiptReader = portalReceiptReader();
 
   // Same rule as the deployment (src/portal/access.js): a key is required once
   // a durable store is attached, or on a public URL. A seeded, in-memory run —
@@ -121,7 +122,7 @@ async function main() {
     renderPdfFromHtml(html, { executablePath: resolveChromiumPath() });
 
   const server = await startPortalServer(
-    { remote, audit, stores, llm, access, zendesk, employmentIdFieldId, renderPdf },
+    { remote, audit, stores, llm, receiptReader, access, zendesk, employmentIdFieldId, renderPdf },
     port
   );
 

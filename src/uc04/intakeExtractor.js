@@ -58,6 +58,7 @@
 import { askJson, isLlmConfigured, extractUsage } from "../shared/llm.js";
 import { withRetry } from "../shared/retry.js";
 import { asLowerText } from "../shared/text.js";
+import { isRealIsoDate, yearsMentioned, isDateGroundedInText as isGroundedDate } from "../shared/statedDates.js";
 import { normalizeCountryCode, isWellFormedCountryCode } from "../shared/countryCodes.js";
 import {
   compileCountryDictionary,
@@ -132,21 +133,14 @@ const MONTHS = {
 };
 
 /** Is this a real calendar date in ISO form — not just four-two-two digits? */
-export function isRealIsoDate(value) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [y, m, d] = value.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d));
-  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-}
-
-/** Every distinct four-digit year written in the text, in appearance order. */
-function yearsMentioned(lowerText) {
-  const seen = [];
-  for (const m of lowerText.matchAll(/\b(20\d{2})\b/g)) {
-    if (!seen.includes(m[1])) seen.push(m[1]);
-  }
-  return seen;
-}
+// MOVED TO src/shared/statedDates.js (2026-08-30), and re-exported here so
+// every existing caller and test is unaffected. It moved because UC-03 needs
+// the identical rule — its dates reach an issued travel letter and the UC-04
+// continuation prefill — and this module cannot be imported from uc03/
+// classifier.js without a cycle (intakeExtractor already imports
+// KNOWN_COUNTRIES from it). Two copies of a grounding rule is exactly the
+// "gates exist twice" shape CLAUDE.md §6 warns about.
+export { isRealIsoDate };
 
 /**
  * Read the trip's dates out of free text, deterministically — and REFUSE a date
@@ -228,11 +222,7 @@ function isGroundedCountry(text, code) {
   return findCountryMentions(text, COUNTRY_MATCHER).some((m) => m.code === wanted);
 }
 
-/** GROUNDING CHECK for a date: the year it claims must be written in the request. */
-function isGroundedDate(text, iso) {
-  if (!isRealIsoDate(iso)) return false;
-  return yearsMentioned(asLowerText(text)).includes(iso.slice(0, 4));
-}
+/* isGroundedDate moved to src/shared/statedDates.js as isDateGroundedInText. */
 
 /**
  * Deterministic extraction — the default, and the fallback whenever the LLM

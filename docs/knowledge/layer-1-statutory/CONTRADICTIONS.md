@@ -20,6 +20,28 @@
 > asserts that `183`, `365` and `180` appear nowhere in its register; that test
 > must keep passing.
 >
+> **Updated 2026-09-02 (the employee-notice pass): 30 contradictions → 35, and
+> 4 confirmations → 6.** This pass had one question — *what does the statute
+> require of a **resigning employee**?* — and asked it of the five countries in
+> `NOTICE_PERIOD_TABLE` whose statute this repository had never retrieved. New
+> documents: **D-41** (UK), **D-42** (Ireland), **D-43** (Poland), **D-44**
+> (Québec), **D-45** (Germany, agency-only), plus **D-05** (Ontario), which had
+> been listed as unretrievable since 2026-08-19 and was not. Portugal's D-02 and
+> D-03 were re-fetched and both re-hashed **byte-identical**; their postscripts
+> record it.
+>
+> **The finding the pass exists for: the employer/employee inversion that C-14
+> and C-20 each caught once is a pattern, and in the United Kingdom it has been
+> computing wrong numbers all along (C-31).** A British employee with 43 months'
+> service is told they owe 21 days against a statutory 7. Ireland made the
+> identical citation error and got away with it because the wrong section happens
+> to produce the right number (**C-32**) — which is the more frightening of the
+> two, because nothing downstream can see it.
+>
+> **Germany is the one country this pass could not source from its own statute
+> book**, and the reason is in [`RETRIEVAL-BLOCKED.md`](RETRIEVAL-BLOCKED.md).
+> **K-6** is therefore agency-strength and says so; do not upgrade its tag.
+
 > **Read the `C-` items as work orders and the `K-` items as reassurance.** A
 > list that only ever reports faults teaches its reader to distrust everything
 > equally, which is its own failure. Two things checked out exactly.
@@ -68,6 +90,51 @@ The CRA's table said 24 months; art. VII(1) of the agreement says *"for a period
 of up to 24 months"*. Two independent sources, same answer. Recording it because
 its Netherlands neighbour did **not** check out (**C-24**), and a reader needs to
 know that the pair was checked rather than assumed to fail together.
+
+### K-5 · Poland's notice brackets model the right party, and their boundaries are exact · D-43 · UC-05
+
+`NOTICE_PERIOD_TABLE.PL` splits at `<6 months`, `6–35 months`, `36+ months`.
+Kodeks pracy **art. 36 § 1** splits at *"krócej niż 6 miesięcy"*, *"co najmniej
+6 miesięcy"* and *"co najmniej 3 lata"* — the same three boundaries, and no
+off-by-one of the **C-18** or **C-32** kind at either edge.
+
+More importantly, **art. 36 § 1 is not addressed to a party at all**, and **art.
+32 § 1** makes that explicit: *"**Każda ze stron** może rozwiązać umowę o pracę
+za wypowiedzeniem"* — either party may terminate by notice. So Poland's periods
+genuinely are the employee's as well as the employer's, and the row is not
+carrying somebody else's obligation.
+
+This is recorded because it is the counter-example that makes **C-31** a finding
+rather than a mood. Four of the nine rows in this table were checked against
+their statute in the 2026-09-02 pass; one modelled the wrong party outright, one
+cited the wrong section, one had no source for the party question at all — and
+Poland was simply correct. *(What Poland gets wrong is the unit and the anchor:
+**C-33**, and the missing probation article: **C-34**.)*
+
+### K-6 · Germany encodes the basic period and stops there — the one row that resisted the trap · D-45 · UC-05
+
+`NOTICE_PERIOD_TABLE.DE` holds a **single flat bracket of 28 days** and a
+two-week probation rule. BGB § 622 also contains a tenure-graduated ladder of
+one to seven months, and **the German row does not encode it.**
+
+Per the Bundesministerium für Arbeit und Soziales's own *Arbeitsrecht* (Stand
+Januar 2025, D-45): the **Grundkündigungsfrist** of *"vier Wochen (28
+Kalendertage)"* is what *"**Arbeitgeber sowie Arbeitnehmerinnen und
+Arbeitnehmer**"* must observe, while the **verlängerte Kündigungsfristen** of
+1–7 months are what *"**der Arbeitgeber**"* must observe. The 28, the 14-day
+probation figure and the six-month probation ceiling are all corroborated.
+
+Two qualifications, and both matter:
+
+- **This is agency evidence, not statutory evidence.** `gesetze-im-internet.de`
+  is unreachable from this container and BGB § 622's own text has not been read
+  by this repository. The tag on D-45 is `[AGENCY]`, not `[CONFIRMED — statute]`,
+  and this K-item inherits that. See [`RETRIEVAL-BLOCKED.md`](RETRIEVAL-BLOCKED.md).
+- **`anchorRule: "month_15"` names half of a disjunction.** The ministry's text is
+  *"zum 15. des Monats **oder** zum Ende eines Kalendermonats"*. Whether the
+  calculator offers both permissible dates is a code question this pass did not
+  open, and it is the one place the German row could be silently wrong by up to
+  about two weeks.
 
 
 ---
@@ -236,6 +303,35 @@ dates. **"Portugal has a totalization agreement" is not a fact about Portugal.**
 Any table built from this needs `(pair, authority, effective date, certificate
 form, max detachment)` — five columns, not a boolean.
 
+> **ACTED ON, 2026-08-31 — this finding is now discharged for UC-04, and the
+> way it was discharged is the part worth keeping.** The table the closing line
+> above asks for did not have to be built: it already existed twice, one use
+> case over each. `SOCIAL_SECURITY_COVERAGE` (`src/uc08/decisionSources.js`)
+> holds all six pairs with a network, a certificate and a maximum initial
+> detachment; `TAX_CONVENTION_BY_PAIR` (`src/uc07/decisionSources.js`) holds the
+> bilateral tax convention for the same six. UC-04's treaty dimension now reads
+> both — imported, not copied, for the reason `src/uc04/policyEngine.js` imports
+> UC-03's `SANCTIONED_OR_RESTRICTED` — and reports `cleared` with those columns
+> for a pair both answer for, `unknown` unchanged for a pair either one misses.
+> So all four "silent pairs" now produce a social-security finding, and it is
+> not a boolean: it is the five columns this entry demanded.
+>
+> **What this does NOT discharge, and the distinction is the whole of C-8 and
+> C-24.** Reporting a maximum detachment is not agreeing on one. Both of those
+> caveats still render under the covered finding, because both are about the
+> column it now prints — there is still no single detachment maximum, and the
+> CRA's Canada–Netherlands row still pairs one agreement's date with another
+> agreement's limit. A caveat retires when the claim it disputes stops being
+> made, never when the finding it sits under turns green. **K-4** renders beside
+> them for the same reason in the opposite direction: Canada–Portugal was
+> checked against the agreement text and held, and a page that prints only the
+> failure teaches a reader that nothing on it was verified.
+>
+> The state was left frozen twice before this, both times deliberately and both
+> times recorded (`decisionFacts.js`, §3.100 and 2026-08-31), because flipping
+> it changes what a specialist is told and that is an owner's call rather than
+> a maintenance one. It was made on 2026-08-31.
+
 ### C-10 · **Six** treaties, six different 183-day windows, none of them the code's · D-24, D-25, D-26, D-27, D-28, D-29 · UC-04, UC-08
 
 > **Updated 2026-08-19 (third pass).** **D-26**, the Canada–Portugal convention,
@@ -273,6 +369,38 @@ Every one of the six articles above reads *(a) … **and** (b) … **and** (c)*:
 
 **For an Employer-of-Record arrangement, limbs (b) and (c) are the ones that
 decide the case**, and they are the two the repository has no representation of.
+
+> **CORRECTED 2026-09-01 — the sentence above is right for one destination and
+> wrong for the other, and the difference is worth more than the finding.**
+> Researched against the OECD Commentary on art. 15 and the German, Dutch,
+> Danish and Swedish implementations (`docs/UC04-RESEARCH-FINDINGS.md` §12).
+> The economic-employer apparatus is **textually conditioned on a recipient
+> enterprise existing in the source state** — Commentary paras. 8, 8.7, 8.13 and
+> 8.14, and every national rule names its own source-state recipient
+> (`eine virksomhed her i landet`, `de opdrachtgever in het werkland`,
+> `uppdragsgivare … verksamhet i Sverige`, BMF Rn. 151's *"ihr geleistete"*).
+>
+> So: where the destination **is** the client's own country, (b) and (c) do
+> decide it, and several states then tax **from day one** with no day count to
+> fall back on. Where the destination is a genuine **third** country — nobody
+> there directs the work, receives its benefit or takes a recharge — **(b) and
+> (c) hold structurally** (recharacterisation only ever swaps an employer
+> resident in X for one resident in Y; neither is Z), and **(a) is the live
+> treaty limb.**
+>
+> **C-11's core point survives untouched**: a day count answers one limb of a
+> three-limb test, and a dossier rendering it as *the* answer is Test B's named
+> failure. What changes is that "which limbs decide" must be **split by
+> destination**, and that a system asserting (b) needs one further fact the
+> employment record does not carry — whether the company has an entity in the
+> destination.
+>
+> Two caveats that do NOT retire with this correction. Treaty exemption
+> extinguishes liability, **never withholding or reporting** — Canada, Portugal
+> and the US each impose a fail-closed documentary procedure that survives a
+> perfect art. 15(2) exemption (§12b). And **US–Canada art. XV(2) is
+> disjunctive**, not cumulative, so the three-limb framing above is the Model's
+> and not that treaty's.
 A dossier that reports "142 of 183 days — within the limit" has answered limb (a)
 of a three-limb test and rendered it as the answer. That is a well-formed number
 beside a citation, which is `docs/KNOWLEDGE-SOURCES.md` Test B's named failure.
@@ -853,6 +981,236 @@ is a decision with an argument, and it belongs in its own unit of work.
 > **C-20 (PT probation) is explicitly NOT closed by this**, and was left alone on
 > purpose: it is a second, independent instance and gets its own unit of work with
 > its own tests, which is what this file's header asks for.
+
+### C-31 · The United Kingdom row encodes the EMPLOYER's sliding scale and reports it as the employee's obligation · D-41 · UC-05
+
+**This is the third instance of one defect and the first one that is already
+computing wrong numbers in production.** C-14 caught it in the Netherlands before
+a row existed; C-20 caught it in Portugal's probation field. Here it is live.
+
+ERA 1996 **s. 86** has the two obligations in adjacent subsections:
+
+- **s. 86(1)** — *"The notice required to be given by **an employer** …"* — one
+  week if under two years, **one week for each year** from two to twelve years,
+  twelve weeks from twelve years.
+- **s. 86(2)** — *"The notice required to be given by **an employee** who has
+  been continuously employed for one month or more … is **not less than one
+  week**."* Flat. No tenure ladder at all beyond the one-month threshold that
+  engages the section.
+
+`NOTICE_PERIOD_TABLE.GB` carries subsection (1)'s shape:
+
+| Tenure | Table says the employee owes | s. 86(2) says |
+|---|---|---|
+| 1–24 months | 7 days | **7 days** |
+| 25–36 months | 14 days | **7 days** |
+| **37–48 months** | **21 days** | **7 days** |
+| 49–60 months | 28 days | **7 days** |
+| 61–72 months | 35 days | **7 days** |
+| 73–84 months | 42 days | **7 days** |
+| 85–120 months | 56 days | **7 days** |
+| 121+ months | **84 days** | **7 days** |
+
+**A British employee with 43 months' service is told they owe 21 days against a
+statutory 7 — three times the law, against the employee.** At twelve years it is
+twelve times. Only the first bracket is right, and it is right by coincidence:
+7 days is where both parties' obligations happen to start.
+
+The citation string is `"Employment Rights Act 1996 §86 (sliding scale)"` — the
+right Act, the right section, **no subsection**, and the parenthetical describes
+subsection (1). A reviewer checking the citation finds a sliding scale in s. 86
+and stops.
+
+**Two independent reasons not to keep the ladder**, and the second is the one
+that shows how little anyone has looked at these numbers: it is also **not a
+faithful copy of s. 86(1)**. Subsection (1)(b) is one week per completed year
+from two to twelve. The encoded ladder jumps `85–120 months → 56 days` and
+`121+ → 84 days`, so a ten-year employee gets 8 weeks where the employer's own
+scale says 10, and an eleven-year employee 12 weeks where it says 11. It is the
+wrong party's obligation **and** a wrong transcription of it.
+
+**The correction is a deletion, not a re-bracketing.** One bracket,
+`{tenureMinMonths: 1, tenureMaxMonths: null, noticeDays: 7}`, and the citation
+moved to `s. 86(2)`. What to do below one month's continuous employment is a
+second decision: s. 86 does not engage there, which is *"we hold no statutory
+rule for this tenure"* and not *"zero days"* — the distinction **C-29** already
+built `statutoryMinimumExists` and `no_matching_notice_bracket` to carry.
+
+One thing the corrected row still cannot express: **s. 86(3)** lets either party
+waive notice or accept payment in lieu, so even one week is a default. Fourth
+country in a row — see **C-32**'s closing note.
+
+### C-32 · Ireland's row prints the right number under the wrong section, and its qualifying period is off by one · D-42 · UC-05
+
+`NOTICE_PERIOD_TABLE.IE` cites **"Minimum Notice and Terms of Employment Act 1973
+§4"** and returns 7 days. **§4 is the employer's obligation** — a 1/2/4/6/8-week
+ladder by tenure. The employee's obligation is **§6**, *"Right of employer to
+notice"*, and it is *"not less than one week's notice from an employee who has
+been in his continuous employment for thirteen weeks or more"*.
+
+**The two section headings read as though they had been swapped**, which is
+exactly how a table gets built from the wrong one — and in Ireland's case the
+wrong one produces the right answer at the low end, so nothing downstream ever
+disagrees.
+
+**This is the most instructive row in the 2026-09-02 pass precisely because it
+is not broken.** The UK made this mistake and the numbers went wrong visibly
+(**C-31**). Ireland made the same citation error and the output stayed correct,
+so the only artefact is a string in `sourceCitation` that no test reads and no
+run contradicts. Had the Irish §4 ladder been copied the way the UK's was, a
+fifteen-year Irish employee would be told they owe **eight weeks** against a
+statutory **one**. The same trap was open in both countries; it closed on one of
+them by luck.
+
+**And there is a real off-by-one.** Both §4 and §6 qualify on **thirteen weeks**
+of continuous service — 91 days, ≈ 2.99 months. The table's brackets split on
+whole months, `{0–2 → 0 days}` and `{3+ → 7 days}`, so an employee at exactly
+thirteen weeks lands in the **first** bracket and is told they owe **nothing**.
+It is the mirror of **C-18** (Portugal, off by one *against* the employee) with
+the identical cause: **a threshold stated in weeks, re-expressed in months, and
+rounded.** The fix needs the bracket to be expressed in weeks or the boundary
+pushed down, not the number changed.
+
+**A scope condition the table has no field for.** §3(1)(a) disapplies the whole
+Act to an employee normally expected to work less than **eighteen hours** a week
+(*twenty-one* as enacted, substituted 1984), and that limitation is in turn
+restricted (20.12.2001) by the Protection of Employees (Part-Time Work) Act 2001
+§8, which applies each relevant enactment to a part-time employee *"in the same
+manner"*. The hours threshold therefore survives on the face of §3 and is
+displaced in practice — and a part-time EOR engagement is exactly the case where
+somebody would need to know which. No hours field exists on this row.
+
+**Closing note on waiver, because this is now four for four.** ERA 1996 s. 86(3)
+(UK), MNTEA 1973 §7 (Ireland), BW 7:672(8) (**C-14**, Netherlands) and CT art.
+400.º(2) (**D-02**, Portugal) all make the employee's statutory notice a
+**default the parties may displace**. In every country this corpus has read, the
+table reports a displaceable default as a fixed entitlement. That is not a
+per-country defect; it is a missing dimension.
+
+### C-33 · Poland's anchor points at the wrong end of the month, and two of its three periods are months encoded as days · D-43 · UC-05
+
+`NOTICE_PERIOD_TABLE.PL` sets `anchorRule: "month_1st"`, with a code comment
+asserting *"1- and 3-month notices start on the 1st of the following month."*
+
+Kodeks pracy **art. 30 § 2¹**, in one sentence, says the opposite and also
+supplies the weekly rule:
+
+> Okres wypowiedzenia umowy o pracę obejmujący **tydzień lub miesiąc albo ich
+> wielokrotność** kończy się odpowiednio **w sobotę** lub **w ostatnim dniu
+> miesiąca**.
+
+A notice period comprising a week or a month, or a multiple of either, **ends**
+respectively **on a Saturday** or **on the last day of the month**. The rule is
+about where the period terminates; `month_1st` points at the opposite side of the
+boundary. `month_end` already exists in the `anchorRule` union and is what the
+Netherlands uses for the identical Dutch rule (**C-14**).
+
+**The units are the same defect, not a second one.** Art. 36 § 1 says
+**2 tygodnie / 1 miesiąc / 3 miesiące**; the table says **14 / 30 / 90 days**.
+`NoticeBracket.noticeMonths` exists for exactly this and is used only by NL,
+where the file's own note explains why 30 days is not one month: added to a
+resignation filed on the 1st of a 31-day month and then snapped to that month's
+end, 30 days lands on the 31st of the **same** month — a full month early. Poland
+inherits that error and adds the anchor pointing the wrong way on top of it.
+
+**The Saturday rule has nowhere to live.** It is in the same subsection, with the
+same statutory force as the monthly rule, and the table currently passes it as a
+note on the calculator's return value because `anchorRule` has no `week_saturday`
+member. A rule carried as prose beside a computed date is a rule that is not
+applied.
+
+The brackets and the party are **right** — see **K-5**. This entry is about the
+three quantities around them.
+
+### C-34 · Poland has a statutory probation notice, in working days, keyed to the probation period rather than to tenure — and the row says `probation: null` · D-43 · UC-05
+
+Kodeks pracy **art. 34**:
+
+> Okres wypowiedzenia umowy o pracę zawartej na okres próbny wynosi:
+> 1) **3 dni robocze**, jeżeli okres próbny nie przekracza 2 tygodni;
+> 2) **1 tydzień**, jeżeli okres próbny jest dłuższy niż 2 tygodnie;
+> 3) **2 tygodnie**, jeżeli okres próbny wynosi 3 miesiące.
+
+`NOTICE_PERIOD_TABLE.PL.probation` is `null`. Per the file's own comment on the
+NL row, `null` means *"we hold no separate probation rule"* and is explicitly
+**not** an assertion that none exists — so the row is honest and incomplete
+rather than wrong, and `pickBracket()` falls through to art. 36's ordinary
+bracket, giving a Polish probationer **14 days** where art. 34 gives 3 working
+days, 1 week or 2 weeks.
+
+Three separate shape problems sit behind the missing number, and they are the
+reason this is its own entry rather than a line in C-33:
+
+1. **It is keyed to the wrong axis.** `NoticeBracket.probation` is bracketed on
+   `tenureMinMonths`/`tenureMaxMonths`. Art. 34's rungs are keyed to **how long
+   the probation period itself is** — a term of the contract — not to how much of
+   it has elapsed and not to tenure. Portugal's art. 114.º is keyed to a third
+   thing again, **elapsed** probation (**C-20**). Three countries, three axes,
+   one field.
+2. **It is a different contract type, not a modifier.** Art. 34 governs *umowa o
+   pracę zawarta na okres próbny* — a probationary **contract** — whereas art. 36
+   governs indefinite and fixed-term ones. The table has no contract-type
+   dimension; **D-02** ¶3 recorded the same gap for Portugal's fixed-term ladder.
+3. **`3 dni robocze` is working days** in a row declaring `unit: "calendar"`.
+
+### C-35 · Canada's row is `basis: "customary"`, and in Québec the obligation is statutory, mutual, and deliberately not a number · D-05, D-44, D-04 · UC-05
+
+`NOTICE_PERIOD_TABLE.CA` asserts *"Common-law customary notice (no statutory
+employee minimum; varies by province)"* over brackets of `0 / 7 / 14` days. The
+2026-09-02 pass read two provinces and **they answer in opposite directions**.
+
+**Ontario confirms the row.** The ESA 2000 (D-05) was retrieved in full — the
+first time, closing a `RETRIEVAL-BLOCKED.md` entry — and Part XV imposes notice
+entirely on the employer, ss. 54/57/58. A whole-Act search finds exactly one
+period of employee notice, **s. 63(1)(e)**, and it is a **condition an employee
+may choose to satisfy to preserve severance pay** while leaving during the
+employer's notice period, not a duty. Nothing sanctions an employee who ignores
+it. Combined with the Canada Labour Code (**D-04**, s. 230, employer only), the
+provincial half of **C-13** is sourced for one province.
+
+**Québec refutes it.** Code civil du Québec **art. 2091**:
+
+> **Chacune des parties** à un contrat à durée indéterminée peut y mettre fin en
+> donnant à l'autre un **délai de congé**. Le délai de congé doit être
+> **raisonnable** et tenir compte, notamment, de la nature de l'emploi, des
+> circonstances particulières dans lesquelles il s'exerce et de la durée de la
+> prestation de travail.
+
+and **art. 2092** makes the employee's remedy for insufficient notice
+**non-renounceable**. Every clause of the CA citation string fails here: Québec
+is **civil law, not common law**; art. 2091 is **enacted, not customary**; it
+binds **either party**, so there *is* an employee-side statutory obligation; and
+it states **no number at all**.
+
+**That last point is the sharpest, and it is why `0 / 7 / 14` is worse than
+merely unsourced.** `14 days` for a three-year Québec employee is a quantity, and
+the entire content of art. 2091 is that the answer is not a quantity independent
+of the nature of the employment and its circumstances. Printing a number there
+is not approximating the law — it is answering a question the law declines to
+answer in that form, and art. 2092 exists to stop that answer being bargained
+for.
+
+**This does not reopen C-30's decision; it makes it firmer and widens its
+reason.** `qa/contracts/UC-05-acceptance.md` §18 Step 5 change `[N-7]` already
+decided to replace CA's brackets with `no_statutory_notice_period` — still
+**not built**, the row still emits `0 / 7 / 14`. C-30 justified it as *the
+evidence is half-missing, so refuse*. After this pass the justification is
+stronger and different: **the evidence is no longer missing and it is
+contradictory by province**, and one of the two provinces read has a statutory
+employee obligation whose correct rendering is a refusal to compute.
+
+The wording of the refusal needs one adjustment for Québec, and only one. For
+the United States and Ontario, *"the notice owed comes from the contract, which
+this system does not hold"* is exact. In Québec the notice owed comes from **the
+Civil Code's reasonableness standard applied to this person's circumstances**,
+which this system also does not hold and additionally must not estimate. Same
+outcome, same escalation, different sentence.
+
+**Still open: ten provinces and territories.** Two read, two opposite answers.
+That is the strongest available evidence that *"varies by province"* cannot be
+collapsed into one national bracket set, and the weakest possible basis for
+choosing which of the two to encode.
+
 
 ---
 

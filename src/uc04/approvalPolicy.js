@@ -21,9 +21,21 @@
 // ---------------------------------------------------------------------------
 
 import { humanTime, remoteWriteClause, gateClause, unpunctuated } from "../shared/settledDecision.js";
+import { shortReference } from "../shared/publicReference.js";
 import { canonicalDecisionStatus } from "../shared/declineVocabulary.js";
 import { describeDecidingGate } from "./policyEngine.js";
 import { UC04_ROLE } from "../review/approverEntitlement.js";
+import { EMPLOYER_DECISION_STATUSES } from "./authorizationStore.js";
+
+/**
+ * The two statuses recordEmployerDecision() writes — and nothing else does.
+ *
+ * That function takes no Remote client and makes no Remote call, so a row in
+ * either state provably had no write attempted against it. Derived from the
+ * store's own map rather than restated, so a third verb cannot be added there
+ * and silently miss this. See remoteOutcome().
+ */
+const EMPLOYER_SETTLED_STATUSES = new Set(Object.values(EMPLOYER_DECISION_STATUSES));
 
 // THE NEGATIVE VERB IS `decline`, NOT `deny` (renamed 2026-08-19).
 // `deny` appears zero times in Remote's documented corpus; the enum this use
@@ -117,6 +129,49 @@ export function evaluateApprovalAction({ authorizationRow, approver, action, ent
 }
 
 /**
+ * WHO decided, in the terms a person reading this needs.
+ *
+ * THE SESSION ID IS NOT AN ANSWER. This used to print `row.approver` —
+ * "admin_jane" — and the project owner's objection was exactly right: Remote
+ * has many client companies, so a session id says nothing about who the person
+ * is, what standing they had to approve an employee's work authorization, or
+ * which of those companies they belong to. The three rows below answer those
+ * three questions, and each is omitted rather than guessed when it was not
+ * recorded.
+ *
+ * THE ID IS STILL PRINTED, beside the name, because it is what the audit trail
+ * is keyed on and what the Zendesk hand-off note already carries — the two
+ * surfaces must agree. It is only demoted from being the whole answer.
+ *
+ * `approverTitle` and `approverCompany` have no column on
+ * `uc04_authorizations`; they ride on the append-only audit row and are read
+ * back by ./employerDecisionLog.js. A row that never recorded them yields a
+ * name alone, which is still better than an id alone.
+ *
+ * @param {{approver?:string|null, approverName?:string|null, approverTitle?:string|null, approverCompany?:string|null}} row
+ * @param {"Approved"|"Declined"} verb
+ * @returns {{label:string, value:string}[]}
+ */
+function approverFacts(row, verb) {
+  const facts = [];
+  const name = row.approverName ? String(row.approverName) : null;
+  const id = row.approver ? String(row.approver) : null;
+  if (name && id) facts.push({ label: `${verb} by`, value: `${name} (${id})` });
+  else if (name || id) facts.push({ label: `${verb} by`, value: String(name ?? id) });
+
+  // "Their role" and not "Job title": this is the standing the decision was
+  // made in, which is the question a reviewer is actually asking, and it is not
+  // necessarily the employee-facing job title on any record.
+  if (row.approverTitle) facts.push({ label: "Their role", value: String(row.approverTitle) });
+  // THE EMPLOYER, NEVER REMOTE. Stage 2 is the customer's own decision; naming
+  // the company is what tells a Remote specialist which client this is.
+  if (row.approverCompany) {
+    facts.push({ label: "Acting for", value: `${row.approverCompany} — the employer, not Remote` });
+  }
+  return facts;
+}
+
+/**
  * A settled authorization, as FACTS rather than as a paragraph.
  *
  * WHY IT IS BUILT FROM THE ROW. "This authorization has already been approved
@@ -144,7 +199,8 @@ export function evaluateApprovalAction({ authorizationRow, approver, action, ent
  * simply said ONCE, in its own field, under a label naming what it is.
  *
  * @param {object|null} authorizationRow
- * @returns {{headline: string, facts: {label: string, value: string}[],
+ * @returns {{headline: string, state: "approved"|"declined", badge: string,
+ *            facts: {label: string, value: string}[],
  *            finality: string}|null}  null for a row whose outcome cannot be read
  */
 export function settledFacts(authorizationRow) {
@@ -152,7 +208,15 @@ export function settledFacts(authorizationRow) {
 
   if (row.status === "executed" || row.approvedAt) {
     const facts = [];
-    if (row.approver) facts.push({ label: "Approved by", value: String(row.approver) });
+    // NAME FIRST, ID ALWAYS. `approver` is the session id — audit-grade, and
+    // not an answer to "who approved this trip", which is what a specialist
+    // reading the sidebar is actually asking. `approverName` is Remote's own
+    // `employer_approver.name`; it has no column on `uc04_authorizations`, so
+    // on a pooled deployment it arrives from the append-only audit row instead
+    // (./employerDecisionLog.js). The id is never dropped — it is what the
+    // audit trail is keyed on, and the two together are exactly what the
+    // Zendesk hand-off note already prints, so the two surfaces agree.
+    facts.push(...approverFacts(row, "Approved"));
     const when = humanTime(row.approvedAt ?? row.executedAt);
     if (when) facts.push({ label: "Approved on", value: when });
     const note = String(row.approvalNote ?? "").trim();
@@ -160,15 +224,56 @@ export function settledFacts(authorizationRow) {
     facts.push({ label: "Sent to Remote", value: remoteOutcome(row) });
     return {
       headline: "Approved.",
+      // THE BADGE THE PANEL PUTS AT THE TOP OF THE SCREEN, composed here rather
+      // than derived in the browser from `headline`.
+      //
+      // WHAT WENT WRONG WITHOUT IT. The sidebar's header badge reads
+      // `case.decision` — the AUTOMATION's verdict, `ready_for_approval`,
+      // which is a historical fact and correctly never changes — and falls
+      // through to the shared review queue's status only when there is one.
+      // UC-04 has none: its settlement is on its own record, not in
+      // `review_queue`. So a trip the customer's manager approved at 17:02 was
+      // still headed "Awaiting specialist approval" above a settled block
+      // naming the approver and the minute — read live on the deployment
+      // 2026-09-01, on record 0531c363. That is the SAME defect rca-il7 fixed
+      // for the review-queue path in zaf-app/assets/main.js, arriving by the
+      // one route that path does not cover.
+      //
+      // "BY THE EMPLOYER", NOT "APPROVED". A bare "Approved" on this use case
+      // is the ambiguity the whole 2026-08-30 three-stage rework exists to
+      // remove: three parties decide, and stage 3 is still outstanding at the
+      // moment this badge first appears. It names WHICH approval happened.
+      state: "approved",
+      badge: "Approved by the employer",
       facts,
-      finality: "This is final — an approved request cannot be approved or declined again.",
+      // WHICH DECISION IS FINAL, SAID OUT LOUD. This read "This is final — an
+      // approved request cannot be approved or declined again." True, and
+      // routinely misread: it is the last line of the employee's own row in
+      // "My requests", and a work authorization has a THIRD decider after this
+      // one. The owner read their own approved trip on the deployment
+      // 2026-09-01 and reported that "the page makes you look as if approval by
+      // the manager is the final approval". Naming the employer's decision as
+      // the thing that is final costs three words and closes that reading,
+      // without weakening the sentence's real job — refusing a second stage-2
+      // verdict on a request that already has one.
+      finality: "The employer's decision is final — an approved request cannot be approved or declined again.",
     };
   }
 
   // canonicalDecisionStatus() so a row stored as `denied` before the rename is
   // described as what it always meant rather than falling through to the
   // generic "already approved or declined" sentence.
-  if (canonicalDecisionStatus(row.status) === "declined") {
+  // `|| row.declinedAt` MIRRORS THE APPROVE BRANCH ABOVE, and its absence was a
+  // defect (2026-08-31). The approve branch accepts a row on `approvedAt`
+  // precisely because the EMPLOYER's stored status is Remote's own
+  // `approved_by_manager` rather than `executed`; the decline branch tested only
+  // the status word, and `declined_by_manager` is not an alias of `declined`
+  // (STATUS_ALIASES maps `denied` and nothing else). So an employer decline fell
+  // through to null and the panel showed no settled facts at all — losing the
+  // decliner, the date AND the reason, on the outcome where a reason is
+  // mandatory. Asymmetric handling of two halves of one decision is how a
+  // negative outcome comes to be less well recorded than a positive one.
+  if (canonicalDecisionStatus(row.status) === "declined" || row.declinedAt) {
     // BOTH FIELD NAMES. `declinedBy` is what the store produces now (the
     // Postgres column is still `denied_by`, aliased on read); `deniedBy` is
     // what an in-memory row written before 2026-08-19, or a response from a
@@ -176,8 +281,20 @@ export function settledFacts(authorizationRow) {
     // one would drop the approver's name and reason off a real decision.
     const declined = row.declinedBy ?? row.deniedBy ?? {};
     const facts = [];
-    const who = declined.approver ?? row.approver;
-    if (who) facts.push({ label: "Declined by", value: String(who) });
+    // Same rule as the approve branch above. The decline slot is jsonb, so it
+    // DOES carry `approverName` on a stored row — but a row written before
+    // 2026-08-31, or one whose slot is absent, falls back the same way.
+    facts.push(
+      ...approverFacts(
+        {
+          approver: declined.approver ?? row.approver,
+          approverName: declined.approverName ?? row.approverName,
+          approverTitle: declined.approverTitle ?? row.approverTitle,
+          approverCompany: declined.approverCompany ?? row.approverCompany,
+        },
+        "Declined"
+      )
+    );
     const when = humanTime(declined.at ?? row.declinedAt ?? row.deniedAt);
     if (when) facts.push({ label: "Declined on", value: when });
     const reason = String(declined.note ?? row.approvalNote ?? "").trim();
@@ -189,7 +306,17 @@ export function settledFacts(authorizationRow) {
     });
     return {
       headline: "Declined.",
+      // Same reasoning as the approve branch. Not "declined by the employer" —
+      // a decline ends the chain outright, so there is no second decline this
+      // could be confused with, and the shorter word is the one the other
+      // eight use cases' badges use.
+      state: "declined",
+      badge: "Declined",
       facts,
+      // NOT SCOPED THE WAY THE APPROVE BRANCH ABOVE IS, and deliberately so: a
+      // decline really does end the whole chain. Stage 3 reviews what the
+      // employer approved, so on a declined request it is `not_reached` and
+      // there is no later decider for this sentence to be mistaken for.
       finality: "This is final — a declined request has to be filed again rather than re-decided here.",
     };
   }
@@ -271,8 +398,77 @@ function remoteOutcome(row) {
       "The approval is real and recorded; the Remote request it would have updated does not exist."
     );
   }
-  return remoteWriteClause(result ?? row.workAuthorizationId, {
-    landed: `Yes — the work-authorisation request was updated at Remote${row.workAuthorizationId ? ` (${row.workAuthorizationId})` : ""}.`,
+  // THE THIRD OUTCOME'S OWN THIRD CASE — NO RESULT AND NOTHING TO WRITE TO.
+  //
+  // `recordEmployerDecision()` — what /remoteui's screen calls — writes NO
+  // `remoteResult` at all, because it makes no Remote call: Remote holds no such
+  // request, there being no `POST /v1/work-authorization-requests` that could
+  // have created one. So an employer approval fell straight through to
+  // `remoteWriteClause()`'s no-result fallback, which reads "No Remote write is
+  // recorded against it, so the approval MAY NOT HAVE REACHED REMOTE — check the
+  // audit trail before assuming the work authorisation exists."
+  //
+  // That sentence is right for UC-02, UC-06 and UC-09, where a write really is
+  // attempted and silence really does mean "we do not know". Here it is FALSE
+  // in the direction that costs the most: it tells a manager who has just
+  // approved a trip to doubt whether their approval landed, and sends them to an
+  // audit trail to look for a write that could never have existed. Read live on
+  // the deployment 2026-09-01, four lines above the panel's own sentence saying
+  // Remote publishes no endpoint for this at all.
+  //
+  // GATED ON WHICH PATH SETTLED THE ROW, NOT ON WHETHER AN ID IS PRESENT.
+  //
+  // The first draft of this keyed on `!row.workAuthorizationId` and was wrong
+  // for a reason src/portal/requestStatus.js had already written down: an
+  // `executed` row is settled by transmitVerdict(), which DOES attempt a Remote
+  // write and records what it found. An `executed` row holding no result is
+  // therefore an anomaly where a write may have been attempted and its outcome
+  // lost — "we do not know" is the honest answer and the fallback below is
+  // right to give it. Keying on the absent id folded that case in and silently
+  // turned "the result went missing" into "nothing was attempted".
+  //
+  // `approved_by_manager` / `declined_by_manager` are written ONLY by
+  // recordEmployerDecision(), which takes no Remote client and makes no Remote
+  // call — so on those two statuses "no write was attempted" is a fact about
+  // the code path, not an inference from a missing field. Imported rather than
+  // spelled, so the two halves cannot drift.
+  //
+  // This narrows an overstatement; it must never widen into reporting an
+  // unknown as a success.
+  if (!result && EMPLOYER_SETTLED_STATUSES.has(row.status)) {
+    return (
+      "No — no Remote work-authorisation request is linked to this decision, so there was nothing at Remote " +
+      "to update and no write was attempted. The approval is real and recorded here."
+    );
+  }
+  // `result` ALONE — NOT `result ?? row.workAuthorizationId`.
+  //
+  // THE FALLBACK THAT WAS HERE ASSERTED A REMOTE WRITE THAT HAD NOT HAPPENED,
+  // and it is the more serious of the two defects in this function. With no
+  // recorded result it passed `row.workAuthorizationId` in the result's place,
+  // and `remoteWriteClause()` reads any truthy value as "it landed" — so a row
+  // answered "Yes — the work-authorisation request was updated at Remote
+  // (reference wa_…)" on the strength of an id and nothing else.
+  //
+  // THAT ID IS NOT EVIDENCE OF A WRITE. `src/uc04/workflow.js:207` sets it at
+  // LINK time — `link?.state === LINK_LINKED ? link.id : null` — when the
+  // employee's request is matched to a Remote request that already existed. The
+  // write comes later and separately (`patchWorkAuthorization()` at :718) and
+  // records its own result. So the id proves the TARGET exists, never that
+  // anything reached it, and an approval recorded through /remoteui — which
+  // makes no Remote call at all — could produce a linked row claiming a
+  // successful Remote update.
+  //
+  // Found 2026-09-01 by a test written for the case directly above; the two are
+  // opposite errors on the same line, one under-claiming and one over-claiming,
+  // and prime directive 7 is why the over-claim is the one that had to go first.
+  //
+  // Now three honest answers and no fourth: transmitted:false says so, a
+  // recorded success says so, no target says nothing was attempted, and a live
+  // target with no recorded result says WE DO NOT KNOW — which is
+  // remoteWriteClause()'s own sentence, doing its own job.
+  return remoteWriteClause(result, {
+    landed: `Yes — the work-authorisation request was updated at Remote${row.workAuthorizationId ? ` (reference ${shortReference(row.workAuthorizationId)})` : ""}.`,
     artifact: "the work authorisation",
   }).trim();
 }

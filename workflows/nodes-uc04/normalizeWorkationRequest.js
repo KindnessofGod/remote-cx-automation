@@ -83,9 +83,41 @@ if (!body.employmentId) {
 if (!body.factors || typeof body.factors !== 'object') {
   throw new Error('Workation request has no structured factors. Refusing to guess visa/duty facts from free text.');
 }
-const session = body.session && body.session.companyId && body.session.authenticatedAdminId
-  ? { companyId: String(body.session.companyId), authenticatedAdminId: String(body.session.authenticatedAdminId) }
-  : null;
+// SESSION. Two authenticated relationships reach this gate, and until
+// 2026-08-30 this node could only express one of them.
+//
+// THE DEFECT THAT WAS FOUND BY DRIVING, NOT BY TESTING. `workationGates.js`
+// gained an employee-subject leg — a traveller may file their own request, which
+// is how Remote's own object works (`user` submits, `employer_approver`
+// decides). The gate reads `session.authenticatedEmploymentId`. This node never
+// built one, so it stripped the field on the way in and the new leg was DEAD IN
+// PRODUCTION the moment it was deployed: present in the body, unreachable by any
+// input. The parity test feeds the gates node a session directly, so the
+// normalizer was never in the loop and nothing went red.
+//
+// Whitelisted field by field rather than passed through, because this object is
+// the one thing downstream treats as authenticated: anything spread in here from
+// a request body would be a claim wearing a session's clothes. Each id is kept
+// only when it is a non-empty string, so a `null`/`""` can never meet another
+// `null`/`""` at the gate and compare equal — the `null === null` shape that has
+// already passed two identity gates in this repo.
+const rawSession = body.session && typeof body.session === 'object' ? body.session : null;
+const sessionId = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+const adminCompany = sessionId(rawSession && rawSession.companyId);
+const adminId = sessionId(rawSession && rawSession.authenticatedAdminId);
+const subjectEmployment = sessionId(rawSession && rawSession.authenticatedEmploymentId);
+
+let session = null;
+if (adminCompany && adminId) {
+  // The company admin filing on an employee's behalf — the original shape,
+  // unchanged, and still requiring BOTH halves.
+  session = { companyId: adminCompany, authenticatedAdminId: adminId };
+}
+if (subjectEmployment) {
+  // The employee filing about themselves. Additive: an admin session that also
+  // carries a subject id keeps its company, and the gate tries both legs.
+  session = { ...(session || {}), authenticatedEmploymentId: subjectEmployment };
+}
 return [{
   json: {
     employmentId: String(body.employmentId),

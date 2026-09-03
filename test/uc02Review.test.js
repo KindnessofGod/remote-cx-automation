@@ -1003,10 +1003,19 @@ test("a row that cannot say which outcome it got falls back to the generic wordi
   assert.equal(r, REFUSALS.already_decided.reason);
 });
 
-test("the sidebar's Why card leads with the words and keeps the slug", () => {
+test("the sidebar's Why card leads with the words, and no longer prints the slug", () => {
   const main = readFileSync(new URL("../zaf-app/assets/main.js", import.meta.url), "utf8");
   assert.match(main, /view\.decidedBy && view\.decidedBy\.means/);
-  assert.match(main, /reason-slug/);
+  // THE SLUG WAS REMOVED ON 2026-08-31 and this assertion was inverted with it.
+  // It used to read `assert.match(main, /reason-slug/)`, defended as "the exact
+  // string in audit_log, so prose that REPLACED it would make the card readable
+  // and the system harder to trace". That reasoning holds for a specialist with
+  // database access and not for this surface: the ZAF panel is shown to
+  // customers, and `all_gates_passed` beside a sentence that already says the
+  // same thing in English is an internal code on a customer-facing page.
+  // Traceability is not lost — the slug is on the `audit_log` row, which is
+  // where a searchable identifier belongs. See test/zafNoDeveloperArtifacts.
+  assert.ok(!/reason-slug/.test(main), "the internal decision slug is back on a customer-facing panel");
 });
 
 test("the three verbs, and which of them end the review", () => {

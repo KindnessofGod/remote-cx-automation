@@ -102,3 +102,35 @@ lists 111.º, 112.º and 114.º. **Amendments other than those two were not
 checked**, because each is a separate gazette issue and DRE's consolidated view
 remains JavaScript-only. Anything below the article level in arts. 111.º–112.º
 should therefore be treated as `[CONFIRMED — as at 2023-05-01]`, not as current.
+
+---
+
+## Postscript — re-verified 2026-09-02, byte for byte
+
+The 2026-09-02 employee-notice pass re-fetched the 2009 gazette issue and the
+2023 amending law from the same URLs. **Both SHA-256 checksums match the header
+row above exactly**, at identical byte counts. Art. 114.º was re-extracted from
+the re-fetched 2009 issue and re-read.
+
+> **1 — Durante o período experimental, salvo acordo escrito em contrário,
+> qualquer das partes pode denunciar o contrato sem aviso prévio e invocação de
+> justa causa, nem direito a indemnização.**
+> **2** — Tendo o período experimental durado mais de 60 dias, a denúncia do
+> contrato **por parte do empregador** depende de aviso prévio de sete dias.
+> **3** — Tendo o período experimental durado mais de 120 dias, a denúncia do
+> contrato **por parte do empregador** depende de aviso prévio de 15 dias.
+> *(2009 enacting text; ¶3's figure raised to 30 dias by Lei 13/2023.)*
+
+Confirmed unchanged: the **employee's** probation notice is **zero**; the seven-
+and 15-day (now 30-day) figures are **the employer's**; and the shape is a step
+function of elapsed probation, not one flat number. **C-20 stands in all three
+of its parts.**
+
+The 2026-09-02 pass also confirms the arithmetic that makes C-20 concrete rather
+than abstract: `NOTICE_PERIOD_TABLE.PT.probation` is
+`{ tenureMinMonths: 0, tenureMaxMonths: 5, noticeDays: 15 }` and
+`pickBracket()` lets a probation rule **replace** the ordinary bracket — so a
+Portuguese employee on probation is told they owe **15 days** where art. 114.º(1)
+says they owe **none**, and the 15 is a figure that was the employer's when it
+was written and has since been repealed even for the employer. Three errors
+compounding into one number that nothing downstream can question.

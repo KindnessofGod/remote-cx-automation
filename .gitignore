@@ -71,3 +71,8 @@ zaf-app/tmp/
 # from being committed. The pre-commit guard that used to catch that was retired
 # 2026-08-23T21:45Z once the owner's outbox work was committed, so ignore it here.
 tmp/
+
+# Re-tuned demo receipts are generated against whatever the Sandbox holds
+# TODAY (see scripts/make-demo-receipt.mjs --total/--date). The committed
+# variants are the fixtures; these are scratch.
+qa/fixtures/receipts/demo-receipt-tuned-*.pdf

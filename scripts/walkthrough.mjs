@@ -249,13 +249,22 @@ async function runUc04(baseUrl) {
     const { status, body } = await getJson(`${baseUrl}/api/authorizations/by-ticket/${ref}`);
     views[ref] = body;
     if (status === 200 && body?.found) {
-      report(`ticket ${ref}`, `decision=${body.authorization.decision} tier=${body.tier} actionable=${body.actionable} (${body.actionableReason})`);
+      report(`ticket ${ref}`, `decision=${body.authorization.decision} tier=${body.tier} employerActionable=${body.employerActionable} (${body.actionableReason})`);
     } else {
       fail(`ticket ${ref}`, `unexpected response ${status}`);
     }
   }
 
-  const actionable = refs.find((r) => views[r]?.actionable);
+  /* `employerActionable`, NOT `actionable` (2026-08-30). The by-ticket route is
+     the ZAF sidebar's, and it now answers `actionable: false` on every case: the
+     approval it used to offer is `approved_by_manager`, which Remote's schema
+     gives to the CUSTOMER'S own manager, so a Remote CX agent must not make it
+     from Zendesk. The approval policy's real stage-2 verdict is republished as
+     `employerActionable`, and this walkthrough is standing in for the employer
+     when it posts below — so that is the field it must read. Reading
+     `actionable` here would silently walk the refusal path on every ticket and
+     report it as a blocked approve. */
+  const actionable = refs.find((r) => views[r]?.employerActionable);
   if (actionable) {
     sub(`single-specialist approve — ticket ${actionable}`);
     const id = views[actionable].authorization.id;
@@ -266,7 +275,7 @@ async function runUc04(baseUrl) {
     report("approve result", `status=${approve.status} code=${approve.body?.code} reason=${approve.body?.reason}`);
   }
 
-  const blocked = refs.find((r) => views[r]?.found && !views[r].actionable);
+  const blocked = refs.find((r) => views[r]?.found && !views[r].employerActionable);
   if (blocked) {
     sub(`refusal — ticket ${blocked} is not open to approval`);
     const id = views[blocked].authorization.id;

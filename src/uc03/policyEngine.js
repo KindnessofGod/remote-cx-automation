@@ -41,6 +41,7 @@
 // src/shared/countryCodes.js.
 // ---------------------------------------------------------------------------
 
+import { classifyEngagement } from "../uc01/engagementEligibility.js";
 import { normalizeCountryCode, normalizeCountrySet } from "../shared/countryCodes.js";
 import { findUpstreamFailure, upstreamVerdict } from "../shared/upstreamFailure.js";
 import { bindGateDescriptions } from "../shared/gateLadder.js";
@@ -233,6 +234,57 @@ export function evaluate({
   letterAutoIssue = true,
 }) {
   const flags = [];
+
+  // 0. ENGAGEMENT ELIGIBILITY — is this an engagement Remote offers this
+  //    product to at all? FIRST, ahead of identity, for the reason
+  //    src/uc01/engagementEligibility.js gives in its own header: eligibility
+  //    is a property of the RECORD, identity a property of the REQUESTER, so
+  //    asking "may this engagement have a travel letter?" first refuses an
+  //    ineligible request having read no travel facts and disclosed nothing.
+  //
+  //    WHY IT EXISTS HERE (2026-09-03). UC-03 had FOURTEEN gates and not one of
+  //    them looked at the engagement type, so a contractor asking for a travel
+  //    support letter passed every one and was routed to a specialist for
+  //    sign-off. Remote's own published position is not ambiguous about this
+  //    and it is rung 1 of the substitution ladder:
+  //      - Both travel articles are headed "This is applicable to EOR customers
+  //        only" (support.remote.com 37802056865933, 37802834593805).
+  //      - "you are not employed through a Remote entity (Direct Employees and
+  //        Contractors are not eligible)" (17537524163853).
+  //      - "We are unable to assist contractors with sponsored routes for work
+  //        permits. If our clients are willing to convert them to full-time
+  //        employees, it is possible." (20362380655501)
+  //    Found by the project owner reading a real hand-off: your-subdomainhelp
+  //    tickets 290 and 311, both filed by a contractor, both routed to Travel &
+  //    Mobility Support to discover a fact Remote publishes.
+  //
+  //    IMPORTED, NEVER COPIED. The classifier, its four classes and the
+  //    decision each one carries are UC-01's, reused whole — the same rule
+  //    UC-04 follows in importing UC-03's restricted-region set rather than
+  //    keeping a second copy. An engagement class is a property of Remote's
+  //    product, not of a use case, and two copies drift. It is imported from
+  //    `src/uc01/` rather than moved to `src/shared/` for the same reason UC-04
+  //    imports from `src/uc03/`: the move is churn across a file that four
+  //    other modules already import, and it buys nothing this import does not.
+  //
+  //    THE OFFBOARDING READ IS NOT MADE HERE, and that is deliberate rather
+  //    than forgotten. classifyEngagement()'s second argument is UC-01's extra
+  //    `listOffboardingsForEmployment()` call; UC-03 makes no such call, and
+  //    passing null is the documented shape for "not consulted" — the function
+  //    then decides on the record's own status, which is exactly what gate 2
+  //    below already does for `employee_not_active`. Adding the read is its own
+  //    work order, and is tracked the same way it is for UC-01's n8n twin.
+  const engagement = classifyEngagement(employment, null);
+  if (!engagement.eligible) {
+    flags.push(engagement.flag);
+    return {
+      decision: engagement.decision,
+      flags,
+      reason: engagement.reason,
+      engagement: engagement.engagement,
+      durationDays: null,
+    };
+  }
 
   // 1. Identity must be verified first — a security gate, not negotiable.
   if (!identity.verified) {
@@ -530,8 +582,60 @@ export function evaluate({
 // says so, rather than implying something was wrong with the request.
 // ---------------------------------------------------------------------------
 export const GATE_SEQUENCE = Object.freeze([
+  // --- ENGAGEMENT ELIGIBILITY — ONE gate, five rungs, because it refuses five
+  // --- ways and each one is a different conversation with a person. They share
+  // --- the `gate` name and take five consecutive POSITIONS, which is what
+  // --- test/gateLadder.test.js requires of every use case it covers: positions
+  // --- strictly 1..N and one row per reason. (UC-01 groups its identical five
+  // --- at a single position; it is not one of that test's cases. UC-03 is, so
+  // --- it conforms rather than being exempted — weakening a shared guard to
+  // --- fit one change is how the guard stops being one.)
+  // --- The slugs, the classes and the decisions are UC-01's, imported whole;
+  // --- only this `means` prose is UC-03's, because what a contractor is being
+  // --- refused HERE is a travel letter, not an employment letter, and Remote
+  // --- publishes a different sentence for each.
   {
     position: 1,
+    reason: "engagement_not_eor_contractor",
+    gate: "engagement_eligibility",
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "This person is engaged as an independent contractor. Remote's travel support letter is published for EOR customers only, and Remote states plainly that contractors are not eligible — it is not their legal employer, so it cannot write to an embassy about employment it does not hold. Nothing the employee adds changes that, and no specialist can sign it. Remote also states it cannot assist contractors with sponsored work-permit routes unless the client converts them to full-time employment.",
+  },
+  {
+    position: 2,
+    reason: "engagement_not_eor_direct",
+    gate: "engagement_eligibility",
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "Remote administers this person's payroll, but the company they work for is their legal employer. The travel support letter is published for EOR customers only, so the letter has to come from their own employer, who is the party that can attest to the employment an embassy is asking about.",
+  },
+  {
+    position: 3,
+    reason: "engagement_onboarding_incomplete",
+    gate: "engagement_eligibility",
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "Onboarding has not finished, so the employment a travel letter would state as an established fact is not in place yet. This is a wait, not a refusal of the trip.",
+  },
+  {
+    position: 4,
+    reason: "engagement_offboarding",
+    gate: "engagement_eligibility",
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "This employment is ending. The facts a travel letter would state are changing right now, and there may be a notice period, a severance or a dispute behind that — which is a Lifecycle Support conversation and not a travel one. This is the one class here that goes to a person rather than being refused outright.",
+  },
+  {
+    position: 5,
+    reason: "eor_status_unknown",
+    gate: "engagement_eligibility",
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "The engagement type could not be read from the employment record, so it could not be established that this is an engagement Remote issues travel letters for. An engagement nobody could read is not an eligible one — this fails closed on purpose, and the flag says whether the value was absent or simply not recognised.",
+  },
+  {
+    position: 6,
     reason: "identity_not_verified",
     gate: "identity",
     checks: "the person asking is the authenticated employee the travel request is about",
@@ -539,7 +643,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "We could not confirm the person asking is the employee this trip is for, so nothing about their employment or travel was answered. This is a failure to VERIFY — it is not a finding that they are someone else.",
   },
   {
-    position: 2,
+    position: 7,
     reason: "employee_not_active",
     gate: "employment_status",
     checks: "the employment record is active",
@@ -547,7 +651,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "The employment record is not active, so there is no live employment to give travel support against. A former or suspended employee's travel is not something this can answer.",
   },
   {
-    position: 3,
+    position: 8,
     reason: "confidence_unknown",
     gate: "classification_confidence",
     checks: "the classifier reported a usable confidence in what this request is",
@@ -555,7 +659,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "How sure we are about what this request is asking could not be established at all, so the reading of it was not acted on. A person confirms what is being asked before anything is decided. Nothing has been concluded about the trip itself.",
   },
   {
-    position: 4,
+    position: 9,
     reason: "low_confidence",
     gate: "classification_confidence",
     checks: "the classifier is confident enough in what this request is",
@@ -563,7 +667,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "What this request is asking for could not be read confidently enough to act on, so a person reads it first. A request understood wrongly here would be answered wrongly in every way that follows. This says nothing about whether the trip is allowed.",
   },
   {
-    position: 5,
+    position: 10,
     reason: "work_authorization_requested",
     gate: "intent_routing",
     checks: "the request is about the travel itself, not about being allowed to work from the destination",
@@ -622,7 +726,7 @@ export const GATE_SEQUENCE = Object.freeze([
       ". Whether working from the destination is allowed is settled on that request, and it has not been settled yet.",
   },
   {
-    position: 6,
+    position: 11,
     reason: "destination_unknown",
     gate: "destination_known",
     checks: "the request names a destination country",
@@ -639,7 +743,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "This request does not say which country is the destination, in a form that could be used — so nothing about the destination has been checked. The destination has to be established before anything else about the trip can be.",
   },
   {
-    position: 7,
+    position: 12,
     reason: "sanctioned_region",
     gate: "sanctions",
     checks: "the destination is not on the sanctioned or restricted list",
@@ -647,7 +751,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "The destination is on the sanctioned or restricted list. This is not a support question at all — Global Mobility owns it, and no extra information from the employee changes that.",
   },
   {
-    position: 8,
+    position: 13,
     reason: "destination_jurisdiction_excluded",
     gate: "supported_destination",
     checks: "the destination appears in Remote's supported-country registry",
@@ -655,7 +759,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "The destination could not be CONFIRMED as a country Remote supports. That may be because Remote does not support it, or because Remote's list of countries could not be read when this was answered — either way it is unconfirmed, which is not the same as confirmed-bad.",
   },
   {
-    position: 9,
+    position: 14,
     reason: "duration_unknown",
     gate: "duration_computable",
     checks: "the request carries a start and an end date the system can count between",
@@ -663,7 +767,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "Usable travel dates could not be read out of the request, so the length of the trip is unknown. The trip is not too long — nobody has established how long it is.",
   },
   {
-    position: 10,
+    position: 15,
     reason: "duration_over_cap",
     gate: "duration_cap",
     checks: "the trip is within the travel-duration cap for a straightforward informational answer",
@@ -671,7 +775,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "The trip is longer than the cap for an automatic informational answer, so Global Mobility weighs it instead. Length is a risk signal here, not a refusal — a longer trip is allowed to be fine, it just is not decided here.",
   },
   {
-    position: 11,
+    position: 16,
     reason: "letter_scope_exceeded",
     gate: "letter_within_template",
     checks:
@@ -680,7 +784,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "A formal travel letter was asked for, and it is not the standard one. The request asks for something the standard letter cannot express — a named addressee asked for in a sentence, particular wording, an identity document, a statement of who bears the costs, another language, or a row removed — or a row it states has no value behind it. NO LETTER WAS DRAFTED, deliberately: the standard one would have left out what was asked for without saying so, and that is the document somebody would then have been asked to sign. Everything that was asked for is listed with this request, beside what the standard letter cannot carry and why.",
   },
   {
-    position: 12,
+    position: 17,
     reason: "formal_letter_requested",
     gate: "letter_issuable",
     checks: "a requested letter may be issued automatically and has an employing entity to be written on",
@@ -688,7 +792,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "The standard letter was asked for and the trip qualifies for it, but it was not issued automatically. There are two reasons that can happen and this request is one of them: either every travel letter here needs a specialist's signature, in which case the letter IS drafted and is waiting for one — or the employing entity could not be read, in which case there is no letterhead, NOTHING WAS DRAFTED, and what is owed is a fix to the employing-entity record and a re-run rather than a signature. Every check about the trip itself passed either way.",
   },
   {
-    position: 13,
+    position: 18,
     reason: "standard_letter_issued",
     gate: "standard_letter",
     // WHAT THIS RUNG TESTS — after a sentence that said the opposite. `checks`
@@ -708,7 +812,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "The employee asked for the standard travel letter, every check passed, and there was a letterhead to write it on — so it was written and issued to them straight away, with nobody in the path. This is the routine outcome this path is built for: checked, produced and closed in one pass. A letter that is NOT the standard one, a request that could not be read confidently, a traveller who does not qualify, or an employing entity that could not be read each stops earlier, with the document unwritten.",
   },
   {
-    position: 14,
+    position: 19,
     reason: "all_gates_passed",
     gate: "outcome",
     checks: "every gate above passed",

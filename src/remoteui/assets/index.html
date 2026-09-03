@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>UC-06 Remote UI Stand-in — Contract Amendment Request</title>
+<title>Contract amendment request — Remote product stand-in</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="stylesheet" href="/remote-ui.css" />
-<link rel="stylesheet" href="/style.css" />
+<link rel="stylesheet" href="remote-ui.css" />
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
 <div class="r-app">
@@ -21,9 +21,11 @@
          below, which is where Remote itself puts a tab strip. -->
     <div class="r-nav">
       <div class="r-nav-label">Use case</div>
-      <p class="sidebar-fact">UC-06 — Contract amendment</p>
+      <p class="sidebar-fact">Contract amendment</p>
       <div class="r-nav-label">Payroll</div>
       <p class="sidebar-fact">Cutoff-gated, dual approval</p>
+      <div class="r-nav-label">Other screens</div>
+      <p class="sidebar-fact"><a href="work-authorizations">Work authorization</a></p>
     </div>
 
     <div class="r-spacer"></div>
@@ -40,12 +42,12 @@
     <header>
       <h1 class="r-page-title">Contract amendment</h1>
       <p class="r-page-sub">
-        UC-06 starts with a customer admin requesting an amendment inside Remote's own product,
+        A contract amendment starts with a company admin requesting it inside Remote's own product,
         then the employee and the employer consenting to it. Everything after the request is the
-        real thing: the actual UC-06 gates (identity &rarr; employment &rarr; per-country schema
-        &rarr; payroll cutoff) run first, and only then is a Zendesk ticket created — already
-        tagged with the decision and pre-filled with the drafted summary, ready for the two-role
-        approval in the ZAF sidebar.
+        real thing: the checks (identity &rarr; employment &rarr; the country's own amendment form
+        &rarr; payroll cutoff) run first, and only then is a support ticket raised — already
+        tagged with the decision and carrying the drafted summary, ready for the two signatures
+        in Remote's support desk.
       </p>
     </header>
 
@@ -57,12 +59,44 @@
       <span class="r-banner-icon" aria-hidden="true">ℹ</span>
       <span>
         <strong>This is a stand-in, not Remote's real platform.</strong>
-        UC-06's real trigger — a contract amendment requested inside Remote's own product — has no
-        public API, which is the whole reason UC-06's Zendesk intake exists. This page stands in for
-        that one missing surface so the flow can be demonstrated from its true starting point.
-        Nothing on this page is Remote's product, Remote's design, or a Remote endpoint.
+        A contract amendment is really requested inside Remote's own product, a surface this project
+        cannot host. This page is a demonstration stand-in for it, so the flow can be shown from its
+        true starting point; its employees are fixtures, and nothing on it is Remote's product,
+        Remote's design, or a Remote endpoint.
       </span>
     </div>
+
+    <!-- =====================================================================
+         The access-code prompt. Hidden unless the SERVER says a code is needed:
+         the page never decides that for itself, it renders the refusal the
+         server sent (src/portal/access.js — the same rule /portal, /audit and
+         /queue apply). The value is kept in sessionStorage for this browser
+         session only and is never baked into this bundle. Until 2026-09-02
+         this page had no such prompt at all, so on the deployment a visitor
+         holding the code saw an empty employee list and, on submit, a refusal
+         with nowhere to type the code in.
+         ===================================================================== -->
+    <section class="r-card" id="access-gate" hidden>
+      <div class="r-card-head">
+        <div>
+          <h2 class="r-card-title">This page needs an access code</h2>
+          <p class="r-card-note" id="access-reason"></p>
+        </div>
+      </div>
+      <div class="r-card-body">
+        <p class="small r-secondary" id="access-why"></p>
+        <form id="access-form" autocomplete="off">
+          <label class="r-field">
+            <span class="r-label">Access code
+              <span class="r-hint">(kept for this browser session only — never stored in the page's code)</span>
+            </span>
+            <input type="password" id="access-key" class="r-input" spellcheck="false" />
+          </label>
+          <button type="submit" class="r-btn r-btn-primary submit-btn">Unlock this session</button>
+        </form>
+        <ul class="small r-secondary" id="access-howto"></ul>
+      </div>
+    </section>
 
     <!-- The three role tabs. Restyled only: the ids, the `active` class app.js
          toggles, and the `path-<key>` sections it shows are all unchanged, and
@@ -146,6 +180,24 @@
                   <input type="number" id="salary-new" class="r-input" step="0.01" placeholder="new" aria-label="New salary, per year" />
                   <span class="r-muted currency" id="salary-currency"></span>
                 </div>
+                <!-- THE TWO THINGS A SALARY DECREASE NEEDS THAT NO RECORD CAN
+                     SUPPLY. Remote's form requires a stated reason and a
+                     confirmation the employee has been told (policyEngine.js
+                     reads both from the request and never defaults either).
+                     Until 2026-09-02 this page had no box for either, so a
+                     valid decrease could not be filed from here at all. Shown
+                     only when the new figure is below the current one. -->
+                <div id="salary-decrease" class="decrease-block" hidden>
+                  <span class="r-label">If this is a decrease <span class="r-hint">(Remote's form requires both)</span></span>
+                  <label class="r-field">
+                    <span class="r-label">Why the salary is being reduced</span>
+                    <input type="text" id="salary-decrease-reason" class="r-input" placeholder="e.g. agreed move to a four-day week" />
+                  </label>
+                  <label class="r-check">
+                    <input type="checkbox" id="salary-employee-informed" />
+                    <span>The employee has been told about this reduction</span>
+                  </label>
+                </div>
               </div>
 
               <div class="r-field" id="field-jobTitle" style="display:none">
@@ -170,6 +222,19 @@
             <label class="r-field">
               <span class="r-label">Requested effective date</span>
               <input type="date" id="effective-date" class="r-input" />
+            </label>
+
+            <!-- THE CLOCK THE CHECKS RUN ON, VISIBLE. The quick-fills pin it to
+                 June/July 2026 so each scenario lands on this stand-in's
+                 payroll calendar (whose last cycle is August 2026); it used to
+                 be pinned invisibly and never un-pinned, so a demo on any later
+                 day filed amendments "effective July 2026" with nothing on the
+                 form saying when they had been evaluated as at. Clear it to use
+                 today — which, on this calendar, is an honest refusal. -->
+            <label class="r-field">
+              <span class="r-label">Evaluate as at <span class="r-hint">(the date the payroll-cutoff check runs on; leave blank for today)</span></span>
+              <input type="date" id="evaluate-now" class="r-input" />
+              <span class="r-hint" id="evaluate-now-hint">This stand-in's payroll calendar covers June to August 2026. A later "as at" date has no cycle to land in and is refused for that reason.</span>
             </label>
 
             <label class="r-field">
@@ -235,9 +300,7 @@
                note cannot carry, and the form needs it: the amendment id you
                paste has to belong to this person. The rest of this paragraph
                was the note again. -->
-          <p class="path-intro">
-            The employee session is Amara Okafor (<span class="r-mono">emp_active_001</span>).
-          </p>
+          <p class="path-intro" id="employee-session-caption">Reading who the employee session is signed in as…</p>
 
           <form id="consent-employee-form">
             <label class="r-field">
@@ -263,7 +326,7 @@
          roles. This is the feedback half of the human gate: whoever filed or
          signed a change can see what a person decided about it, on the surface
          they filed it from, instead of having to be told. It offers no approve
-         and no deny — the two approvals happen in the ZAF sidebar, where dual
+         and no deny — the two approvals happen in the support desk, where dual
          control requires two DIFFERENT people, and a second place to decide
          would be a second, unaudited place with one signature instead of two.
          Which amendments a session may see is decided server-side, from the
@@ -297,7 +360,7 @@
             </label>
 
             <!-- This view POLLS. It cannot be told when an approval happens —
-                 that happens in the ZAF sidebar, in another process entirely —
+                 that happens in the support desk, in another process entirely —
                  so it asks, and the copy below says so rather than implying a
                  push. -->
             <div class="live-bar">
@@ -309,7 +372,7 @@
 
           <p class="r-muted small">
             Turning Live on re-checks every few seconds; it is not a live push, so a decision made in
-            the sidebar can take a moment to appear here. Each check re-reads the record — nothing on
+            the support desk can take a moment to appear here. Each check re-reads the record — nothing on
             this page is remembered between checks.
           </p>
 
@@ -321,6 +384,6 @@
   </main>
 
 </div>
-<script src="/app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

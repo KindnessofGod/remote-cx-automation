@@ -320,7 +320,7 @@ test("UC-04: the visa type and the duties reach the specialist as the requester 
   );
 
   const role = basis.dimensions.find((d) => d.key === "role_pe_sensitivity");
-  assert.equal(role.evidence.find((e) => e.label === "Job duties").value, "Sales");
+  assert.equal(role.evidence.find((e) => e.label === "Job duties, as stated on the request").value, "Sales");
 });
 
 test("UC-04: the whole decision basis is free of slugs, paths and field names", () => {

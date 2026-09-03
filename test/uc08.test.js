@@ -221,15 +221,35 @@ test("3. citations retrieved are relevant to what was actually asked, with a sta
   assert.ok(match.matchedOn.length > 0, "citation must say what it matched on, not just appear");
 });
 
-test("retrieveCitations() surfaces the 183-day article for presence-day language, and nothing for unrelated text (keyword fallback, the hermetic default)", async () => {
-  // No embed function is configured anywhere in the suite, so the module-level
-  // function runs the keyword fallback — which is exactly what the n8n
-  // "Build Dossier" Code node runs too (see n8nUc08Parity.test.js).
+test("retrieveCitations() answers presence-day and totalization language from the RETRIEVED corpus, and returns nothing for unrelated text", async () => {
+  // REWRITTEN 2026-08-30, and the direction matters. This test used to assert
+  // that a 183-day question returned `oecd-model-art-15` and a certificate-of-
+  // coverage question returned `totalization-general` — the two OECD Model
+  // PARAPHRASES. Both assertions passed for months and both were pinning the
+  // defect: a specialist was being handed the template a convention is drafted
+  // from, in place of the convention, with a real publisher beside it.
+  //
+  // The corpus is now the 55 admitted passages from docs/knowledge/, so these
+  // questions are answered by instruments. The assertions are therefore
+  // STRUCTURAL rather than by id — pinning a specific passage id would make
+  // this test a mirror of the ranking function, and it would have to be
+  // rewritten every time a document is added.
   const presence = await retrieveCitations("Is this employee within the 183 day threshold for withholding?");
-  assert.ok(presence.some((c) => c.id === "oecd-model-art-15"));
+  assert.ok(presence.length > 0, "a 183-day question must retrieve something");
+  assert.ok(
+    presence.every((c) => c.id.startsWith("D-")),
+    "a 183-day question must be answered from the retrieved corpus, never from a model paraphrase"
+  );
 
   const totalization = await retrieveCitations("We need an A1 certificate of coverage for social security.");
-  assert.ok(totalization.some((c) => c.id === "totalization-general"));
+  assert.ok(totalization.length > 0, "a certificate-of-coverage question must retrieve something");
+  assert.ok(
+    totalization.some((c) => c.instrument === true),
+    "at least one citation must be an instrument in force, not an agency reading of one"
+  );
+
+  // The guards below are UNCHANGED and are the reason this test survives at all
+  // rather than being replaced: they are the anti-regression half.
 
   // Same defect class as UC-07's: "a1" is a substring of any "A123"-shaped
   // identifier, so a payslip question carrying an employee reference was cited
@@ -262,11 +282,29 @@ test("retrieveCitations(): a longer ticket number containing '183' is not a requ
 });
 
 test("retrieveCitations(): a genuine 183-day mention still matches, hyphenated or not", async () => {
+  // The PROPERTY under test is unchanged — a real 183-day mention must retrieve,
+  // whichever way it is punctuated, while "18345" must not (the test above).
+  // Only the expected citation changed, from a model paraphrase to whatever the
+  // retrieved corpus holds, so this is the same guard over a better corpus.
   const hyphenated = await retrieveCitations("Am I under the 183-day threshold for this assignment?");
-  assert.ok(hyphenated.some((c) => c.id === "oecd-model-art-15"));
+  assert.ok(hyphenated.length > 0, "a hyphenated 183-day mention must retrieve");
 
   const plain = await retrieveCitations("Is this employee within the 183 day threshold for withholding?");
-  assert.ok(plain.some((c) => c.id === "oecd-model-art-15"));
+  assert.ok(plain.length > 0, "an unhyphenated 183 day mention must retrieve");
+
+  // THE HYPHEN IS ISOLATED, and the first version of this assertion did not
+  // isolate it: it compared the two sentences above, which differ in five words
+  // as well as the hyphen, and then blamed the difference on punctuation. It
+  // failed for a legitimate reason — "withholding" and "assignment" really do
+  // retrieve different passages — and a test that names the wrong variable
+  // would have been "fixed" by loosening it. Same sentence, one character apart.
+  const withHyphen = await retrieveCitations("Am I under the 183-day threshold for this assignment?");
+  const withoutHyphen = await retrieveCitations("Am I under the 183 day threshold for this assignment?");
+  assert.deepEqual(
+    withHyphen.map((c) => c.id),
+    withoutHyphen.map((c) => c.id),
+    "hyphenation alone must not change which passages are cited"
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -345,13 +383,23 @@ test("embedding retrieval reads stored vectors from a pgPool query (fake pool), 
   assert.ok(queries.some((sql) => sql.includes("uc08_treaty_citation_vectors")), "retriever reads from the pgvector table");
 });
 
-test("an embed function with no stored vectors degrades to the keyword fallback, never fails", async () => {
+test("an embed function with no stored vectors degrades to the statutory corpus, never fails", async () => {
+  // The degrade LADDER is what this pins, and it is unchanged: an embed function
+  // with nothing to compare against must not throw and must not return nothing.
+  // What it degrades TO changed on 2026-08-30 — from three OECD Model
+  // paraphrases to the retrieved statutory corpus. `uc08_treaty_citation_vectors`
+  // has held zero rows since the day it was provisioned, so this branch is not a
+  // corner case: it is the only branch production has ever taken.
   const retriever = new TreatyRetriever({
     corpus: TREATY_CORPUS, // plain corpus, no entry carries an embedding
     embed: () => [1, 0, 0],
   });
   const citations = await retriever.retrieveCitations("We need an A1 certificate of coverage for social security.");
-  assert.deepEqual(citations.map((c) => c.id).sort(), ["totalization-general"]);
+  assert.ok(citations.length > 0, "the fallback must never be silent");
+  assert.ok(
+    citations.every((c) => c.id.startsWith("D-")),
+    "the fallback is now the retrieved corpus, not the model paraphrases"
+  );
 });
 
 test("cosineSimilarity is pure and bounded: identical vectors score 1, orthogonal score 0", () => {

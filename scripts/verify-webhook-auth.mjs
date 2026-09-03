@@ -28,6 +28,12 @@
 //
 // Needs N8N_API_KEY, and NODE_USE_ENV_PROXY=1 in a proxied container.
 // ---------------------------------------------------------------------------
+import "dotenv/config";   // the repo keeps credentials in .env. Without this the
+                          // script exits 2 with "N8N_API_KEY is not set" on a machine
+                          // that HAS the key — an honest refusal to a question it was
+                          // never actually asked, and indistinguishable at a glance
+                          // from n8n being unreachable. The sibling verify-* scripts
+                          // all load it; this one was missed (b5aafe4 covered 14).
 import process from "node:process";
 
 const BASE = process.env.N8N_BASE_URL_PUBLIC || "https://n8n.your-host.example";

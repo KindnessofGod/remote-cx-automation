@@ -106,3 +106,42 @@ reforms of the period and both were checked against their own
 **Amendments other than those two were not checked**, and the sidecar says so
 instead of implying a consolidation was read. DRE's consolidated view is the one
 artifact that would answer it in a single read, and it is still JavaScript-only.
+
+---
+
+## Postscript — re-verified 2026-09-02, byte for byte
+
+The 2026-09-02 employee-notice pass re-fetched both gazette PDFs from the same
+URLs and **both SHA-256 checksums are identical to the ones in the header row
+above**, at identical byte counts (973,659 and 8,761,518). Art. 400.º was
+re-extracted from the re-fetched 2009 issue and re-read: ¶1's *"30 ou 60 dias,
+conforme tenha, respectivamente, **até dois anos ou mais de dois anos** de
+antiguidade"* is confirmed word for word, and so is **C-18**'s boundary finding.
+
+Two things were being asked and both are now answered:
+
+1. **Art. 400.º contains no probation rule of any kind.** Its five original
+   paragraphs cover the ordinary notice (¶1), the contractual extension to six
+   months (¶2), fixed-term contracts (¶3–¶4) and a cross-reference to art.
+   395.º(4) (¶5). Nothing in it mentions the *período experimental*. So
+   `NOTICE_PERIOD_TABLE.PT.probation`'s `sourceCitation` — which cites art.
+   400.º(1) for a 15-day probation figure — **cites an article that does not
+   contain the rule it is citing**. The probation article is **114.º**
+   (**D-03**), and what it says about the employee is `0`, not `15`. This is
+   **C-20**, unchanged and re-confirmed rather than re-opened.
+2. **DRE's consolidated view is still JavaScript-only.**
+   `https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2009-34546475`
+   returns HTTP 200 and 2,346 bytes of OutSystems bootstrap with
+   `<noscript>JavaScript is required</noscript>`;
+   `files.diariodarepublica.pt/consolidados/…` 301s to `/dr/error`, which then
+   answers **405**. So the "what is still open" note above — *enacting text plus
+   two amending laws, not a consolidation* — is unchanged and still the honest
+   boundary of this document, checked on this date rather than carried forward
+   on trust.
+
+**Contrast with D-05, closed in the same pass.** Ontario's e-Laws was also
+recorded as "JavaScript-only" and turned out to have a plain JSON endpoint behind
+the React shell. The same probe was run here — the DRE bundle's paths were
+examined — and DRE genuinely does not expose the consolidated text that way. The
+two look identical from the outside and are not, which is why each was checked
+rather than reasoned about from the other.

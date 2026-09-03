@@ -475,12 +475,23 @@ test("the demo country set NL · PT · CA · US is fully covered, and each one c
   const pt = computeNoticePeriod({ countryCode: "PT", startDate: "2019-06-03", now: "2026-09-15" });
   assert.equal(pt.noticeDays, 60);
   assert.equal(pt.noticeEndDate, "2026-11-14");
+  // CANADA IS NOW THE SAME SHAPE AS THE US (2026-09-02): covered by a sourced
+  // finding that there is nothing to compute, which this test's own opening
+  // comment already says is a decision.
+  //
+  // It used to assert `basis: "customary"` and an end date of 2026-09-29,
+  // computed from invented 0 / 7 / 14 day brackets — the least-sourced figures
+  // in the table, as the comment here said. C-30 decided on 2026-08-21 to
+  // remove them and recorded "Not yet built"; they were still in the tree
+  // twelve days later, and a six-week employee rendered as "0 days' notice,
+  // running 2026-09-02 to 2026-09-02" on a form HR Ops signs.
   const ca = computeNoticePeriod({ countryCode: "CA", startDate: "2019-06-03", now: "2026-09-15" });
-  assert.equal(ca.noticeEndDate, "2026-09-29");
-  // CA is `customary`, not `statutory`, and that word is load-bearing — see
-  // CONTRADICTIONS.md C-30 for why its figures are the least-sourced in the
-  // table.
-  assert.equal(ca.basis, "customary");
+  assert.equal(ca.basis, "none");
+  assert.equal(ca.noticeEndDate, null, "a country with no statutory minimum must not produce a computed date");
+  assert.equal(ca.statutoryMinimumExists, false);
+  // AND THE DISTINCTION THAT MATTERS: this is a finding about Canadian law, not
+  // a gap in our table. The two go to different desks and must not collapse.
+  assert.notEqual(ca.basis, "unknown", "Canada fell back to `unsupported_country` — that is our gap, not the law");
 });
 
 // ---------------------------------------------------------------------------
@@ -529,4 +540,81 @@ test("the gate ladder is a contiguous 1..N sequence with one rung per reason", (
   const at = (reason) => GATE_SEQUENCE.findIndex((g) => g.reason === reason);
   assert.ok(at("unsupported_country") < at("no_statutory_notice_period"));
   assert.ok(at("no_statutory_notice_period") < at("no_matching_notice_bracket"));
+});
+
+// ---------------------------------------------------------------------------
+// THE BOUNDARY THE LAST FIX CREATED — art. 400.º(1), two years and a fortnight
+// ---------------------------------------------------------------------------
+// C-18 moved Portugal's split from 23 months to 24, so that EXACTLY two years'
+// service gets 30 days rather than 60. That was right, and it created this.
+//
+// `tenureMonthsBetween()` floors to whole months, and every `tenureMaxMonths` is
+// an INCLUSIVE upper bound — so two years and fifteen days floored to 24 and
+// landed inside "up to two years". Measured on 2026-09-02:
+//
+//     24m  0d  ->  30 days   (statute: 30)   correct
+//     24m 15d  ->  30 days   (statute: 60)   HALF, against the employee
+//     24m 29d  ->  30 days   (statute: 60)   HALF, against the employee
+//     25m  0d  ->  60 days   (statute: 60)   correct
+//
+// art. 400.º(1) reads "até dois anos ou mais de dois anos" — up to two years, or
+// MORE than two years. An integer month count cannot express that boundary; it
+// needs the day. An employee told they owe half the notice they owe leaves
+// early, is in breach, and art. 401.º attaches an indemnity — and HR Ops signed
+// it off. Found by an HR operations specialist.
+// ---------------------------------------------------------------------------
+
+test("Portugal: two years EXACTLY is 30 days; two years and a day is 60", () => {
+  const at = (startDate) => computeNoticePeriod({ countryCode: "PT", startDate, now: "2026-09-02" }).noticeDays;
+
+  // "até dois anos" — inclusive of exactly two years. This is C-18's own case
+  // and it must not regress while the one below is fixed.
+  assert.equal(at("2024-09-02"), 30, "exactly two years must stay in the 30-day bracket (C-18)");
+  assert.equal(at("2024-10-02"), 30, "23 months is comfortably inside it");
+
+  // "mais de dois anos" — anything past the anniversary.
+  assert.equal(at("2024-09-01"), 60, "two years and one day owes 60");
+  assert.equal(at("2024-08-18"), 60, "two years and fifteen days owes 60, not 30");
+  assert.equal(at("2024-08-04"), 60, "two years and twenty-nine days owes 60, not 30");
+  assert.equal(at("2024-08-02"), 60, "twenty-five months owes 60");
+});
+
+test("no tenure falls into a GAP between brackets — the fix must not trade a wrong answer for a refusal", () => {
+  // Making the boundary exact opened a second hazard: Portugal's brackets are
+  // `max: 24` then `min: 25`, contiguous over integers and NOT over fractions.
+  // 24.5 matched neither and produced `no_matching_notice_bracket` — better than
+  // a wrong number, still not the right one. pickBracket() now walks the upper
+  // bounds in order, so a value above the table's floor always lands somewhere.
+  for (const countryCode of ["PT", "GB", "IE", "DE", "PL", "IN", "PH", "MX"]) {
+    for (let days = 0; days < 400; days += 7) {
+      const start = new Date(Date.UTC(2024, 0, 1) + days * 86400000).toISOString().slice(0, 10);
+      const r = computeNoticePeriod({ countryCode, startDate: start, now: "2026-09-02" });
+      // Either a bracket matched, or the tenure is genuinely below the table's
+      // own floor — never a hole in the middle.
+      // `noticeEndDate`, NOT `noticeDays` — a bracket denominated in MONTHS
+      // (Poland's one- and three-month periods, the Netherlands' one month)
+      // legitimately carries a null `noticeDays`, so reading that as "no
+      // bracket matched" made this test fail on a country it had just been
+      // fixed for. The end date is the signal that a rule was found and applied.
+      if (r.noticeEndDate === null) {
+        assert.ok(
+          r.tenureMonths < 12,
+          `${countryCode} at ${r.tenureMonths} months fell into a bracket gap (start ${start})`
+        );
+      }
+    }
+  }
+});
+
+test("brackets ascend — pickBracket walks upper bounds in order and would pick wrongly otherwise", () => {
+  // The ordering assumption pickBracket() now relies on, asserted rather than
+  // trusted. A table written out of order would make it silently return the
+  // first row whose ceiling happens to be high enough.
+  for (const code of supportedCountryCodes()) {
+    const rule = getNoticeRule(code);
+    const maxima = (rule.brackets ?? []).map((b) => b.tenureMaxMonths ?? Infinity);
+    for (let i = 1; i < maxima.length; i++) {
+      assert.ok(maxima[i] > maxima[i - 1], `${code}: bracket ${i} does not ascend (${maxima[i - 1]} then ${maxima[i]})`);
+    }
+  }
 });

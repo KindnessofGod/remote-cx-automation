@@ -14,6 +14,7 @@ import { createServer } from "node:http";
 import { resolveReader } from "../shared/approverAuth.js";
 import { describeRiskPosture } from "../shared/riskEngine.js";
 import { describeDossier } from "./dossierView.js";
+import { byTicketAccountRefusal } from "../shared/byTicketAccountGuard.js";
 
 // UC-08 is never actionable — there is no approve/deny path, ever (see
 // server.js's own header and workflow.js's). This is stated once, here,
@@ -94,6 +95,10 @@ export function createUc08Handler({ dossierStore, allowedOrigin = "*", requireSi
       // a dossier id.
       if (req.method === "GET" && isPath(parts, ["api", "dossiers", "by-ticket"]) && parts[3] && parts.length === 4) {
         const dossierRow = await dossierStore.findByExternalRef(parts[3]);
+        // ACCOUNT COLLISION GUARD — a bare ticket number means nothing without the
+        // account it was issued by. See src/shared/byTicketAccountGuard.js.
+        const foreignAccount = byTicketAccountRefusal(dossierRow, parts[3]);
+        if (foreignAccount) return send(res, 404, foreignAccount);
         if (!dossierRow) return send(res, 404, { found: false });
         return send(res, 200, { found: true, dossierRow, ...ACTIONABILITY, ...describeDossier(dossierRow) });
       }

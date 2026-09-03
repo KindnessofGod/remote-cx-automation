@@ -104,6 +104,7 @@ import { handleExpenseSubmission } from "../uc02/workflow.js";
 // rather than a second copy of the shape. See ./uc03Continuation.js.
 import { handleTravelInquiry, buildUc04HandoffEvent, acceptTravelLetterOffer } from "../uc03/workflow.js";
 import { handleWorkationRequest } from "../uc04/workflow.js";
+import { normalizeActivityProfile } from "../uc04/activityProfile.js";
 // THE MATRIX'S OWN DAY COUNTER, IMPORTED RATHER THAN RE-IMPLEMENTED.
 // The portal shows the two Schengen figures the decision row cannot carry (see
 // describeTravelWindows() below). A second copy of an inclusive, window-clipped
@@ -112,11 +113,50 @@ import { handleWorkationRequest } from "../uc04/workflow.js";
 // `SCHENGEN` / `DNV_COUNTRIES` are imported for the same reason and are read
 // ONLY to decide which SENTENCE to print — never to decide anything.
 import { computeCumulativeDays, SCHENGEN, DNV_COUNTRIES } from "../uc04/riskMatrix.js";
+// UC-04 STAGE 3 — Remote's own mobility review, recorded in this system and
+// never sent to Remote (src/uc04/mobilityReview.js), and the record an employee
+// can collect once it has cleared. The portal READS all of this: it records no
+// review of its own, and the gate that decides who may collect the document is
+// src/uc04/recordDelivery.js's, not this file's.
+import { describeMobilityReview, MOBILITY_REVIEW_RECORD_ISSUED_ACTION } from "../uc04/mobilityReview.js";
+import { readMobilityReview } from "../uc04/mobilityReviewLog.js";
+import {
+  evaluateAuthorizationRecordDelivery,
+  describeIssuedRecord,
+} from "../uc04/recordDelivery.js";
+import {
+  renderWorkAuthorizationRecordHtml,
+  AUTHORIZATION_RECORD_TYPE,
+} from "../uc04/authorizationRecord.js";
+// The one hash of the one document this portal renders on demand rather than
+// reading back out of `documents` — see the uc04 record route for why.
+import { createHash } from "node:crypto";
 import { handleResignationRequest } from "../uc05/workflow.js";
+// UC-05's artifact, and the one use case whose ENTIRE output is a document:
+// no Remote termination endpoint exists, so the signed-off notice and
+// settlement report IS the record (src/uc05/noticeReport.js's header). The
+// portal renders it and hands it over; the gate that decides whether it may be
+// handed over at all is src/uc05/reportDelivery.js's, not this file's.
+import {
+  evaluateResignationReportDelivery,
+  describeIssuedReport,
+} from "../uc05/reportDelivery.js";
+import { renderResignationReportHtml, NOTICE_REPORT_TYPE } from "../uc05/noticeReport.js";
+// The settlement figure's own arithmetic, said once and rendered in two places
+// — the result panel below and the report above — so the page and the document
+// cannot come to disagree about how 2,704.00 EUR was arrived at.
+import {
+  describePayoutWorking,
+  describePayoutProvenance,
+  describeNoBalanceProvenance,
+  describeUnusablePayoutLines,
+} from "../uc05/payoutWorking.js";
+import { PAYOUT_SHORT_LABELS } from "../uc05/decisionFacts.js";
 import { handleRelocationReview } from "../uc07/workflow.js";
 import { handleTaxInquiry } from "../uc08/workflow.js";
 import { handleAdjustmentRequest } from "../uc09/workflow.js";
 import { readJsonBody } from "../shared/httpBody.js";
+import { extractReceipt } from "../uc02/receiptExtraction.js";
 import { CONSENT_AGE_WARN_DAYS, isConsentWaitingLong } from "../shared/consentPolicy.js";
 // One formatter for a moment, shared with the settled-decision describers, so a
 // timestamp printed in a column and the same timestamp printed in a fact read
@@ -125,6 +165,7 @@ import { humanTime } from "../shared/settledDecision.js";
 import { checkPortalAccess, checkPortalAccessThrottled, OPEN_ACCESS } from "./access.js";
 import {
   describeStatus,
+  describeDecided,
   STATES,
   trackingHint,
   reasonLabel,
@@ -142,7 +183,12 @@ import { ownerScopeFor } from "./ownership.js";
 // src/uc03/letterDelivery.js's — who may collect one, and whether there is one
 // to collect; ./letterAccess.js only translates its verdict into a row, and
 // describeIssuedLetter() hands over the bytes. Nothing here restates either.
-import { describeLetterForRequester, describeUc01LetterForRequester } from "./letterAccess.js";
+import {
+  describeLetterForRequester,
+  describeUc01LetterForRequester,
+  describeAuthorizationRecordForRequester,
+  describeResignationReportForRequester,
+} from "./letterAccess.js";
 import { evaluateLetterDelivery, describeIssuedLetter, LETTER_DOCUMENT_TYPE } from "../uc03/letterDelivery.js";
 // UC-01's own, much simpler analogue (round-6 D-01) — a self-service case
 // never exists without its letter already issued, so this is the same shape
@@ -301,6 +347,13 @@ export function createPortalHandler({
   audit,
   stores,
   llm = {},
+  // [E-1] the transport that reads an uploaded receipt. INJECTED, and absent by
+  // default: without it extractReceipt() answers `extraction_not_configured`,
+  // which gate 8b treats as "nobody tried" rather than "unreadable" — so a
+  // local run with no OPENAI_API_KEY behaves exactly as it did before this
+  // existed, and a test can never make a real billed vision call by forgetting
+  // to stub something.
+  receiptReader = null,
   access = OPEN_ACCESS,
   basePath = "",
   zendesk = null,
@@ -431,6 +484,41 @@ export function createPortalHandler({
         });
       }
 
+      // POST /api/receipts/read — [E-1]. Transcribe an uploaded receipt so the
+      // page can show what the document SAYS next to what the claim RECORDS.
+      //
+      // WHY THIS IS ITS OWN ROUTE, AND NOT PART OF THE SUBMISSION.
+      // The employee has to be able to SEE the reading before they file, which
+      // is the whole point of the request ("process it live on screen"). Folding
+      // it into the submission would mean the first sight of a misread total is
+      // in the decision — after the claim exists.
+      //
+      // IT DECIDES NOTHING, AND IT MUST NOT LOOK LIKE IT DOES. The response
+      // carries the transcription and nothing else: no decision, no gate, no
+      // comparison against any claim. The comparison lives in policyEngine.js
+      // gate 8b where it is tested, and Remote's figures are never overwritten
+      // by what comes back from here (contract §13).
+      if (req.method === "POST" && isPath(parts, ["api", "receipts", "read"]) && parts.length === 3) {
+        const body = await readJsonBody(req);
+        const persona = resolvePersona(body.persona);
+        // An unauthenticated caller must not be able to spend a paid vision call.
+        if (!persona) return send(res, 401, { ok: false, code: "persona_required" });
+
+        const reading = await extractReceipt(
+          { mimeType: body.mimeType, fileName: body.fileName, dataBase64: body.dataBase64 },
+          { readReceipt: receiptReader }
+        );
+        return send(res, 200, {
+          ok: true,
+          source: reading.source,
+          reason: reading.reason,
+          // `extracted` is deliberately passed through verbatim — it has already
+          // been schema-validated by receiptExtraction.js, and re-shaping it here
+          // would be a second copy of that schema.
+          extracted: reading.extracted,
+        });
+      }
+
       // POST /api/requests/:type — run that use case's REAL workflow.
       //
       // `parts.length === 3` is EXACT on purpose. Without it this matched
@@ -446,6 +534,21 @@ export function createPortalHandler({
         if (!type) return send(res, 404, { ok: false, code: "unknown_request_type", type: parts[2] });
 
         const body = await readJsonBody(req);
+        // A SHAPE NOBODY READS IS REFUSED, NOT DEFAULTED. Every adapter reads the
+        // form's fields as TOP-LEVEL keys. A caller who nests them under
+        // `fields` — as three of three evaluating agents did on 2026-09-02 —
+        // used to get a 200 with every value silently dropped: a resignation
+        // with no date, no balances and no rate, prepared for sign-off, and six
+        // real Zendesk tickets raised on nothing. A 200 that filed the wrong
+        // thing is worse than a 400 that filed nothing.
+        if (body && typeof body === "object" && body.fields && typeof body.fields === "object") {
+          return send(res, 400, {
+            ok: false,
+            code: "unrecognised_body_shape",
+            reason:
+              "Send the form's values as top-level keys (for example proposedEndDate, ptoDaysAccrued, letterText), not under a `fields` object. Nothing was filed.",
+          });
+        }
         const outcome = await adapters[type.id](body);
         if (!outcome.ok) {
           // A REFUSAL IS A DECISION, AND A DECISION IS RECORDED BEFORE THE
@@ -1134,6 +1237,241 @@ export function createPortalHandler({
       }
 
       // ---------------------------------------------------------------------
+      // POST /api/requests/uc04/record — the employee collecting the record of
+      // what was decided about their trip
+      // ---------------------------------------------------------------------
+      // WHAT THIS HANDS OVER, AND WHY IT IS NOT CALLED A LETTER. UC-03's
+      // artifact is a travel letter addressed to a consulate; UC-04's is the
+      // authorization itself (UC-04.md §5: "the authorization IS the artifact").
+      // What an employee can actually hold, given that Remote's API cannot be
+      // told about stage 3 at all, is a RECORD OF WHO DECIDED WHAT AND WHERE IT
+      // IS WRITTEN DOWN — which is what src/uc04/authorizationRecord.js renders,
+      // and which is why the route says `record` rather than `letter`.
+      //
+      // NO SALARY, AND THAT IS ARGUED RATHER THAN INHERITED. UC-03's letter
+      // carries pay because a consulate asks a means-of-subsistence question
+      // (Visa Code Handbook I §5.2.2). Nobody asks it here, so the renderer
+      // reads no compensation field at all — UC-01's over-scope precedent, for
+      // UC-01's reason.
+      //
+      // THREE THINGS DECIDE WHETHER IT IS HANDED OVER, and none of them is
+      // decided in this file: src/uc04/recordDelivery.js is the gate (the
+      // session must be the employee the record is ABOUT, the employer must
+      // have approved, and Remote's mobility review must be recorded as
+      // cleared), and it is the SAME call the "My requests" badge is computed
+      // from — so this page structurally cannot offer a control this route
+      // refuses.
+      //
+      // THE COLLECTION IS AUDITED, unlike UC-01's and UC-03's. Theirs re-serve a
+      // document already written into `documents` with its hash on the decision
+      // row; this one is RENDERED ON DEMAND (there is no `documents` row for a
+      // UC-04 record and creating one means a store this build does not own), so
+      // the audit row carrying the sha256 is the only durable statement of what
+      // bytes were handed to the employee. `log()`, not `logDurable()`: the
+      // employee already has the document by the time it could fail, and
+      // refusing a read because a log write failed would be the wrong direction.
+      //
+      // A POST FOR A READ, matching the UC-01/UC-03 letter routes above: the
+      // employee's identity is a persona key in a body, which keeps an
+      // employment id out of a URL and out of every access log it passes
+      // through. `parts.length === 4` is EXACT for the reason those routes give.
+      if (req.method === "POST" && isPath(parts, ["api", "requests", "uc04", "record"]) && parts.length === 4) {
+        const body = await readJsonBody(req);
+        const persona = resolvePersona(body.persona);
+        if (!persona) {
+          const denial = unauthenticated();
+          return send(res, denial.status, { ok: false, code: denial.code, reason: denial.reason });
+        }
+        const authorizationId =
+          typeof body.authorizationId === "string" ? body.authorizationId.trim() : "";
+        if (!authorizationId) {
+          return send(res, 400, {
+            ok: false,
+            code: "authorization_id_required",
+            reason: "Name the work-authorization request whose record you are collecting.",
+          });
+        }
+
+        const authorizationRow = await stores.uc04.findById(authorizationId);
+        const review = await readMobilityReview({ audit, authorizationId });
+        const verdict = evaluateAuthorizationRecordDelivery({
+          authorizationRow,
+          // THE READER'S OWN SESSION, from ./personas.js's server-owned map —
+          // never the record's own employment id, which would be a row verified
+          // against itself (the shape this repo has had to fix four times).
+          session: persona.session,
+          review,
+        });
+        if (!verdict.allowed) {
+          return send(res, verdict.status, { ok: false, code: verdict.code, reason: verdict.reason });
+        }
+
+        // THE SUBJECT, READ FRESH. The record names an employee, their job
+        // title and their employer; every one of those comes from Remote on
+        // this request rather than from the stored row, so a record collected
+        // today states what is true today. A read that fails leaves the rows
+        // reading "—" (the renderer's own unknown) rather than failing the
+        // collection: the DECISIONS are what the employee came for, and they
+        // are all on the authorization row.
+        let employment = null;
+        let legalEntity = null;
+        try {
+          employment = await remote.getEmployment(authorizationRow.employmentId);
+          if (employment?.legal_entity_id) {
+            legalEntity = await remote.getLegalEntity(employment.legal_entity_id, employment.company_id);
+          }
+        } catch (err) {
+          console.error(`[portal] uc04 record: subject read for ${authorizationId}: ${err.stack}`);
+        }
+
+        const html = renderWorkAuthorizationRecordHtml({
+          employment,
+          legalEntity,
+          authorizationRow,
+          review,
+          reference: authorizationRow.externalRef ?? authorizationRow.id,
+        });
+
+        audit.log({
+          useCase: "UC-04",
+          action: MOBILITY_REVIEW_RECORD_ISSUED_ACTION,
+          actor: persona.session?.authenticatedEmploymentId ?? "unknown",
+          riskTier: "medium",
+          details: {
+            authorizationId,
+            externalRef: authorizationRow.externalRef ?? null,
+            source: authorizationRow.source ?? null,
+            employmentId: authorizationRow.employmentId ?? null,
+            documentType: AUTHORIZATION_RECORD_TYPE,
+            // WHAT WAS HANDED OVER, nameable later. There is no `documents` row
+            // for this artifact, so without the hash the trail would say a
+            // record was issued and nothing about which one.
+            contentHash: createHash("sha256").update(html).digest("hex"),
+            contentBytes: Buffer.byteLength(html),
+            mobilityReviewAuditId: review?.auditId ?? null,
+            subjectReadFailed: employment === null,
+            sentToRemote: false,
+          },
+        });
+
+        return send(res, 200, describeIssuedRecord(authorizationRow, review, html));
+      }
+
+      // ---------------------------------------------------------------------
+      // POST /api/requests/uc05/report — the employee collecting the signed-off
+      // report of their notice period and final holiday settlement
+      // ---------------------------------------------------------------------
+      // WHY THIS IS THE MOST OVERDUE ROUTE ON THIS SURFACE. Every other use
+      // case here ends in an act somewhere else — an expense patched at Remote,
+      // a work-authorization request updated, a contract amendment written.
+      // UC-05 ends nowhere: no Remote termination endpoint is confirmed to
+      // exist, so `UC-05.md` §3, `src/uc05/workflow.js`, `resignationStore.js`
+      // and `signoffPolicy.js` all say in their own headers that the signed-off
+      // report IS the durable artifact, and the portal card promises it in as
+      // many words — *"HR Ops checks the figures and signs them off, and that
+      // signed-off summary is the record."*
+      //
+      // There was no such summary. A row that reached `signed_off` rendered
+      // `DOCUMENT: —` in "My requests", and `/uc05/report`, `/uc05/letter` and
+      // `/uc05/record` all answered **404 `no_such_route`** while UC-01 had two
+      // letter routes and UC-04 a record route. The one use case whose whole
+      // output is a document produced none.
+      //
+      // THE GATE IS AN ORDERING RULE AND IT IS NOT THIS FILE'S.
+      // src/uc05/reportDelivery.js decides: the session must be the employee the
+      // report is ABOUT, and HR Ops must have signed it off. Until they have,
+      // everything on it — a statutory notice period, a last working day, a
+      // holiday settlement — is a CALCULATION, and handing it over as "the
+      // record" would be figures nobody has checked, on the document an employee
+      // reads to find out when they stop working and what they are owed. It is
+      // the SAME call the "My requests" badge is computed from, so this page
+      // structurally cannot offer a control this route refuses.
+      //
+      // THE COLLECTION IS AUDITED, like UC-04's and unlike UC-01's and UC-03's.
+      // Theirs re-serve a document already written into `documents` with its hash
+      // on the decision row; this one is RENDERED ON DEMAND (there is no
+      // `documents` row for a UC-05 report, and creating one means a migration),
+      // so the audit row carrying the sha256 is the only durable statement of
+      // what bytes were handed over. `log()`, not `logDurable()`: the employee
+      // has the document by the time it could fail, and refusing a read because a
+      // log write failed would be the wrong direction.
+      //
+      // A POST FOR A READ, matching every letter/record route above: the
+      // employee's identity is a persona key in a body, which keeps an
+      // employment id out of a URL and out of every access log it passes
+      // through. `parts.length === 4` is EXACT for the reason those routes give.
+      if (req.method === "POST" && isPath(parts, ["api", "requests", "uc05", "report"]) && parts.length === 4) {
+        const body = await readJsonBody(req);
+        const persona = resolvePersona(body.persona);
+        if (!persona) {
+          const denial = unauthenticated();
+          return send(res, denial.status, { ok: false, code: denial.code, reason: denial.reason });
+        }
+        const resignationId = typeof body.resignationId === "string" ? body.resignationId.trim() : "";
+        if (!resignationId) {
+          return send(res, 400, {
+            ok: false,
+            code: "resignation_id_required",
+            reason: "Name the resignation whose report you are collecting.",
+          });
+        }
+
+        const resignationRow = await stores.uc05.findById(resignationId);
+        const verdict = evaluateResignationReportDelivery({
+          resignationRow,
+          // THE READER'S OWN SESSION, from ./personas.js's server-owned map —
+          // never the row's own employment id, which would be a record verified
+          // against itself (the shape this repo has had to fix four times).
+          session: persona.session,
+        });
+        if (!verdict.allowed) {
+          return send(res, verdict.status, { ok: false, code: verdict.code, reason: verdict.reason });
+        }
+
+        // THE SUBJECT, READ FRESH — UC-04's record route's reasoning exactly.
+        // The name, job title and contract type on the report come from Remote
+        // on this request rather than from the stored row. A read that fails
+        // leaves those rows reading "—" (the renderer's own unknown) rather than
+        // failing the collection: the NOTICE PERIOD and the SETTLEMENT are what
+        // the employee came for, and both are on the resignation row.
+        let employment = null;
+        try {
+          employment = await remote.getEmployment(resignationRow.employmentId);
+        } catch (err) {
+          console.error(`[portal] uc05 report: subject read for ${resignationId}: ${err.stack}`);
+        }
+
+        const html = renderResignationReportHtml({
+          employment,
+          resignationRow,
+          reference: resignationRow.externalRef ?? resignationRow.id,
+        });
+
+        audit.log({
+          useCase: "UC-05",
+          action: "resignation_report_issued",
+          actor: persona.session?.authenticatedEmploymentId ?? "unknown",
+          riskTier: "medium",
+          details: {
+            resignationId,
+            externalRef: resignationRow.externalRef ?? null,
+            source: resignationRow.source ?? null,
+            employmentId: resignationRow.employmentId ?? null,
+            documentType: NOTICE_REPORT_TYPE,
+            // WHAT WAS HANDED OVER, nameable later. There is no `documents` row
+            // for this artifact, so without the hash the trail would say a report
+            // was issued and nothing about which one.
+            contentHash: createHash("sha256").update(html).digest("hex"),
+            contentBytes: Buffer.byteLength(html),
+            subjectReadFailed: employment === null,
+            sentToRemote: false,
+          },
+        });
+
+        return send(res, 200, describeIssuedReport(resignationRow, html));
+      }
+
+      // ---------------------------------------------------------------------
       // GET /api/my-requests?persona=<key> — "what happened to what I filed?"
       // ---------------------------------------------------------------------
       // THE QUESTION THIS ANSWERS, AND WHY IT DID NOT HAVE AN ANSWER
@@ -1340,6 +1678,86 @@ export function createPortalHandler({
           }
         }
 
+        // UC-04's own analogue, and the one that is not about a `documents` row.
+        //
+        // WHAT THE EMPLOYEE COULD NOT SEE BEFORE THIS. A work authorization is
+        // decided by THREE parties in two systems (UC-04.md §1a) and "My
+        // requests" showed one status string derived from the store row — which
+        // knows about stages 1 and 2 and cannot know about stage 3 at all,
+        // because Remote's mobility review has no column and lives in
+        // `audit_log` (src/uc04/mobilityReviewLog.js explains why). So an
+        // employee whose trip had been approved by their manager AND cleared by
+        // Remote's mobility team read "Authorised" and had no way to see who had
+        // decided what, what was still outstanding, or that Remote's own systems
+        // hold none of it.
+        //
+        // TWO FIELDS, AND THEY ANSWER DIFFERENT QUESTIONS. `stages` is the state
+        // of the three-party sequence, including the honesty notice; `document`
+        // is whether there is a record to collect, computed from THE SAME GATE
+        // the collect route uses (src/uc04/recordDelivery.js), so this page
+        // structurally cannot offer a control that route would refuse.
+        //
+        // ONE AUDIT READ PER UC-04 ROW, bounded by MY_REQUESTS_PER_TYPE_LIMIT,
+        // and a failure leaves both fields null rather than removing the request
+        // from the list — the row is the answer to "what happened to mine", and
+        // these are extras on it. Same rule as the two document passes above.
+        const uc04Scope = ownerScopeFor(persona, "uc04");
+        if (uc04Scope.scoped && stores.uc04) {
+          for (const request of requests) {
+            if (request.type !== "uc04" || !request.recordId) continue;
+            try {
+              const authorizationRow = await stores.uc04.findById(request.recordId);
+              if (!authorizationRow) continue;
+              const review = await readMobilityReview({ audit, authorizationId: authorizationRow.id });
+              request.stages = describeMobilityReview({ authorizationRow, review });
+              request.document = describeAuthorizationRecordForRequester({
+                authorizationRow,
+                review,
+                // THE READER'S OWN SESSION, from ./personas.js's server-owned
+                // map — never the record's own employment id.
+                session: persona.session,
+              });
+            } catch (err) {
+              console.error(`[portal] my-requests: uc04 stage read for ${request.recordId}: ${err.stack}`);
+            }
+          }
+        }
+
+        // UC-05's own analogue, and the one whose absence was most consequential.
+        //
+        // WHAT THE EMPLOYEE COULD NOT SEE BEFORE THIS. UC-05 makes no Remote
+        // write — none exists — so the signed-off report is not one output among
+        // several, it is the ONLY thing this use case produces. A resignation
+        // that had been calculated, checked and signed off by HR Ops showed
+        // "Signed off" in the status column and `DOCUMENT: —` beside it, and
+        // there was no route anywhere that would have handed the report over.
+        //
+        // NO STORE READ BEYOND THE ROW ITSELF, unlike the three passes above.
+        // There is no `documents` row to look for and no audit row to consult:
+        // whether the report exists is entirely a question about the resignation
+        // row's own decision and status, which `myRequestView()` has already
+        // read. So this pass makes no I/O at all — it is kept out here anyway,
+        // beside its three siblings, because the gate it calls is the same one
+        // the collect route calls and the two belong in one place.
+        const uc05Scope = ownerScopeFor(persona, "uc05");
+        if (uc05Scope.scoped && stores.uc05) {
+          for (const request of requests) {
+            if (request.type !== "uc05" || !request.recordId) continue;
+            try {
+              const resignationRow = await stores.uc05.findById(request.recordId);
+              if (!resignationRow) continue;
+              request.document = describeResignationReportForRequester({
+                resignationRow,
+                // THE READER'S OWN SESSION, from ./personas.js's server-owned
+                // map — never the row's own employment id.
+                session: persona.session,
+              });
+            } catch (err) {
+              console.error(`[portal] my-requests: uc05 report for ${request.recordId}: ${err.stack}`);
+            }
+          }
+        }
+
         // Newest first across all seven, so the page reads as one history
         // rather than as seven queues concatenated.
         //
@@ -1349,26 +1767,22 @@ export function createPortalHandler({
         // something would be unreadable. What a decision changes is PROMINENCE,
         // not position — `settled` below, and the count that follows it, are
         // what make one impossible to scroll past.
-        requests.sort((a, b) => String(b.submittedAt ?? "").localeCompare(String(a.submittedAt ?? "")));
+        requests.sort(byNewestFirst);
 
         // "Has anything happened since I last looked?", answered once, here.
         // The page could count `settled` itself; it deliberately does not, for
         // the same reason it composes no other sentence on this surface.
-        const settled = requests.filter((request) => request.settled);
+        // Composed in src/portal/requestStatus.js — one derivation, and this
+        // route composes no sentence of its own here any more than it does for
+        // any other status string on this surface.
+        const decided = describeDecided(requests);
 
         return send(res, 200, {
           ok: true,
           requests,
           notListed,
           readOnly: true,
-          decided: {
-            count: settled.length,
-            total: requests.length,
-            useCases: settled.map((request) => request.useCase),
-            summary: settled.length
-              ? `${settled.length} of your ${requests.length} request${requests.length === 1 ? "" : "s"} ${settled.length === 1 ? "has" : "have"} been decided by a person: ${settled.map((request) => `${request.useCase} — ${request.status.label.toLowerCase()}`).join("; ")}.`
-              : "",
-          },
+          decided,
           // Stated in the payload, not only in the page's copy, so the boundary
           // travels with the data to anything else that reads this route.
           note:
@@ -1597,6 +2011,45 @@ function consentRequestView(row) {
 // dossier shows no "decision" — its store has no such column, and printing
 // "escalate" from this file would be this file deciding.
 // ---------------------------------------------------------------------------
+/**
+ * Newest first, for "My requests".
+ *
+ * WHY THIS IS A NAMED FUNCTION AND NOT `localeCompare` INLINE.
+ *
+ * It was `String(b.submittedAt ?? "").localeCompare(...)`, which sorts
+ * correctly on this container (Node 22) and DID NOT sort on the deployment
+ * (Node 24): the live list came back grouped by request type, in each store's
+ * own insertion order, which is exactly what a comparator that returns 0 for
+ * every pair leaves behind. A requester declined a claim, opened this page to
+ * see the effect, and found their decision at **row 44 of 68** under four-day
+ * old rows.
+ *
+ * The root cause was never pinned down and this comment will not pretend it
+ * was — what is established is that the same input sorts here and does not
+ * sort there. `localeCompare` is a HUMAN-TEXT collator: it is locale- and
+ * ICU-dependent by definition, which is a property nobody wants when ordering
+ * machine timestamps. So the tool is replaced rather than the runtime blamed.
+ *
+ * `Date.parse` over string comparison because it cannot be fooled by a
+ * timestamp written with a different offset or precision, and the numeric
+ * result is identical in every runtime.
+ *
+ * UNREADABLE AND MISSING TIMESTAMPS SINK, they never float. A row whose
+ * `submittedAt` cannot be parsed sorts last rather than first: the top of this
+ * page is where a requester looks for what just happened, and a row with no
+ * time is precisely the row that cannot claim to be it. Ties fall back to the
+ * record id so the order is total and a re-read never reshuffles.
+ */
+export function byNewestFirst(a, b) {
+  const at = Date.parse(a?.submittedAt ?? "");
+  const bt = Date.parse(b?.submittedAt ?? "");
+  const aOk = Number.isFinite(at);
+  const bOk = Number.isFinite(bt);
+  if (aOk && bOk && at !== bt) return bt - at;
+  if (aOk !== bOk) return aOk ? -1 : 1;
+  return String(a?.recordId ?? "").localeCompare(String(b?.recordId ?? ""));
+}
+
 function myRequestView(type, row) {
   const status = describeStatus(type.id, row);
   return {
@@ -1644,6 +2097,14 @@ function myRequestView(type, row) {
     // requester can collect, and the two that produce something they cannot are
     // named in docs/use-cases/UC-03.md §22.
     document: null,
+    // THE THREE-PARTY SEQUENCE, for the one use case that has one. NULL HERE
+    // AND FILLED IN BY THE ROUTE for the same reason `document` is: stage 3
+    // lives in `audit_log`, so knowing its state is a READ and this function is
+    // pure and synchronous over one row. Null for the other six use cases and
+    // for a UC-04 row whose stage read failed — and null renders as nothing,
+    // which is the honest default: "we did not read it" must not look like
+    // "nothing has happened".
+    stages: null,
   };
 }
 
@@ -2524,7 +2985,22 @@ const LEAD_DETAIL = "What happened";
 function filedBy(persona) {
   if (!persona) return "unidentified";
   const spelled = String(persona.kind ?? "").replace(/_/g, " ").toLowerCase();
-  return spelled && persona.name.toLowerCase().includes(spelled) ? persona.name : `${persona.name} (${persona.kind})`;
+  // "SESSION", NOT A BARE ROLE WORD (2026-09-03). `persona.kind` has exactly
+  // two values, `employee` and `company_admin`, and it is the SESSION ROLE.
+  // Printed bare it read as the ENGAGEMENT, because `employee` is also a
+  // contract_type value — so a hand-off ticket for a contractor's request said
+  // "Filed by Alexandre Tremblay (employee)" to the specialist who had to
+  // judge exactly that. Observed on your-subdomainhelp tickets 290 and 311.
+  //
+  // This is the same one-word-two-jobs defect CLAUDE.md §6 records for the
+  // portal's persona picker, arriving by the one surface that fix did not
+  // cover. The picker was fixed by DERIVING the caption from `contract_type`;
+  // here the value genuinely is the session, so the fix is to say so — a
+  // second derived copy of the engagement on this line would be free to drift
+  // from the gate that actually read it.
+  return spelled && persona.name.toLowerCase().includes(spelled)
+    ? persona.name
+    : `${persona.name} (${spelled} session)`;
 }
 
 /** HTML-escape every interpolated value. A note carries text a person typed. */
@@ -2855,6 +3331,13 @@ function buildAdapters({ remote, audit, stores, llm }) {
           // (workflow.js). The page says so, rather than sending a fabricated
           // hash that would make every second demo submission look duplicate.
           receiptHash: body.receiptHash || null,
+          // [E-1] The page sends back the reading it already showed the
+          // employee, so the decision is made against the SAME transcription
+          // they saw rather than a second, possibly different, model call.
+          // It is re-validated by gate 8b's own logic before it can refuse, and
+          // it can only ever make the outcome stricter — there is no branch in
+          // which a supplied reading approves something.
+          receiptReading: body.receiptReading || null,
           externalRef: body.externalRef || null,
           source: PORTAL_SOURCE,
         },
@@ -3259,10 +3742,57 @@ function buildAdapters({ remote, audit, stores, llm }) {
     async uc04(body) {
       const persona = resolvePersona(body.persona);
       if (!persona) return unauthenticated();
-      if (persona.kind !== "company_admin") {
-        return refusal(403, "persona_cannot_request", "A workation request is filed by the company admin on the employee's behalf.");
+
+      // WHO MAY FILE ONE OF THESE — and until 2026-08-30 this said "the company
+      // admin, on the employee's behalf", which was the only sentence in this
+      // repository that claimed it. It contradicted UC-04.md §1/§2 ("Primary
+      // actor: Employee") and Remote's own object, whose one-line description is
+      // "a work authorization request submitted by an EMPLOYEE who needs
+      // authorization to work in a different country". It was never a decision:
+      // UC-04's identity gate compared `session.companyId` to the employment's
+      // company, only the admin persona carries a `companyId`, so an
+      // employee-filed request came back `identity_not_verified` and this rule
+      // was written to explain the refusal rather than to state a policy. The
+      // gate is fixed at its own site (src/uc04/submissionIdentity.js); this is
+      // the consequence being unwound.
+      //
+      // THE SUBJECT OF AN EMPLOYEE'S REQUEST COMES FROM THEIR SESSION, NEVER
+      // FROM THE BODY. A form value naming somebody else is refused outright
+      // rather than quietly retargeted at the filer: silently deciding a
+      // different question from the one that was asked is how a requester ends
+      // up holding a verdict about the wrong trip. The admin path is unchanged
+      // — an admin's subject is exactly the employment id they typed, and the
+      // real company gate one layer down still refuses another company's
+      // employee (that is what Lars van der Berg exists to demonstrate).
+      // Named `subjectId` rather than `subjectEmploymentId` because a
+      // module-scope helper of that name already exists (it resolves a
+      // persona's own employment id) and shadowing it here would read as a call
+      // to it.
+      let subjectId = body.employmentId;
+      if (persona.kind === "employee") {
+        if (!persona.employmentId) {
+          return refusal(
+            403,
+            "persona_cannot_request",
+            "This session names no employment record, so there is no trip it could be filed about."
+          );
+        }
+        if (body.employmentId && body.employmentId !== persona.employmentId) {
+          return refusal(
+            403,
+            "not_your_employment",
+            "You may file a workation request about your own employment. A request about someone else's is filed by a company admin, whose session is authorised for that employee's company."
+          );
+        }
+        subjectId = persona.employmentId;
+      } else if (persona.kind !== "company_admin") {
+        return refusal(
+          403,
+          "persona_cannot_request",
+          "A workation request is filed by the travelling employee, or by a company admin on their behalf."
+        );
       }
-      if (!body.employmentId) return refusal(400, "employment_required", "Pick the travelling employee.");
+      if (!subjectId) return refusal(400, "employment_required", "Pick the travelling employee.");
       if (!body.destinationCountry) return refusal(400, "destination_required", "Pick a destination country.");
 
       // PRIOR STAYS, READ BEFORE ANYTHING ELSE RUNS. Refused rather than
@@ -3331,7 +3861,9 @@ function buildAdapters({ remote, audit, stores, llm }) {
             "That travel request does not exist, is not a travel request, or was not routed to work authorization. The assessment is not filed against a request nobody can find — the link is the whole point of naming one."
           );
         }
-        if (continuationCase.employmentId !== body.employmentId) {
+        // Against the SUBJECT this assessment is about — which for an
+        // employee is their own session's employment id, not a form value.
+        if (continuationCase.employmentId !== subjectId) {
           return refusal(
             403,
             "continuation_subject_mismatch",
@@ -3340,10 +3872,25 @@ function buildAdapters({ remote, audit, stores, llm }) {
         }
       }
 
-      // THE SHARED REFERENCE, RE-DERIVED SERVER-SIDE. The page sends this same
-      // value back (it received it from the continue route), so the override is
-      // a no-op in the ordinary case and a correction otherwise — the body
-      // never gets to decide which UC-03 request this decision is filed beside.
+      // THE SHARED REFERENCE, RE-DERIVED SERVER-SIDE. The body never gets to
+      // decide which UC-03 request this decision is filed beside.
+      //
+      // THIS COMMENT USED TO SAY "the page sends this same value back (it
+      // received it from the continue route), so the override is a no-op in the
+      // ordinary case". IT NEVER DID, and the mistaken belief that it did is
+      // what made the override invisible for as long as it existed. The
+      // browser sends `reference("uc04")` — a freshly generated id — and
+      // `CARRIED_FIELDS` in ./uc03Continuation.js does not include the
+      // reference, so on this path the override is ALWAYS a correction and
+      // never a no-op. Measured on the deployment 2026-08-31: two submissions
+      // carrying two different references were both recorded under ticket 64,
+      // and the second was refused as a repeat delivery. The page reported the
+      // id it sent and then named a different one as already claimed, with no
+      // relationship between the two stated anywhere.
+      //
+      // The override itself is right and stays. What was wrong was that
+      // nothing downstream knew about it: `recordedRef` below is the fix on
+      // the wire, and the page now reports THAT rather than its own guess.
       // Sharing one reference across the two use cases is safe BY DESIGN and
       // not by luck: `workflow_claims` is keyed `(use_case, external_ref)`
       // precisely because "one ticket may legitimately reach two use cases
@@ -3352,7 +3899,7 @@ function buildAdapters({ remote, audit, stores, llm }) {
 
       const result = await handleWorkationRequest(
         {
-          employmentId: body.employmentId,
+          employmentId: subjectId,
           session: persona.session,
           factors: {
             homeCountry: body.homeCountry || null,
@@ -3363,6 +3910,20 @@ function buildAdapters({ remote, audit, stores, llm }) {
             visaType: body.visaType || null,
             jobDuties: body.jobDuties || null,
             hasContractSigningAuthority: Boolean(body.hasContractSigningAuthority),
+            /* WHAT THE PERSON WILL ACTUALLY BE DOING THERE (W-2). Remote's own
+               Mobility Team assesses "nature of intended activities", and
+               Remote's own RWA form asks three questions this system never
+               collected. Carried on `factors` because `factors` is already a
+               jsonb column, so this needs no migration and no field the durable
+               store would silently drop.
+
+               ON `factors` AND STILL NOT A GATE INPUT. `factorValidationIssues()`
+               reads named fields only, so nothing here can make a request
+               malformed, and test/uc04ActivityProfile.test.js asserts no gate,
+               matrix, approval policy or parser imports the module at all. It
+               is unverified free text: a human's prose may inform a specialist
+               and may never decide. See src/uc04/activityProfile.js. */
+            activityProfile: normalizeActivityProfile(body.activityProfile),
           },
           // The requester's own stated prior stays — never read from Remote,
           // never invented, and empty when they state none. See the refusal
@@ -3400,7 +3961,12 @@ function buildAdapters({ remote, audit, stores, llm }) {
         await audit.logDurable({
           useCase: "UC-04",
           action: CONTINUATION_LINKED,
-          actor: persona.session.authenticatedAdminId,
+          // The filer, read the way the workflow reads it: an admin id when
+          // an admin filed, the employee's own employment id when they filed
+          // for themselves. It used to be `authenticatedAdminId` alone, which
+          // is `undefined` for an employee session — an unattributed row in an
+          // append-only log.
+          actor: persona.session.authenticatedAdminId ?? persona.session.authenticatedEmploymentId,
           riskTier: "medium",
           caseId: continuationCase.id,
           details: {
@@ -3410,7 +3976,7 @@ function buildAdapters({ remote, audit, stores, llm }) {
             typeId: "uc04",
             uc03CaseId: continuationCase.id,
             uc04AuthorizationId: result.authorizationId ?? null,
-            employmentId: body.employmentId,
+            employmentId: subjectId,
             decision: result.decision,
             uc04Reason: result.reason,
             // The honest closing statement, literal rather than derived, and
@@ -3452,6 +4018,7 @@ function buildAdapters({ remote, audit, stores, llm }) {
           ? { uc03CaseId: continuationCase.id, externalRef, decision: continuationCase.decision }
           : null,
         ...deliveryFields(result),
+        ...continuationDuplicateFields(result, continuationCase),
         ...g04.fields,
         details: [
           ...g04.details,
@@ -3572,7 +4139,24 @@ function buildAdapters({ remote, audit, stores, llm }) {
           proposedEndDate: body.proposedEndDate || null,
           reason: body.reason || null,
           timeOffBalances: buildTimeOffBalances(body),
-          currency: body.currency || "USD",
+          // NO "USD" FALLBACK — measured live 2026-09-02, and it was denominating
+          // a PORTUGUESE settlement in dollars.
+          //
+          // This form has no currency box, so `body.currency` is absent on every
+          // portal submission and the fallback fired every time: an employee in
+          // Lisbon typed an hourly rate of 26.00 meaning euros and the panel
+          // rendered "2704.00 USD ... × 26.00 USD per hour", on the figure that
+          // becomes their final payment.
+          //
+          // NULL RATHER THAN A GUESS. `reconcilePtoPayout()` now refuses a line
+          // with no currency exactly as it refuses one with no hourly rate —
+          // both are "we cannot see what is owed", and a denomination nobody
+          // stated is fabricated money with the digits left intact. The employee
+          // is told the settlement is not derivable instead of being handed a
+          // confident wrong one. A currency box on the form, or a read of the
+          // employment's own `compensation_currency_code`, is the improvement
+          // that makes this computable again — and neither may be a default.
+          currency: body.currency || null,
           externalRef: body.externalRef || null,
           source: PORTAL_SOURCE,
           now: body.now || undefined,
@@ -3583,6 +4167,37 @@ function buildAdapters({ remote, audit, stores, llm }) {
       const notice = result.notice ?? null;
       const payout = result.payout ?? null;
       const g05 = gateNarration(uc05Gates, result.reason);
+
+      // [N-14] THE EMPLOYEE SEES AN ACKNOWLEDGEMENT, NEVER A FIGURE, UNTIL HR OPS
+      // HAS SIGNED. The owner's ruling (qa/contracts/UC-05-acceptance.md §11,
+      // DRIFT-064, 2026-08-21): "the employee should just see the final output
+      // after everything has been concluded and signed off internally by the
+      // specialist." Until 2026-09-02 this block returned the statutory end
+      // date, the day count, the rule, the tenure, the comparison and the
+      // payout as ordinary rows on the resigning employee's own result page,
+      // at submission — while the dialog in front of it said "Not yet", "My
+      // requests" said "issuing it now would hand over figures nobody has
+      // checked", and the report route refused 409 with the same sentence. The
+      // guarded route withheld what the unguarded one had already handed over.
+      // Found by driving the deployment as the employee (ticket 216 and six
+      // more), not by reading this file.
+      //
+      // The rows are not deleted; they change AUDIENCE. specialistDetail() keeps
+      // them in the internal note HR Ops opens (buildTicketNote reads the full
+      // array) and forRequester() drops them from the response. An intake
+      // response can never be `signed_off`, so nothing here is released; the
+      // release is the report route, on sign-off (DRIFT-064 (b), [N-15]).
+      //
+      // The escalation branch withholds the REASON as well as the figures —
+      // §11's own words: telling an employee "your notice period may be 30 days
+      // short" while Local HR & Legal is still deciding states a disputed legal
+      // position as fact, from the party that would owe it. So the deciding
+      // gate's `means` goes to the note too, and the paragraph on the page is
+      // the acknowledgement. `reason`, `flags` and `gateLadder` still travel on
+      // the envelope as slugs the page does not draw; that residual is named
+      // rather than hidden.
+      const acknowledgement = uc05EmployeeAcknowledgement(result.decision);
+      const forHrOps = specialistDetail;
       return ok({
         decision: result.decision,
         reason: result.reason,
@@ -3590,9 +4205,11 @@ function buildAdapters({ remote, audit, stores, llm }) {
         recordId: result.resignationId,
         ...deliveryFields(result),
         ...g05.fields,
+        decidedBy: { ...(g05.fields.decidedBy ?? {}), means: acknowledgement },
         details: [
-          ...g05.details,
-          detail(
+          ...g05.details.map((row) => ({ ...row, audience: FOR_SPECIALIST })),
+          detail("What happens next", acknowledgement),
+          forHrOps(
             "Statutory notice",
             // NO DAY COUNT WITHOUT AN END DATE. This used to interpolate
             // `notice.noticeDays` unconditionally, and both of the calculator's
@@ -3608,10 +4225,16 @@ function buildAdapters({ remote, audit, stores, llm }) {
             // derived, so it is the thing to branch on.
             noticeLine(notice)
           ),
-          detail("Rule applied", notice?.sourceCitation ?? "not calculated"),
-          detail("Tenure at notice", tenureLine(notice)),
-          detail("Proposed vs. statutory", discrepancyLine(notice)),
-          detail("PTO payout", ptoPayoutLine(payout)),
+          forHrOps("Rule applied", notice?.sourceCitation ?? "not calculated"),
+          forHrOps("Tenure at notice", tenureLine(notice)),
+          forHrOps("Proposed vs. statutory", discrepancyLine(notice)),
+          // `result.ptoSource` IS THE PROVENANCE AND IT IS PASSED, because the
+          // reconciler's own `payout.source` is not one — it distinguishes some
+          // balances from none from unusable and says nothing about where any of
+          // them came from. Reading it as provenance is how "from the leave
+          // balances on record" came to be printed over figures the employee had
+          // just typed into this form.
+          forHrOps("PTO payout", ptoPayoutLine(payout, result.ptoSource)),
           // WHETHER A DATE WAS TYPED IN A BOX OR READ OUT OF A PASTED LETTER —
           // `structured_input` / `rule_based_fallback`. The employee knows
           // which of the two they did, because they did it; the row exists so
@@ -4050,11 +4673,64 @@ function ptoDecisionLine(pto, currency = null) {
 function noticeLine(notice) {
   if (!notice) return "not calculated";
   if (!notice.noticeEndDate) {
+    // THREE NO-RESULT BRANCHES, NOT TWO, AND THE THIRD IS THE OPPOSITE OF A GAP.
+    //
+    // This used to test `noticeRuleFound` alone, so a Canadian resignation —
+    // where the table DOES hold the country and what it holds is the sourced
+    // finding that **no statutory minimum binds a resigning employee** — fell
+    // through to *"this tenure falls outside every bracket in the country's
+    // rule"*. That sentence says somebody should extend the table's low end,
+    // and it was printed directly underneath a citation reading "No statutory
+    // minimum notice runs against a resigning employee under the Canada Labour
+    // Code…". The line contradicted the line below it, and the two imply
+    // opposite next actions: extend our table, versus open the contract.
+    //
+    // `statutoryMinimumExists` is the calculator's own third state and exists
+    // for exactly this — `null` means we hold no rule and do not know, `false`
+    // means we hold the rule and it says no statutory period exists, `true`
+    // means one exists. Tested FIRST because both other branches are trivially
+    // true of the `false` case and each describes it wrongly. CONTRADICTIONS.md
+    // C-29; noticePeriodCalculator.js's own typedef says the same thing.
+    if (notice.statutoryMinimumExists === false) {
+      return (
+        "no statutory minimum applies — this country sets no statutory notice on a resigning employee. " +
+        "That is a finding about the law, not a gap in our table, and it is NOT a finding that no notice is owed: " +
+        "what you owe comes from your contract, which this system does not hold and has not read."
+      );
+    }
     return notice.noticeRuleFound === false
       ? "not determined — no statutory rule on file for this country"
       : "not determined — this tenure falls outside every bracket in the country's rule";
   }
-  return `${notice.noticeDays} days (${notice.basis}) → last working day ${notice.noticeEndDate}`;
+  // THE QUANTITY THE STATUTE STATES, NEVER A DAY COUNT DERIVED FROM IT.
+  //
+  // This interpolated `notice.noticeDays` unconditionally, and that field is
+  // `null` on every month-denominated rule — deliberately, so that nothing can
+  // print a day figure the statute never stated (noticePeriodCalculator.js's
+  // typedef, decisionFacts.js header rule 2b). BW art. 7:672(4) says "één
+  // maand", so a Dutch employee resigning was shown, in full:
+  //
+  //     null days (statutory) → last working day 2026-10-31
+  //
+  // `noticeQuantity` is the field written for prose and carries "1 month" or
+  // "60 days" as the statute denominates it. `noticeDays` stays as the fallback
+  // for a row stored before that field existed, and where neither is readable
+  // the length is stated as not derived rather than as `null days`.
+  const quantity =
+    (typeof notice.noticeQuantity === "string" && notice.noticeQuantity.trim()) ||
+    (typeof notice.noticeDays === "number" && Number.isFinite(notice.noticeDays)
+      ? `${notice.noticeDays} day${notice.noticeDays === 1 ? "" : "s"}`
+      : null);
+  // THE DATE IT WAS COUNTED FROM, on every computed last working day.
+  //
+  // Without it the answer silently expires: the SAME proposed date reads
+  // "29 days later than required" evaluated on 2 September and "4 days earlier
+  // than allowed" on 5 October, because notice runs from the day the
+  // resignation is read — and nothing on this panel named that day. A reader
+  // who saves this answer, or comes back to it, has no way to know it has moved
+  // under them. `noticeStartDate` is the calculator's own anchor.
+  const from = notice.noticeStartDate ? `, counted from ${notice.noticeStartDate}` : "";
+  return `${quantity ?? "length not derived"} (${notice.basis})${from} → last working day ${notice.noticeEndDate}`;
 }
 
 /**
@@ -4084,27 +4760,83 @@ function tenureLine(notice) {
  * A source this map does not know is printed as it is rather than dropped —
  * a new tag should look unfinished, not invisible.
  */
-const PTO_SOURCE_WORDS = Object.freeze({
-  time_off_records: "from the leave balances on record",
-  no_time_off_records: "no leave balances are recorded for this employee",
-});
+// THE OLD TABLE, AND BOTH OF ITS ENTRIES WERE FALSE STATEMENTS TO AN EMPLOYEE:
+//
+//   time_off_records:    "from the leave balances on record"
+//   no_time_off_records: "no leave balances are recorded for this employee"
+//
+// The first attributed figures the employee had typed into this form seconds
+// earlier to records somebody keeps. The second was worse: it is a claim ABOUT
+// THE EMPLOYMENT RECORD, made when nothing had read the employment record at
+// all — the boxes were left blank, `handleResignationRequest()` found no client
+// method to ask Remote with, and the reconciler settled at 0.00 because zero
+// balances sum to zero. "Nobody told us" was rendered as "there is nothing".
+//
+// `payout.source` cannot fix either, because it is not a provenance field: it
+// distinguishes some balances from no balances from unusable balances and says
+// nothing about where any of them came from. `workflow.js`'s `ptoSource` is the
+// field that answers it, and it has been on the result the whole time. So this
+// function now takes it, and the words live in src/uc05/payoutWorking.js
+// alongside the working itself — one vocabulary for the panel and the
+// signed-off report, rather than two that drift.
 
-function ptoSourceWords(source) {
-  const key = String(source ?? "").trim();
-  if (!key) return null;
-  return PTO_SOURCE_WORDS[key] ?? key;
-}
+/**
+ * The UC-05 payout line the page shows.
+ *
+ * FOUR THINGS CHANGED HERE, ALL OF THEM OBSERVED LIVE ON A REAL RESIGNATION:
+ *
+ *  1. A BLANK BOX NO LONGER RENDERS AS A ZERO. `0.00 EUR — no leave balances
+ *     are recorded for this employee` was shown to an employee who left the
+ *     holiday boxes empty. The form's own help text promises the opposite —
+ *     *"Leave 'days accrued' blank and no balance is sent at all — the result
+ *     then says the balance is unknown, rather than showing a zero nobody
+ *     worked out."* It now says exactly that. A zero here would be the same
+ *     defect findings F-28/F-30/F-33/F-35 each removed one layer at a time:
+ *     an unknown coerced into a quantity somebody can act on.
+ *
+ *  2. THE WORKING IS SHOWN. `2704.00 EUR` was printed for a figure the
+ *     employee had supplied all four inputs for — 18 accrued, 5 taken, 8 hours
+ *     a day, 26.00 an hour — and not one of the four was on screen. A
+ *     settlement with no derivation cannot be checked or challenged.
+ *
+ *  3. THE PROVENANCE IS TRUE. See the block above.
+ *
+ *  4. THE REFUSAL IS IN WORDS. `unusable_time_off_records: vacation — missing
+ *     hourlyRateInRemoteInteger` was rendered verbatim to a resigning person. A
+ *     database column name is not an error message, and this one is actively
+ *     misleading: it reads as a value to go and fetch, when Remote publishes no
+ *     pay rate on any endpoint and the only way to close it is for somebody to
+ *     supply the contractual rate.
+ *
+ * @param {object|null} payout     the reconcilePtoPayout() result
+ * @param {string|null} ptoSource  workflow.js's PTO_SOURCE_* — WHERE the days came from
+ */
+function ptoPayoutLine(payout, ptoSource = null) {
+  if (!payout) return PAYOUT_SHORT_LABELS.not_run;
+  const provenance = describePayoutProvenance(ptoSource);
+  const because = provenance ? ` — ${provenance}` : "";
 
-function ptoPayoutLine(payout) {
-  if (!payout) return "not calculated";
-  const source = ptoSourceWords(payout.source);
   if (payout.computable === false || payout.totalInRemoteInteger === null) {
-    const named = (payout.unusableLines ?? [])
-      .map((line) => `${line.timeOffType ?? "balance"} — missing ${(line.missing ?? []).join(", ")}`)
-      .join("; ");
-    return `not derivable${source ? ` — ${source}` : ""}${named ? `: ${named}` : ""}`;
+    const named = describeUnusablePayoutLines(payout.unusableLines).join("; ");
+    return `${PAYOUT_SHORT_LABELS.not_worked_out}${named ? ` — ${named}` : ""}${provenance ? `. (${provenance})` : ""}`;
   }
-  return `${fromRemoteInteger(payout.totalInRemoteInteger).toFixed(2)} ${payout.currency}${source ? ` — ${source}` : ""}`;
+
+  // NOTHING WAS SUPPLIED AND NOTHING WAS READ. Arithmetically zero; as a
+  // statement about this employee's holiday, unknown — and the difference is
+  // the whole of point 1 above. decisionFacts.js's payoutBasis() already says
+  // this in the same words for the specialist's panel; the person resigning was
+  // the one reader still being shown the zero.
+  if (payout.source === "no_time_off_records") {
+    const silence = describeNoBalanceProvenance(ptoSource);
+    return (
+      `${PAYOUT_SHORT_LABELS.not_known}${silence ? ` — ${silence}` : ""}. No figure is shown because none was worked out, and a zero ` +
+      "here would be a claim about your holiday that nobody made — this is not a finding that no holiday is owed."
+    );
+  }
+
+  const total = `${fromRemoteInteger(payout.totalInRemoteInteger).toFixed(2)} ${payout.currency}`;
+  const working = describePayoutWorking(payout).join("; ");
+  return `${total}${working ? ` — ${working}` : ""}${because}`;
 }
 
 /**
@@ -4707,6 +5439,43 @@ function subjectCountryOf(envelope) {
   return envelope?.subjectCountry ?? null;
 }
 
+/**
+ * A continuation's duplicate is not a retried delivery, and calling it one sent
+ * the requester to a control that could not help them.
+ *
+ * `deliveryFields()`'s wording — "this exact reference had already been
+ * processed" — is written for a webhook that fired twice, where the remedy is
+ * to send a different reference. On the continuation path there is no such
+ * remedy: the reference is re-derived from the travel request, so every
+ * submission for one routed trip claims the SAME id no matter what the page
+ * generated. A requester who reads "reference refused as a repeat delivery",
+ * clicks "Generate a new reference" and submits again gets the identical
+ * refusal, which is precisely what happened: "i tried doing it myself, but
+ * could not go through".
+ *
+ * So this says what actually happened — the trip already has a work
+ * authorization — and, because it is the question a requester asks next, that
+ * the details currently on the form were NOT used.
+ *
+ * IT NARROWS AND NEVER WIDENS. It returns nothing at all unless the workflow
+ * reported a duplicate AND this was a continuation, and it changes only the
+ * explanation: `alreadyHandled`, `duplicateDelivery` and `duplicateOf` are
+ * left exactly as `deliveryFields()` set them, so nothing that reads the
+ * envelope structurally sees a different shape.
+ */
+function continuationDuplicateFields(result, continuationCase) {
+  if (result?.duplicate !== true || !continuationCase) return {};
+  return {
+    duplicateExplanation:
+      "This travel request already has a work authorization, so nothing was decided again and nothing was written " +
+      "twice. A work authorization continued from a travel request is filed under that request's own reference, and " +
+      "only once — which is what lets the two decisions be read side by side. The details currently on the form were " +
+      "not used, and the decision shown is the one the first submission reached. This is not a policy refusal: no " +
+      "check judged the request this time. To have a different work authorization assessed, start a new travel " +
+      "request.",
+  };
+}
+
 function deliveryFields(result) {
   if (result?.duplicate === true) {
     return {
@@ -4912,6 +5681,33 @@ const unauthenticated = () =>
  * @param {{describeDecidingGate: Function, describeGateLadder: Function}} gates
  * @param {string} reason  the slug the policy engine returned
  */
+/**
+ * [N-14] What a resigning employee is told at intake, per state — the wording of
+ * qa/contracts/UC-05-acceptance.md §11, and nothing else.
+ *
+ *   pending_signoff  received, being checked by HR Ops, what happens next.
+ *                    No figures of any kind.
+ *   escalate         received, a specialist team is looking at it. No figures,
+ *                    and no statement of what the problem is.
+ *
+ * Intake never produces `signed_off` or `declined`; those states are told on
+ * "My requests" (requestStatus.js) and the report route, after a person acted.
+ */
+function uc05EmployeeAcknowledgement(decision) {
+  if (decision === "escalate") {
+    return (
+      "Received. A specialist team is looking at this resignation before anything is said about it, and what " +
+      "they are looking at stays with them until it is resolved. When it is, what you are told will have been " +
+      "checked by a person; \"My requests\" shows where it stands."
+    );
+  }
+  return (
+    "Received. HR Ops is checking the notice period and the holiday settlement that were worked out for you, and " +
+    "will sign the report off or send it back. Nothing is shown here before then — a figure nobody has checked is " +
+    "not yet a record. When it is signed off, the confirmed figures appear under \"My requests\"."
+  );
+}
+
 function gateNarration(gates, reason) {
   const decidedBy = gates.describeDecidingGate(reason) ?? null;
   return {

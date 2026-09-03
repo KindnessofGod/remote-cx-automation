@@ -67,6 +67,42 @@ const SELECT_COLUMNS = `
   executed_at               as "executedAt",
   remote_result             as "remoteResult"`;
 
+/**
+ * The one status this table's employer decision may be taken FROM.
+ *
+ * Named rather than inlined because it appears three times below — the in-memory
+ * guard, the `where` clause that makes the update conditional, and the read the
+ * employer screen filters on — and three copies of a status string is three
+ * places for it to drift.
+ */
+export const EMPLOYER_DECIDABLE_STATUS = "pending_specialist_approval";
+
+/**
+ * The employer's two verdicts and the status each one writes — REMOTE'S OWN
+ * ENUM MEMBERS, frozen and closed.
+ *
+ * `approved_by_remote` and `declined_by_remote` are absent and must stay absent.
+ * They are Remote's own stage-3 compliance verdict, Remote publishes no endpoint
+ * that sets them, and writing one is a defect this repository has already
+ * shipped once (src/uc04/workflow.js's header). A closed map keyed by ACTION —
+ * not by a status the caller supplies — is what makes that unwritable here
+ * rather than merely discouraged.
+ *
+ * Asserted equal to src/remoteui/workAuthPolicy.js's EMPLOYER_VERBS by test, so
+ * the store and the screen cannot drift into two vocabularies.
+ */
+export const EMPLOYER_DECISION_STATUSES = Object.freeze({
+  approve: "approved_by_manager",
+  decline: "declined_by_manager",
+});
+
+/** Newest first, by creation. An unparseable date sorts last, never first. */
+function byCreatedAtDesc(a, b) {
+  const at = Date.parse(a?.createdAt ?? "");
+  const bt = Date.parse(b?.createdAt ?? "");
+  return (Number.isNaN(bt) ? -Infinity : bt) - (Number.isNaN(at) ? -Infinity : at);
+}
+
 export class AuthorizationStore {
   /**
    * @param {object} [opts]
@@ -135,7 +171,7 @@ export class AuthorizationStore {
       // approval but the row is kept for audit.
       status:
         decision === "ready_for_approval"
-          ? "pending_specialist_approval"
+          ? EMPLOYER_DECIDABLE_STATUS
           : decision === "blocked"
             ? "blocked"
             : "escalated",
@@ -355,6 +391,159 @@ export class AuthorizationStore {
       params
     );
     return result.rows.map(normalizeRow);
+  }
+
+  /**
+   * Every authorization belonging to a SET of employments, newest first — the
+   * read behind the employer's work-authorization screen
+   * (src/remoteui/workAuthScope.js).
+   *
+   * WHY A SET OF EMPLOYMENTS AND NOT A COMPANY. This store holds no company id
+   * and must not acquire one: whose company an employment belongs to is a fact
+   * the EMPLOYMENT RECORD answers, read back from Remote by the caller. A
+   * `listForCompany()` here would be this table asserting a company association
+   * over a record that answers the question itself — the exact defect
+   * src/remoteui/workAuthStandin.js's INDEX comment records this repository
+   * shipping once, where one response said an employee was not in this company
+   * and that their request was this company's to decide. So the caller supplies
+   * the employments it has already established are in scope, and this method
+   * cannot widen that.
+   *
+   * FAILS CLOSED on an empty set: no employments means no rows, never all rows.
+   * Same direction as listByOwner() above and for the same reason.
+   *
+   * `flush()` first because creation is fire-and-forget — a row written moments
+   * ago may still be in flight, and reading Postgres alone then loses it. That
+   * is the "instantly" half of this method's whole purpose: a request filed
+   * seconds ago must be on the screen, not on the next load.
+   *
+   * @param {Iterable<string>} employmentIds
+   * @param {object} [opts]
+   * @param {number} [opts.limit]  newest N — an unbounded response is its own outage
+   * @returns {Promise<object[]>}
+   */
+  async listForEmployments(employmentIds, { limit = 100 } = {}) {
+    const ids = [...new Set([...(employmentIds ?? [])].filter(Boolean).map(String))];
+    if (!ids.length) return [];
+
+    if (!this.pgPool) {
+      return this.authorizations
+        .filter((row) => ids.includes(String(row.employmentId)))
+        .slice()
+        .sort(byCreatedAtDesc)
+        .slice(0, limit);
+    }
+    await this.flush();
+    // An explicit placeholder list rather than `= any($1::text[])`: the column's
+    // own type then drives the comparison, so this keeps working whether
+    // `employment_id` is provisioned as text or as uuid. A wrong cast here would
+    // not error — it would return zero rows, which reads exactly like "nothing
+    // has been filed" and is the one answer this screen must never fake.
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+    const result = await this.pgPool.query(
+      `select ${SELECT_COLUMNS} from uc04_authorizations
+        where employment_id in (${placeholders})
+        order by created_at desc limit $${ids.length + 1}`,
+      [...ids, limit]
+    );
+    return result.rows.map(normalizeRow);
+  }
+
+  /**
+   * Record the EMPLOYER's verdict — Remote's stage 2, taken by the customer's
+   * own manager on src/remoteui/'s work-authorization screen.
+   *
+   * WHY THE STATUS STRINGS ARE REMOTE'S OWN. `approved_by_manager` /
+   * `declined_by_manager` are the two members of Remote's
+   * `WorkAuthorizationRequest` status enum that an employer decision can produce
+   * — the exact pair `UpdateWorkAuthorizationRequestParams` accepts, and the
+   * exact pair src/remoteui/workAuthPolicy.js's EMPLOYER_VERBS names. Storing
+   * them verbatim means the row's status and the status the screen renders are
+   * one string rather than two that can drift.
+   *
+   * WHY THE MAP IS FROZEN AND CLOSED. `approved_by_remote` and
+   * `declined_by_remote` are stage 3 — Remote's own compliance verdict, which
+   * Remote publishes NO endpoint to set — and this repository has already
+   * shipped the defect of writing one (src/uc04/workflow.js's header records a
+   * payload asserting Remote had approved a trip Remote had never seen). There
+   * is no argument through which a caller can supply a status here, so no call
+   * site can be written that records one.
+   *
+   * WHY NO NEW COLUMN. `uc04_authorizations` has a fixed schema and a migration
+   * is not runnable from a coding session (Supabase is unreachable over raw TCP
+   * from this container — CLAUDE.md §6), and a column the store would silently
+   * drop is worse than no column. So the verdict is written to columns that
+   * already exist and already mean this: the single approval slot for an
+   * approve, the decline slot for a decline. The employer's REASON and special
+   * instructions ride in the slot's `note`; the full decision — actor, company,
+   * stage, and the fact that Remote's own review is still outstanding — is on
+   * the append-only `audit_log` row the caller writes BEFORE calling this.
+   *
+   * CONDITIONAL BY CONSTRUCTION: only a row still awaiting a manager can be
+   * decided, checked in memory and re-checked in the `where` clause of the
+   * update, so a second delivery of the same decision cannot overwrite the
+   * first — including when the first was written by another process.
+   *
+   * @param {string} id
+   * @param {object} args
+   * @param {"approve"|"decline"} args.action
+   * @param {string} args.approver   the deciding session's own id
+   * @param {string|null} [args.approverName]
+   * @param {string|null} [args.note]  the employer's reason / special instructions
+   * @returns {Promise<object|null>} the updated row, or null when the row does
+   *   not exist or is no longer awaiting a manager — the caller answers 409
+   *   rather than silently reporting a decision it did not record.
+   */
+  async recordEmployerDecision(id, { action, approver, approverName = null, note = null }) {
+    if (!Object.hasOwn(EMPLOYER_DECISION_STATUSES, action)) return null;
+    const status = EMPLOYER_DECISION_STATUSES[action];
+
+    const current = await this.findById(id);
+    if (!current || current.status !== EMPLOYER_DECIDABLE_STATUS) return null;
+
+    const now = new Date().toISOString();
+    const local = this.authorizations.find((a) => a.id === id);
+
+    if (action === "approve") {
+      if (local) {
+        local.status = status;
+        local.approver = approver;
+        local.approvalNote = note || null;
+        local.approvedAt = now;
+        local.updatedAt = now;
+      }
+      if (this.pgPool) {
+        await this.pgPool.query(
+          `update uc04_authorizations
+              set status = $2, approver = $3, approval_note = $4, approved_at = $5, updated_at = $5
+            where id = $1 and status = $6`,
+          [id, status, approver, note || null, now, EMPLOYER_DECIDABLE_STATUS]
+        );
+      }
+    } else {
+      const slot = { approver, approverName, note: note || null, at: now };
+      if (local) {
+        local.status = status;
+        local.declinedBy = slot;
+        local.declinedAt = now;
+        local.updatedAt = now;
+      }
+      if (this.pgPool) {
+        await this.pgPool.query(
+          `update uc04_authorizations
+              set status = $2, denied_by = $3::jsonb, denied_at = $4, updated_at = $4
+            where id = $1 and status = $5`,
+          [id, status, JSON.stringify(slot), now, EMPLOYER_DECIDABLE_STATUS]
+        );
+      }
+    }
+
+    // The approver's DISPLAY NAME has no column and is not given one: it is on
+    // the audit row, which is where an identity belongs anyway. It is carried on
+    // the in-memory row only so the response the decider is holding can render
+    // it back without a second read.
+    if (local && approverName) local.approverName = approverName;
+    return this.findById(id);
   }
 
   /** Await any DB writes still in flight — call before reading rows back. */

@@ -268,6 +268,34 @@ function issuedArtifactFor(useCase, reason) {
 // naming four form fields reads as if the plumbing were the fifth.
 const REFUSAL_BLOCKS = Object.freeze({
   // -- the three the report was about ---------------------------------------
+  // ENGAGEMENT ELIGIBILITY (2026-09-03). Five classes, five different next
+  // steps, because "you are not eligible" without a route onward is a dead end
+  // — and in three of these four cases Remote publishes the route.
+  "UC-03:engagement_not_eor_contractor": {
+    because:
+      "because you are engaged through Remote as an independent contractor, and Remote's travel support letter is issued for employees it is the legal employer of",
+    // ONE SENTENCE. The portal allows a one-sentence lead and a one-sentence
+    // follow-up, so this carries the REMEDY and nothing else — why Remote
+    // cannot issue the letter is already the lead's own clause.
+    next: "What usually works instead is your contract together with your invoice or payment history, which is what most consulates accept from a contractor.",
+  },
+  "UC-03:engagement_not_eor_direct": {
+    because:
+      "because Remote administers your payroll, but the company you work for is your legal employer",
+    next: "The letter has to come from your own employer's HR or People team, who are the party that can attest to the employment an embassy is asking about.",
+  },
+  "UC-03:engagement_onboarding_incomplete": {
+    because: "because your onboarding has not finished yet",
+    next: "This is a wait rather than a refusal — a travel letter states your employment as an established fact, so ask again once onboarding has finished.",
+  },
+  "UC-03:eor_status_unknown": {
+    because: "because the engagement type on the employment record could not be read",
+    next: "Nothing was decided about the trip itself, and somebody needs to look at the employment record before it can be.",
+  },
+  "UC-03:engagement_offboarding": {
+    because: "because this employment is in the process of ending",
+    next: "The facts a travel letter would state are changing right now, so a person will pick this up — tell them if you have a deadline for the trip.",
+  },
   "UC-04:sanctioned_region": {
     because: "because the destination is on the sanctioned or restricted list",
     next: "Nothing you or the employer can do changes this one — no approval here can grant it, no further detail will help, and nothing was sent to Remote, so there is nobody to ask and nothing to correct.",

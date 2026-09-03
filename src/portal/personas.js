@@ -137,7 +137,7 @@ export const PERSONAS = {
     kind: "employee",
     employmentId: "d73cff71-ced7-4bcf-b764-b9899abc6340",
     note:
-      "Mirrors a real Remote Sandbox record — United Kingdom, employee, active. Employment id d73cff71-ced7-4bcf-b764-b9899abc6340 is the genuine Sandbox id; the record behind it is this repo's mock. We hold the United Kingdom's statutory notice rules, and ~5.5 years' service puts her in the five-week bracket.",
+      "Mirrors a real Remote Sandbox record — United Kingdom, employee, active. Employment id d73cff71-ced7-4bcf-b764-b9899abc6340 is the genuine Sandbox id; the record behind it is this repo's mock. We hold the United Kingdom's statutory notice rules: ERA 1996 s. 86(2) gives a resigning employee one week, flat, from one month's service — it does not rise with tenure, so her ~5.5 years changes nothing.",
     session: { authenticatedEmploymentId: "d73cff71-ced7-4bcf-b764-b9899abc6340" },
   },
   carlos: {
@@ -221,6 +221,15 @@ export const PERSONAS = {
     note:
       "Mirrors a real Remote Sandbox record — Canada, CONTRACTOR, active. Employment id 3537d9ee-2017-4a53-952e-9d3b042aeab5 is the genuine Sandbox id; the record behind it is this repo's mock. His record names no employing entity, so there is no letterhead to write on: ask for a formal travel letter as him and it stops for a person to handle, where the same request as Chris Lee is written and issued on the spot.",
     session: { authenticatedEmploymentId: "3537d9ee-2017-4a53-952e-9d3b042aeab5" },
+  },
+  david: {
+    id: "david",
+    name: "David Chen",
+    kind: "employee",
+    employmentId: "436cf2b4-d1e3-48bd-9a10-5311b01aa330",
+    note:
+      "Mirrors a real Remote Sandbox record — United States, employee, active. Employment id 436cf2b4-d1e3-48bd-9a10-5311b01aa330 is the genuine Sandbox id; the record behind it is this repo's mock. His record names no employing legal entity, so a formal travel letter for him is drafted and stopped for a Travel & Mobility Support specialist — there is nothing to write it on. He is an EOR employee, so he reaches that rung on that fact and no other; the same letter asked by Chris Lee is issued outright.",
+    session: { authenticatedEmploymentId: "436cf2b4-d1e3-48bd-9a10-5311b01aa330" },
   },
   amanda: {
     id: "amanda",

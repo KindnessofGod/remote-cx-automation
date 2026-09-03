@@ -21,13 +21,18 @@
 // valid" pattern UC-01's classifier uses.
 //
 // UC-04 NEVER EXECUTES the actual PATCH (Remote's "approve the work
-// authorization" call) from this graph. The PATCH is the specialist's
-// approve, fired from submitWorkationApproval() in src/uc04/workflow.js via
-// the uc04-api HTTP endpoint — exactly the same split UC-01 (decide in n8n,
-// approve in review/server.js) and UC-06 (decide in n8n, dual-approve in
-// uc06-api) already have. This node's job is the decision + the
-// dossier-shaped summary the specialist will read; the PATCH is one human
-// action later.
+// authorization" call) from this graph, and the reason CHANGED on 2026-08-30
+// without this file hearing about it. It used to be "the PATCH is the
+// specialist's approve, one human action later, in the uc04-api". It is not:
+// the PATCH is the CUSTOMER'S OWN MANAGER's approve, made in Remote's own
+// product (the /remoteui work-authorizations screen), and no Remote CX agent
+// in Zendesk can make it at all. See the stage table below and UC-04.md §1a.
+//
+// THREE PARTIES DECIDE, AND THIS NODE IS NONE OF THEM. Everything this node
+// emits is a PREPARATION of that decision — the gates' verdict, a summary, and
+// (since 2026-08-31) a composed internal note that names the actor and the
+// surface for each stage. Prime directive 2's shape: the AI prepares, a named
+// human decides.
 //
 // RUNS INSIDE N8N'S SANDBOX: no imports, no network, no module system.
 // `$()` and `$input` are provided by n8n (and mocked by the parity test).
@@ -42,6 +47,9 @@ const request = $('Normalize Workation Request').first().json;
 // pattern as src/uc01/gates.js and src/uc06/amendmentGates.js.
 const empRaw = $input.first().json?.data?.employment ?? $input.first().json?.data ?? {};
 const employment = {
+  // FOR DISPLAY AND FOR CARRYING FORWARD, and it falls back to the id that was
+  // ASKED ABOUT so a downstream node always has something to name. That makes
+  // it unusable as an identity input — see `recordId` below.
   id: empRaw.id ?? request.employmentId,
   status: empRaw.status ?? 'unknown',
   company_id: empRaw.company_id ?? null,
@@ -69,11 +77,33 @@ const employment = {
 // closed: a missing session, a missing email on either side, or a mismatch all
 // leave identityVerified false. This is workflow-layer identity DERIVATION —
 // policyEngine.evaluate() still receives one boolean, so parity is unchanged.
+// A THIRD accepted signal was added on 2026-08-30, and it is the one Remote's
+// own object is built around: a WorkAuthorizationRequest is "submitted by an
+// employee who needs authorization to work in a different country", with the
+// employee (`user`) and the employer's manager (`employer_approver`) as two
+// separate parties. So the EMPLOYEE filing about their own trip verifies —
+// `session.authenticatedEmploymentId` against the id on the AUTHORITATIVE
+// record. Mirrors src/uc04/submissionIdentity.js, which is where the whole
+// argument is written down; keep the two in step. Note that the SCENARIO TABLE
+// in test/n8nUc04Parity.test.js cannot catch a divergence here — it feeds
+// policyEngine.evaluate() the identity THIS node derived, so that the gates are
+// what is compared — which is why that file also carries a block of rows
+// driving this derivation directly.
+//
+// `recordId` IS NOT `employment.id`. The object above defaults its id to
+// `request.employmentId` — the id the request ASKED ABOUT — so comparing
+// against it would compare a session's claim with a body's claim and call the
+// agreement of two claims an authenticated identity. Only what Remote actually
+// returned may satisfy an identity gate.
+const recordId = empRaw.id ? String(empRaw.id).trim() : '';
 const session = request.session;
+const sessionEmploymentId =
+  session && typeof session.authenticatedEmploymentId === 'string' ? session.authenticatedEmploymentId.trim() : '';
 const identityVerified = Boolean(
   session &&
     employment &&
-    ((session.companyId && session.companyId === employment.company_id) ||
+    ((sessionEmploymentId && recordId && sessionEmploymentId === recordId) ||
+      (session.companyId && session.companyId === employment.company_id) ||
       (session.authenticatedEmail && employment.email && session.authenticatedEmail === employment.email))
 );
 
@@ -212,7 +242,20 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DAYS_COUNTED = 'COUNTED';
 const DAYS_NOT_EVALUATED = 'NOT_EVALUATED';
 const SCHENGEN_LIMIT_DAYS = 90;
+// W-3. Kept byte-for-byte in step with src/uc04/riskMatrix.js's
+// LEAD_TIME_MINIMUM_DAYS — test/n8nUc04Parity.test.js runs this body against
+// the real matrix and compares decisions, so a divergence here is a divergence
+// in what production tells a specialist. [PROPOSED]: this system's own working
+// minimum, not anybody's rule.
+const LEAD_TIME_MINIMUM_DAYS = 14;
 const SCHENGEN_WINDOW_DAYS = 180;
+
+function wholeDaysBetween(from, to) {
+  const a = toDayIndex(from);
+  const b = toDayIndex(to);
+  if (a === null || b === null) return null;
+  return b - a;
+}
 
 function toDayIndex(value) {
   if (typeof value !== 'string' && !(value instanceof Date)) return null;
@@ -445,7 +488,7 @@ function classifyRisk(args) {
   const tripDays = tripDurationDays(startDate, endDate);
 
   if (reasons.length > 0) {
-    return { riskLevel: 'blocked', reasons, flags, tripDays, cumulativeDays: null, schengen: null, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
+    return { riskLevel: 'blocked', reasons, flags, tripDays, leadTimeDays: null, cumulativeDays: null, schengen: null, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
   }
 
   // Schengen visa-free 90/180 window (statutory, not invented). The window is
@@ -476,7 +519,7 @@ function classifyRisk(args) {
   }
 
   if (reasons.length > 0) {
-    return { riskLevel: 'blocked', reasons, flags, tripDays, cumulativeDays: null, schengen, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
+    return { riskLevel: 'blocked', reasons, flags, tripDays, leadTimeDays: null, cumulativeDays: null, schengen, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
   }
 
   // Destination outside everything the matrix knows about: UC-04.md §3's
@@ -524,16 +567,29 @@ function classifyRisk(args) {
     }
   }
 
+  // W-3 — notice before departure. Soft, always: short notice is neither an
+  // immigration bar nor a data-quality fault, and UC-04's blocking set is only
+  // those two. A trip already under way is `start_in_past`, which returns above.
+  let leadTimeDays = null;
+  if (!Number.isNaN(new Date(startDate).getTime())) {
+    leadTimeDays = wholeDaysBetween(now, startDate);
+    if (leadTimeDays !== null && leadTimeDays < LEAD_TIME_MINIMUM_DAYS) {
+      considerations.push('short_notice_before_departure');
+      flags.push('lead_time_short');
+    }
+  }
+
   let riskLevel = 'low';
   if (flags.includes('pe_risk_dape') || flags.includes('destination_out_of_scope')) riskLevel = 'high';
   else if (
     flags.includes('non_treaty_pair') ||
     flags.includes('tax_residency_watch') ||
-    flags.includes('schengen_visa_unverified')
+    flags.includes('schengen_visa_unverified') ||
+    flags.includes('lead_time_short')
   )
     riskLevel = 'medium';
 
-  return { riskLevel, reasons, flags, tripDays, cumulativeDays, schengen, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
+  return { riskLevel, reasons, flags, tripDays, leadTimeDays, cumulativeDays, schengen, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
 }
 
 // --- policyEngine.js: factorValidationIssues() -----------------------------
@@ -563,6 +619,121 @@ function factorValidationIssues(factors) {
   return issues;
 }
 
+// --- THE THREE STAGES, AND WHO OWNS EACH ONE ------------------------------
+// DISPLAY AND AUDIT ONLY. Nothing below is read back into a decision; no gate
+// branches on it. It exists because until 2026-08-31 this node told a Remote
+// CX specialist, on a real Zendesk ticket, that a `ready_for_approval` request
+// was "awaiting ONE mobility specialist's approval" — a decision
+// src/uc04/approvalPolicy.js refuses them, on a screen that offers them no
+// button, for a request that is really waiting on somebody outside Remote.
+//
+// THE WORDS ARE COPIED, NOT COMPOSED FRESH, and the sources are named per
+// constant. An n8n Code node has no imports (see this file's header), so a
+// shared module cannot be reached from here — the established pattern in this
+// repository for that situation is to copy with attribution rather than to
+// invent a second wording, because a second wording is a second thing to
+// drift. Keep these in step with:
+//   src/remoteui/workAuthPolicy.js   STAGES / STAGE_3_NOTE
+//   src/uc04/mobilityReview.js       MOBILITY_REVIEW_NOTICE, the clear/decline verbs
+//   src/uc04/server.js               CX_SIDEBAR_NO_DECISION
+//   src/approvalqueue/approvalRoutes.js  the "UC-04" row's `stages` + `note`
+//
+// `approvalRoute` BELOW KEEPS THE TOKEN `specialist_approval` ON PURPOSE. It
+// is a machine token, it is never rendered, it is not persisted by any node on
+// this graph, and src/uc04/workflow.js emits the identical string — renaming
+// it here would make the two copies of one decision disagree about a field
+// while changing nothing a human reads. What was wrong was the PROSE, and the
+// prose is what changed.
+const STAGE_2_ACTOR = "the customer's own manager";
+const STAGE_2_SURFACE = "Remote's own product (the /remoteui work-authorizations screen)";
+const STAGE_3_ACTOR = "Remote's Mobility Team";
+const STAGE_3_SURFACE = "the UC-04 panel of the Remote CX Review sidebar on this ticket";
+
+// Copied from src/remoteui/workAuthPolicy.js's STAGE_3_NOTE reasoning and
+// src/uc04/mobilityReview.js's MOBILITY_REVIEW_NOTICE. Stated as a fact about
+// REMOTE'S API rather than about our permissions: "we cannot do that yet" and
+// "Remote publishes no endpoint for it" are different claims.
+const STAGE_3_NOT_TRANSMITTED =
+  'Remote publishes no endpoint for that stage, so what is recorded there is recorded in this system only: ' +
+  'it is never sent to Remote and Remote\'s own systems will not show it.';
+
+// The one line that keeps a reader from mistaking stage 2 for something a
+// Zendesk agent does. Copied from src/uc04/server.js's CX_SIDEBAR_NO_DECISION.
+const STAGE_2_IS_NOT_OURS =
+  'PATCH /v1/work-authorization-requests accepts exactly approved_by_manager and declined_by_manager, and that ' +
+  'is the only work-authorization decision Remote\'s API accepts. No Zendesk agent can make it, and nothing ' +
+  'on this ticket will.';
+
+/**
+ * The internal note the ticket carries. DETERMINISTIC TEXT, never
+ * LLM-authored — the same discipline as buildEmployerHandoffNote() in
+ * src/remoteui/server.js and composeInternalNote.js on UC-01's graph.
+ *
+ * IT DOES NOT REPRODUCE THE FOUR DIMENSIONS OR THE GATE LADDER. Both are
+ * computed by src/uc04/decisionFacts.js (1,400+ lines) and rendered by the ZAF
+ * sidebar off the stored row. Porting them into a Code node would be a second
+ * copy of the longest reasoning in this use case, kept in step by nothing. The
+ * note POINTS at the surface that already has them instead.
+ *
+ * IT IS EMITTED FOR EVERY DECISION, not only for ready_for_approval, so the
+ * other three Zendesk terminal nodes can adopt `internalNote` without this file
+ * changing again. Today only "Flag Awaiting Specialist Approval" reads it —
+ * see workflows/nodes-uc04/flagAwaitingApprovalSpec.js.
+ */
+function composeInternalNote({ decision, reason, summary, flags, riskLevel }) {
+  const flagText = flags && flags.length ? flags.join(', ') : 'none';
+  const lines = [];
+  lines.push('UC-04 work authorization — the automation has PREPARED this case and decided nothing about whether the trip may go ahead.');
+  lines.push('');
+  lines.push(summary);
+  lines.push('');
+  lines.push('Assessment: ' + decision + ' (' + reason + '). Risk-matrix level: ' + riskLevel + '. Flags: ' + flagText + '.');
+  lines.push('');
+  lines.push('WHO DECIDES, AND WHERE');
+  lines.push('1 · The employee files the request. Already done — that is what produced this ticket.');
+  if (decision === 'ready_for_approval') {
+    lines.push('2 · ' + STAGE_2_ACTOR.charAt(0).toUpperCase() + STAGE_2_ACTOR.slice(1) + ' approves or declines it, in ' + STAGE_2_SURFACE + '. ' + STAGE_2_IS_NOT_OURS);
+    lines.push('3 · ' + STAGE_3_ACTOR + ' then records its own review of what the employer approved, on ' + STAGE_3_SURFACE + '. The verbs there are clear / decline, never approve — approve is stage 2\'s word for stage 2\'s decision. ' + STAGE_3_NOT_TRANSMITTED);
+    lines.push('');
+    lines.push('Until the employer has decided, what this ticket is for is the prepared case: the facts, the four dimensions, the risk posture and the gate ladder, on ' + STAGE_3_SURFACE + ', ready for whoever does decide.');
+  } else if (decision === 'escalate') {
+    // The group as the ACCOUNT spells it. `Mobility Legal Tier-2` is not a
+    // group name anywhere in Zendesk; the live group is
+    // `Mobility & Legal (Tier-2)` (id 99900000000009,
+    // src/shared/escalationGroupIds.js). Proven on ticket 79: this note named
+    // the team THREE times in TWO spellings — the summary sentence and the
+    // appended routing sentence both correct, this line not — so a specialist
+    // searching the string it gave them found no such group.
+    // docs/ESCALATION-DESTINATIONS.md §2.2, "one team, four spellings".
+    lines.push('2 · Neither stage 2 nor stage 3 is reached. This request was escalated to Mobility & Legal (Tier-2) rather than prepared for the employer, so ' + STAGE_2_ACTOR + ' is not being asked for anything yet.');
+    lines.push('');
+    lines.push('The prepared case — the facts, the four dimensions, the risk posture and the gate ladder — is on ' + STAGE_3_SURFACE + '.');
+  } else if (decision === 'blocked') {
+    lines.push('2 · Neither stage 2 nor stage 3 is reached. This request is blocked, which is a hard stop nobody approves — ' + STAGE_2_ACTOR + ' is not being asked for anything and no approval here could override it.');
+    lines.push('');
+    lines.push('The prepared case — the facts, the four dimensions, the risk posture and the gate ladder — is on ' + STAGE_3_SURFACE + '.');
+  } else {
+    lines.push('2 · The automation produced a decision this graph does not recognise, so it is routed to a human rather than dropped. Nobody has been asked to approve anything.');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Who this decision is actually waiting on, as data. Display/audit only, and
+ * carried so a downstream node or a reader of the run never has to re-derive
+ * it from `approvalRoute` — which is exactly the re-derivation that produced
+ * the wrong sentence in the first place.
+ */
+function describeAwaitingDecision(decision) {
+  if (decision === 'ready_for_approval') {
+    return { stage: 2, actor: STAGE_2_ACTOR, surface: STAGE_2_SURFACE, decidedInZendesk: false, writesToRemote: true };
+  }
+  if (decision === 'escalate') {
+    return { stage: null, actor: 'Mobility & Legal (Tier-2)', surface: 'this Zendesk ticket', decidedInZendesk: true, writesToRemote: false };
+  }
+  return { stage: null, actor: 'nobody — a blocked or unrecognised request is not open to approval', surface: null, decidedInZendesk: false, writesToRemote: false };
+}
+
 // --- requestParser.js: draftSummaryTemplate() — the deterministic fallback.
 // Ported verbatim — the LLM call is NOT made here for the same reason UC-06
 // doesn't port its draftSummary() as a live HTTP call: the LLM's output is
@@ -570,7 +741,7 @@ function factorValidationIssues(factors) {
 // into a decision, so the template is an equally-valid summary at the
 // intake stage. One fewer HTTP dependency, one fewer thing to keep in
 // parity, no behavior change.
-function draftSummaryTemplate({ factors, riskLevel, tripDays, approvalRoute }) {
+function draftSummaryTemplate({ factors, riskLevel, tripDays, approvalRoute, reason }) {
   // Defensive reads, not decoration. A request whose factors are INCOMPLETE is
   // exactly the case that reaches `blocked / factors_invalid` — and it still has
   // to produce a summary for the human who has to read the decision. Dereferencing
@@ -588,18 +759,65 @@ function draftSummaryTemplate({ factors, riskLevel, tripDays, approvalRoute }) {
   parts.push('Visa type: ' + (f.visaType ?? 'unknown') + '; job duties: ' + (f.jobDuties ?? 'unknown') + (f.hasContractSigningAuthority ? ' (contract-signing authority)' : '') + '.');
   parts.push('Risk-matrix level: ' + riskLevel + '.');
   if (approvalRoute === 'specialist_approval') {
-    parts.push("Awaiting one mobility specialist's approval before the authorization is issued.");
+    // THE SENTENCE THIS REPLACED WAS FALSE, AND IT WAS ON A REAL TICKET:
+    // "Awaiting one mobility specialist's approval before the authorization is
+    // issued." A `ready_for_approval` request waits on the CUSTOMER'S manager,
+    // in Remote's own product. A Remote CX specialist reading that line was
+    // being told to make a decision src/uc04/approvalPolicy.js refuses them, on
+    // a panel that offers no approve. Corrected 2026-08-31; the DECISION
+    // vocabulary above is untouched, so parity with policyEngine.evaluate() is
+    // unchanged. src/uc04/requestParser.js still carries the old wording — it
+    // is outside this pass's ownership and is named in its report.
+    parts.push(
+      'Awaiting ' + STAGE_2_ACTOR + ', who approves or declines this trip in ' + STAGE_2_SURFACE + '. ' +
+      'That is the only work-authorization decision Remote\'s API accepts, and no Zendesk agent can make it. ' +
+      STAGE_3_ACTOR + ' reviews it afterwards, and that review is recorded in this system, never sent to Remote.'
+    );
+  } else if (reason === 'sanctioned_region') {
+    // PORTED 2026-08-31, alongside the sanctions gate above. src/uc04/
+    // requestParser.js has special-cased this reason since the gate existed;
+    // this file did not, so a sanctions block's stored summary — and, since the
+    // composed note interpolates it, the sentence on the customer's ticket —
+    // read "Blocked by the risk matrix", naming a computation as the cause of a
+    // decision the matrix did not make. The matrix DOES score alongside this
+    // block now (see the gate), which makes the misattribution more plausible
+    // rather than less: the row really does carry a risk level, and it still is
+    // not why the request was refused. Same misattribution class as the three
+    // terminal Zendesk nodes' prose, one layer down.
+    parts.push('Blocked — ' + destinationCountry + ' is a sanctioned/restricted destination; not open to approval here.');
   } else if (approvalRoute === 'blocked') {
-    parts.push('Blocked by the risk matrix — not open to approval here.');
+    // CORRECTED 2026-08-31 in step with src/uc04/requestParser.js — read its
+    // comment for the full argument. Short form: "Blocked by the risk matrix"
+    // is accurate for 5 of the 12 reachable blocked reasons and FALSE for
+    // `factors_invalid`, where `risk` is null and the matrix never ran. The old
+    // line rendered "Risk-matrix level: unknown. Blocked by the risk matrix" —
+    // self-contradicting inside one sentence, and since composeInternalNote()
+    // interpolates this summary, that sentence reached a real ticket.
+    parts.push(
+      riskLevel === 'unknown'
+        ? 'Blocked (' + reason + ') — the risk matrix did not run on this request, so nothing was scored and nothing was refused on its merits; not open to approval here.'
+        : 'Blocked by the risk matrix (' + reason + ') — not open to approval here.'
+    );
   } else if (approvalRoute === 'escalate') {
-    parts.push('Escalated to Mobility Legal Tier-2; not open to 1-click approval here.');
+    // Likewise in step with src. "not open to 1-click approval here" contrasts
+    // against a slower approval that exists nowhere in Zendesk, and "Mobility
+    // Legal Tier-2" is not a group name — the live group is
+    // `Mobility & Legal (Tier-2)`, which the routing sentence appended after
+    // this one already spells correctly.
+    parts.push(
+      'Escalated (' + reason + ') to Mobility & Legal (Tier-2). It has no approve/decline path here; the escalation is worked on its own ticket.'
+    );
   } else {
     parts.push('Awaiting review.');
   }
   return parts.join(' ');
 }
 
-// --- policyEngine.js: evaluate() — the 5 ordered gates, first failure wins -
+// --- policyEngine.js: evaluate() — the 6 ordered gates, first failure wins -
+// SIX since 2026-08-31, not five: the sanctions gate below sits third, where
+// src/uc04/policyEngine.js has had it since 2026-08-18. It was never ported,
+// and the omission changed the REASON on a customer's ticket without changing
+// the decision — see the gate's own comment for the reproduction.
 let decision, reason, flags, risk, factorIssues;
 
 if (!identityVerified) {
@@ -613,6 +831,75 @@ if (!identityVerified) {
   reason = 'employee_not_active';
   flags = ['employee_not_active'];
   risk = null;
+  factorIssues = [];
+} else if (
+  normalizeCountryCode(request.factors?.destination?.country) &&
+  normalizeCountrySet(RESTRICTED_JURISDICTIONS).has(normalizeCountryCode(request.factors.destination.country))
+) {
+  // --- THE SANCTIONS GATE, ported 2026-08-31 (it was missing entirely) ------
+  //
+  // src/uc04/policyEngine.js has screened the destination HERE — before
+  // employer permission and before factor validation — since 2026-08-18. This
+  // file never got that gate: its only jurisdiction screen lives INSIDE
+  // classifyRisk(), which the chain below reaches four gates later and only on
+  // a request that has already cleared permission and factor validation.
+  //
+  // WHAT THAT COST, reproduced rather than reasoned about. A request to `IR`
+  // on an employment whose `workation_permission` is not true:
+  //
+  //     src/uc04/policyEngine.js         -> blocked / sanctioned_region
+  //     workflows/nodes-uc04/...js       -> blocked / employer_permission_not_granted
+  //
+  // Same DECISION, so nothing goes red and no alert fires — and a different
+  // REASON on the customer's ticket, in the one direction that matters. A
+  // specialist reading `employer_permission_not_granted` goes looking for a
+  // permissions problem and never learns the destination was sanctioned. That
+  // is finding F-13 exactly, which policyEngine.js's own header says it fixed
+  // "in the one file that had not had it applied" — and then the port stayed
+  // unfixed for thirteen days, because F-13 was applied WITHIN src and never
+  // BETWEEN the two copies.
+  //
+  // test/n8nUc04Parity.test.js could not see it: all four of its
+  // restricted-jurisdiction rows use a permission-granted employment and
+  // well-formed factors, so both copies reach the matrix and agree. A row
+  // combining a sanctioned destination with absent permission is added by the
+  // same change that adds this gate — the divergence and the blindness are one
+  // finding, and fixing only the first would leave the second to re-earn it.
+  //
+  // WHY THE MATRIX STILL RUNS, and only when it can mean anything: identical
+  // reasoning to src's, kept in step deliberately. Returning `risk: null` here
+  // manufactures an ABSENCE — `tripDays`/`cumulativeDays`/`riskLevel` all come
+  // off `risk`, so the durable row would say "an undetermined number of days"
+  // about a trip with two readable dates. So the matrix is scored when the
+  // factors are well-formed, and left null when they are not, which is honest
+  // because nothing computed it. The DECISION is still made by this gate,
+  // before permission and before factors — which is the whole point of the
+  // early placement: a sanctioned destination is caught on a request the
+  // matrix could never have been run on at all.
+  const sanctionsCanScore = factorValidationIssues(request.factors).length === 0;
+  risk = sanctionsCanScore
+    ? classifyRisk({
+        homeCountry: request.factors.homeCountry,
+        destinationCountry: request.factors.destination.country,
+        nationality: request.factors.nationality,
+        visaType: request.factors.visaType,
+        jobDuties: request.factors.jobDuties,
+        hasContractSigningAuthority: request.factors.hasContractSigningAuthority,
+        startDate: request.factors.startDate,
+        endDate: request.factors.endDate,
+        now: request.now ?? new Date().toISOString(),
+        travelHistory: request.travelHistory ?? [],
+      })
+    : null;
+  decision = 'blocked';
+  reason = 'sanctioned_region';
+  // Prepended when the matrix did not raise it itself. It normally does — its
+  // jurisdiction screen reads the same set — but this gate's whole claim is
+  // that it does not DEPEND on that one, so it never assumes the flag is there.
+  flags =
+    risk && risk.flags.includes('sanctioned_region')
+      ? risk.flags
+      : ['sanctioned_region', ...(risk ? risk.flags : [])];
   factorIssues = [];
 } else if (!employment.custom_fields || employment.custom_fields.workation_permission !== true) {
   decision = 'blocked';
@@ -677,10 +964,31 @@ const summary = draftSummaryTemplate({
   // before the matrix ran, and a length that was never derived is not zero.
   tripDays: risk?.tripDays ?? null,
   approvalRoute,
+  // The gate's reason, so a sanctions block can name the destination instead of
+  // blaming the risk matrix. Mirrors src/uc04/requestParser.js's own argument.
+  reason,
 });
 
 // riskEngine.js: UC-04's base tier is "medium" — any flag pushes it to "high".
 const riskTier = flags.length > 0 ? 'high' : 'medium';
+
+// DISPLAY/AUDIT ONLY, both of them. Nothing on this graph branches on either,
+// and nothing may: `Route by Decision` switches on `decision` and must go on
+// doing so. `internalNote` is consumed by ONE node — "Flag Awaiting Specialist
+// Approval" — via `={{ $('Workation Gates').item.json.internalNote }}`, the
+// same shape UC-01's "Compose Internal Note" already feeds its two note nodes.
+// It lives here rather than in the Zendesk node's parameters because an inline
+// expression is versioned by nothing: `npm run verify-deployed` diffs this
+// file's bytes against the deployed body, and it cannot see a hand-typed
+// string in a node parameter at all.
+const awaitingDecision = describeAwaitingDecision(decision);
+const internalNote = composeInternalNote({
+  decision,
+  reason,
+  summary,
+  flags,
+  riskLevel: risk?.riskLevel ?? 'unknown',
+});
 
 return [{
   json: {
@@ -692,7 +1000,9 @@ return [{
     risk,
     factorIssues,
     approvalRoute,
+    awaitingDecision,
     summary,
+    internalNote,
     riskTier,
   },
 }];

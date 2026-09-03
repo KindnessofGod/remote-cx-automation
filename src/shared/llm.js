@@ -148,3 +148,54 @@ export async function askJson(systemPrompt, userPrompt) {
   }
   return tagUsage(parsed, response);
 }
+
+/**
+ * Ask the model to transcribe a DOCUMENT (a receipt image or PDF).
+ *
+ * Separate from askJson() because the message shape is different — the document
+ * travels as a data URL in an image/file content part, not as prose — and
+ * because keeping it separate means the receipt path can never accidentally be
+ * pointed at a text-only prompt and silently return a hallucinated total.
+ *
+ * WHY A DATA URL AND NOT A FILE UPLOAD. Uploading creates a stored object on
+ * OpenAI's side with a lifetime and an id somebody has to clean up, for a
+ * document we need for exactly one call. Inlining sends the same bytes and
+ * leaves nothing behind, which is the right default for a receipt belonging to
+ * a real employee.
+ *
+ * A PDF is sent through the `file` content part; images go through `image_url`.
+ * Both are the documented shapes for the chat completions API.
+ *
+ * @returns {Promise<string>} the model's raw text — the CALLER validates it.
+ *   Deliberately not parsed here: receiptExtraction.js owns the schema, and a
+ *   parse in two places is a schema in two places.
+ */
+export async function askAboutDocument({ systemPrompt, mimeType, fileName, dataBase64 }) {
+  const c = getClient();
+  if (!c) {
+    throw new Error("OPENAI_API_KEY not set — see .env.example");
+  }
+
+  const dataUrl = `data:${mimeType};base64,${dataBase64}`;
+  const documentPart =
+    mimeType === "application/pdf"
+      ? { type: "file", file: { filename: fileName || "receipt.pdf", file_data: dataUrl } }
+      : { type: "image_url", image_url: { url: dataUrl } };
+
+  const response = await c.chat.completions.create({
+    model: config.openai.model,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Transcribe this receipt as JSON, following the rules exactly." },
+          documentPart,
+        ],
+      },
+    ],
+  });
+
+  return response.choices[0]?.message?.content ?? "";
+}

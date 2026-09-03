@@ -50,6 +50,7 @@ import {
   PORTAL,
   AUDIT_VIEW,
   QUEUE_VIEW,
+  REMOTE_UI,
   THIRD_PARTY_DOOR,
   resolveRoute,
   isMemoryOnlyList,
@@ -63,12 +64,14 @@ import {
   buildPortalHandler,
   buildAuditViewHandler,
   buildApprovalQueueHandler,
+  buildRemoteUiHandler,
   buildThirdPartyDoorHandler,
   portalPosture,
   llmPosture,
   PORTAL_BASE_PATH,
   AUDIT_BASE_PATH,
   QUEUE_BASE_PATH,
+  REMOTEUI_BASE_PATH,
   THIRD_PARTY_BASE_PATH,
 } from "./deps.js";
 import { PER_ADDRESS_PER_HOUR, GLOBAL_PER_DAY } from "../../src/thirdparty/rateLimit.js";
@@ -131,6 +134,7 @@ function indexBody(posture, origin) {
       { prefix: PORTAL_BASE_PATH, label: PORTAL.label, kind: "browser page + intake API" },
       { prefix: AUDIT_BASE_PATH, label: AUDIT_VIEW.label, kind: "browser page + read-only API" },
       { prefix: QUEUE_BASE_PATH, label: QUEUE_VIEW.label, kind: "browser page + read-only API" },
+      { prefix: REMOTEUI_BASE_PATH, label: REMOTE_UI.label, kind: "browser page + role-gated write API" },
       {
         prefix: THIRD_PARTY_BASE_PATH,
         label: THIRD_PARTY_DOOR.label,
@@ -382,10 +386,81 @@ function llmHealth(llm) {
 }
 
 /**
+ * "Can the UC-02 graph read the receipt attached to a ticket?" — [E-1].
+ *
+ * WHY THIS BLOCK EXISTS, and it is a small lesson learned twice on this
+ * endpoint already. The route answers 503 `receipt_reader_not_configured`
+ * when it is not set up, which is the correct fail-closed refusal and says
+ * nothing about WHICH of its three dependencies is missing. Finding that out
+ * meant POSTing at a live endpoint and then reading deps.js to map the code
+ * back to a variable name — for a route whose whole purpose is to be called
+ * by n8n, unattended, where nobody is watching the response.
+ *
+ * So the three preconditions are reported SEPARATELY rather than collapsed
+ * into one boolean. They fail in three different ways and have three different
+ * fixes, and only the first of them is a hard refusal:
+ *
+ *   - the SHARED SECRET (N8N_WEBHOOK_TOKEN) is the authentication gate. Absent
+ *     -> 503, the route does nothing at all. This is the one that takes the
+ *     whole feature down, and it is the one that was missing on 2026-08-29.
+ *   - ZENDESK is how the attachment is found. Absent -> the route still
+ *     answers 200 with `reason: "zendesk_not_configured"` and no extraction.
+ *   - the MODEL is what reads the image. Absent -> 200 with
+ *     `reason: "extraction_not_configured"`.
+ *
+ * That last distinction is deliberate and worth preserving: a missing
+ * dependency downstream of the gate must not look like a refused caller. The
+ * graph carries `onError: continueRegularOutput` on this node precisely so an
+ * unreadable receipt degrades to "not attempted" instead of failing a run, and
+ * gate 8b treats "not attempted" as neutral — it never approves on a reading
+ * it does not have, and never refuses for the absence of one.
+ *
+ * NO SECRET IS REPORTED. A boolean for the token, exactly as the ZAF and
+ * portal-key rows above do.
+ */
+export function receiptReaderHealth(env, posture, llm) {
+  const tokenSet = Boolean(env.N8N_WEBHOOK_TOKEN);
+  const zendeskReady = posture.zendeskConfigured;
+  const modelReady = llm.configured;
+  return {
+    route: "POST /uc02/api/receipts/read-from-ticket",
+    calledBy: "the UC-02 n8n graph, between normalising the ticket and running the gates",
+    // Named `sharedSecretConfigured`, not `configured`, so it cannot be read
+    // as "the whole feature is ready" — the other two rows are the rest of
+    // that answer and each can be false on its own.
+    sharedSecretConfigured: tokenSet,
+    secretHeader: "X-YOUR-WEBHOOK-TOKEN",
+    zendeskConfigured: zendeskReady,
+    extractionModelConfigured: modelReady,
+    // Reported because it is the property that makes a missing dependency
+    // safe rather than merely quiet, and it is invisible from any response.
+    decidesNothing: true,
+    status: !tokenSet
+      ? "NOT CONFIGURED — N8N_WEBHOOK_TOKEN is unset on this deployment, so every call answers 503 " +
+        "receipt_reader_not_configured and no receipt is ever read. It is the SAME 64-hex secret the nine " +
+        "Zendesk webhooks send and the n8n credential checks; this route reuses it rather than minting a " +
+        "second thing to rotate. Set it in the Vercel project. Note that a 503 here means UNCONFIGURED and " +
+        "a 401 means the caller's token did not match — they are different problems."
+      : !zendeskReady
+        ? "AUTHENTICATED BUT BLIND — the shared secret is set, so a call from n8n is accepted, but Zendesk " +
+          "is not configured, so no attachment can be fetched and every call returns " +
+          '`reason: "zendesk_not_configured"` with no reading. Gate 8b treats that as not-attempted, so ' +
+          "claims still decide normally on everything else."
+        : !modelReady
+          ? "AUTHENTICATED, ATTACHMENT REACHABLE, NOT READ — OPENAI_API_KEY is unset, so the receipt is " +
+            'found and not transcribed: every call returns `reason: "extraction_not_configured"`. Gate 8b ' +
+            "treats that as not-attempted; nothing is approved on a reading that does not exist."
+          : "WORKING — a call from the UC-02 graph is authenticated, the ticket's newest receipt attachment " +
+            "is fetched from Zendesk and read by " + llm.model + ". The transcription is RETURNED, never " +
+            "acted on: gate 8b compares it with the claim and deterministic code decides.",
+  };
+}
+
+/**
  * The one place that answers "is this deployment actually usable, and for
  * what?" — written to be read by someone who has never deployed anything.
  */
-function healthBody(posture, origin, verifierBuilt, portal, pgPool, llm) {
+function healthBody(posture, origin, verifierBuilt, portal, pgPool, llm, env) {
   const writesWork = verifierBuilt || !posture.signedIdentityRequired;
   // Two independent questions about reads, and conflating them is what let the
   // breach hide: "is there data to read?" (Supabase) and "may anyone read it?"
@@ -434,6 +509,10 @@ function healthBody(posture, origin, verifierBuilt, portal, pgPool, llm) {
     // A FIFTH question, and the one nothing here used to answer: does this
     // deployment interpret free text with a model at all? See llmHealth().
     llm: llmHealth(llm),
+    // A SIXTH: the one ROUTE on this deployment that is called by a machine
+    // rather than a person, so nobody ever sees its refusal. See
+    // receiptReaderHealth().
+    receiptReader: receiptReaderHealth(env, posture, llm),
     posture: { ...posture, zafVerifierBuilt: verifierBuilt },
     // Echoed so the exact value for ZAF_ALLOWED_ORIGIN can be READ off a real
     // request from the sidebar rather than guessed from the account subdomain.
@@ -521,6 +600,7 @@ export function createCxHandler({
   buildPortal = buildPortalHandler,
   buildAudit = buildAuditViewHandler,
   buildQueueView = buildApprovalQueueHandler,
+  buildRemoteUi = buildRemoteUiHandler,
   buildThirdPartyDoor = buildThirdPartyDoorHandler,
   llm = llmPosture,
 } = {}) {
@@ -562,7 +642,7 @@ export function createCxHandler({
         return send(
           res,
           200,
-          healthBody(posture, origin, Boolean(await verifier()), portalPosture(env, { pgPool }), pgPool, llm())
+          healthBody(posture, origin, Boolean(await verifier()), portalPosture(env, { pgPool }), pgPool, llm(), env)
         );
       }
       return send(res, 200, indexBody(posture, origin));
@@ -624,6 +704,31 @@ export function createCxHandler({
       }
     }
 
+    // ---- the Remote-product stand-in (src/remoteui/) ----
+    //
+    // Delegated whole, gate included, exactly like the portal, the audit viewer
+    // and the queue above and for the same reason: `npm run remoteui` and this
+    // deployment must apply ONE access rule, and a copy of it here would be a
+    // second one to keep in step.
+    //
+    // This one WRITES — a Zendesk ticket on the amendment path, a durable audit
+    // row and a work-authorization PATCH on the employer's decision path — so
+    // the delegated surface fails CLOSED when the key is required and none is
+    // configured, exactly as /portal does. The refusal is recoverable with one
+    // environment variable; an employer approval accepted from an anonymous
+    // caller is not recoverable at all.
+    if (route.kind === "remoteui") {
+      const access = portalPosture(env, { pgPool });
+      const remoteUiHandler = buildRemoteUi({ pgPool, env, access });
+      try {
+        return await remoteUiHandler(bodyShim(req, route.url), res);
+      } catch (err) {
+        console.error(`[cx-apis] ${req.method} ${route.path} failed: ${err.stack}`);
+        if (res.headersSent) return;
+        return send(res, 500, { ok: false, code: "internal_error", reason: err.message, path: route.path });
+      }
+    }
+
     // ---- the third-party consent door (src/thirdparty/) ----
     //
     // Delegated whole, and DELIBERATELY carries no access gate at all — see
@@ -651,7 +756,8 @@ export function createCxHandler({
         reason:
           `"${route.path}" does not start with a known prefix. Every route on this deployment is ` +
           `mounted under one — the nine use-case APIs, ${PORTAL_BASE_PATH} for the request portal, ` +
-          `${AUDIT_BASE_PATH} for the audit trail viewer, ${QUEUE_BASE_PATH} for the approval queue, or ` +
+          `${AUDIT_BASE_PATH} for the audit trail viewer, ${QUEUE_BASE_PATH} for the approval queue, ` +
+          `${REMOTEUI_BASE_PATH} for the Remote-product stand-in, or ` +
           `${THIRD_PARTY_BASE_PATH} for the third-party consent door.`,
         path: route.path,
         knownPrefixes: [
@@ -659,6 +765,7 @@ export function createCxHandler({
           PORTAL_BASE_PATH,
           AUDIT_BASE_PATH,
           QUEUE_BASE_PATH,
+          REMOTEUI_BASE_PATH,
           THIRD_PARTY_BASE_PATH,
         ],
         hint: "GET / lists them with their labels.",

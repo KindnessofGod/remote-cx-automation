@@ -70,6 +70,7 @@ import { parseInquiryRuleBased } from "../src/uc08/inquiryParser.js";
 import { draftSummary } from "../src/uc04/requestParser.js";
 import { extractFromLetter } from "../src/uc05/letterExtractor.js";
 import { judgeNarrative } from "../src/shared/narrativeJudge.js";
+import { fakeZendesk, lastNoteRows } from "./portalNoteHelpers.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(__dirname, "..", "src", "portal", "assets");
@@ -90,9 +91,13 @@ const LLM = {
 };
 
 /** The real portal handler, with the mock Remote dispatched in-process. */
+// [N-14] The most recent handler's Zendesk double, so UC-05's specialist-only
+// rows can be read off the note they reach (test/portalNoteHelpers.js).
+let lastZendesk = null;
 function portal() {
   const remote = new RemoteClient({ baseUrl: "http://mock.remote.invalid", fetchImpl: createInProcessFetch() });
-  return createPortalHandler({ remote, audit: new AuditLogger(), stores: buildPortalStores(), llm: LLM });
+  lastZendesk = fakeZendesk();
+  return createPortalHandler({ remote, audit: new AuditLogger(), stores: buildPortalStores(), llm: LLM, zendesk: lastZendesk });
 }
 
 /** Same in-process driver every other server suite in this repo uses. */
@@ -695,7 +700,7 @@ test("a scenario that deliberately leaves a box empty says so, and the chosen on
   // The specific ones the reader tripped over: a scenario that empties a box
   // ON PURPOSE has to say which and why, or it is indistinguishable from one
   // that forgot.
-  const BLANK_ON_PURPOSE = ["uc05-de", "uc05-sandbox-br", "uc05-terminated", "uc05-letter"];
+  const BLANK_ON_PURPOSE = ["uc05-nl", "uc05-sandbox-br", "uc05-terminated", "uc05-letter"];
   for (const id of BLANK_ON_PURPOSE) {
     const scenario = all.uc05.find((s) => s.id === id);
     assert.ok(scenario, `${id} has gone`);
@@ -801,7 +806,8 @@ function uc05Body(scenario, externalRef) {
 // hand-off and reads it back out of the created ticket. Here it is asserted as
 // ABSENT, so the routing cannot quietly reverse.
 const dateSource = (body) => (body.details.find((d) => d.label === "Date came from") || {}).value;
-const proposed = (body) => (body.details.find((d) => d.label === "Proposed vs. statutory") || {}).value;
+// [N-14] The comparison is the specialist's row now — read off the note.
+const proposed = () => lastNoteRows(lastZendesk)["Proposed vs. statutory"];
 
 test("POSITIVE: the letter-only quick-fill is really read, and reaches a sign-off", async () => {
   const scenario = scenarios().uc05.find((s) => s.id === "uc05-letter");
@@ -820,7 +826,7 @@ test("POSITIVE: the letter-only quick-fill is really read, and reaches a sign-of
   // have got it out of the prose. That is a stronger statement than the tag
   // was: it survives the tag being renamed, and it fails if the extractor
   // silently stops running.
-  assert.match(String(proposed(res.body)), /2026-10-15/, `the letter's date never reached the comparison: ${proposed(res.body)}`);
+  assert.match(String(proposed()), /2026-10-15/, `the letter's date never reached the comparison: ${proposed()}`);
   assert.equal(dateSource(res.body), undefined, "the extraction-source slug is on the requester's panel");
   assert.equal(res.body.decision, "prepared_for_signoff", `a readable letter must be able to succeed: ${res.body.reason}`);
 });
@@ -838,13 +844,28 @@ test("the clash quick-fill shows the typed box winning — which is what its not
   });
 
   assert.equal(res.status, 200);
-  assert.match(String(proposed(res.body)), /2026-09-15/, "the box did not win");
-  assert.ok(!/2026-10-15/.test(String(proposed(res.body))), "the letter's date reached the comparison after all");
+  assert.match(String(proposed()), /2026-09-15/, "the box did not win");
+  assert.ok(!/2026-10-15/.test(String(proposed())), "the letter's date reached the comparison after all");
   // The typed box winning IS the two assertions above — the date it holds is in
   // the comparison and the letter's is not. The source tag said the same thing
   // in this system's vocabulary and is now the signatory's row, not theirs.
   assert.equal(dateSource(res.body), undefined, "the extraction-source slug is on the requester's panel");
-  assert.equal(res.body.decision, "escalate");
+  // THE DECISION IS NOT THIS TEST'S SUBJECT, and asserting one made it fail for
+  // a reason that has nothing to do with it (2026-09-02). This asserted
+  // `escalate`, which held only because the UK notice period was
+  // service-scaled: the typed 2026-09-15 was short of a 21-day statutory end.
+  // ERA 1996 s.86(2) gives a resigning employee ONE WEEK flat, so that same date
+  // is now comfortably LATER than the statutory end and the case passes.
+  //
+  // What this test is about is which DATE won — the typed box or the letter —
+  // and that is the two assertions above, which are unchanged and still pass.
+  // The decision is asserted as a real one rather than a specific one, so a
+  // future change to the notice table cannot break a test about date precedence
+  // while a change to date precedence still can.
+  assert.ok(
+    ["prepared_for_signoff", "escalate"].includes(res.body.decision),
+    `the clash produced no decision at all: ${res.body.decision}`
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -938,14 +959,90 @@ test("UC-03: the same letter request succeeds for one person and stops for anoth
 
   assert.equal(a.body.decision, "auto_resolve", `the positive half no longer succeeds: ${a.body.reason}`);
   assert.equal(a.body.reason, "standard_letter_issued");
-  assert.equal(b.body.decision, "human_review", `the negative half no longer stops: ${b.body.reason}`);
-  assert.equal(b.body.reason, "formal_letter_requested");
+  assert.equal(b.body.decision, "blocked", `the negative half no longer stops: ${b.body.reason}`);
+  assert.equal(b.body.reason, "engagement_not_eor_contractor");
 
   // AND THE REQUESTER IS TOLD WHICH IT WAS, in a sentence, without reading a
   // decision string. The positive half says the letter exists and where it is;
-  // the negative half names the team holding it.
+  // the negative half says it was refused outright and that nothing went to
+  // Remote — it used to say "Not yet", which was right while this pair turned
+  // on a missing letterhead and a specialist really was going to look. It turns
+  // on the engagement now, and there is nobody for a contractor to wait for.
   assert.match(a.body.plainAnswer.lead, /travel letter/i);
-  assert.match(b.body.plainAnswer.lead, /Not yet/);
+  // The `because` clause is folded into the lead rather than published as its
+  // own field, so both halves of the sentence are asserted here.
+  assert.match(b.body.plainAnswer.lead, /refused/i);
+  assert.match(b.body.plainAnswer.lead, /contractor/i, "the refusal must name the fact it turned on");
+  assert.match(b.body.plainAnswer.next, /invoice|payment history/i, "a refusal must name what the person CAN get");
+});
+
+/* =============================================================================
+   NO UC-04 SCENARIO MAY STATE A HOME COUNTRY ITS SUBJECT'S RECORD CONTRADICTS
+   =============================================================================
+   THIS DEFECT HAS NOW HAPPENED TWICE, IN BOTH DIRECTIONS. First a Nigerian
+   subject under a form saying DE; then, when eleven rows were swept onto João
+   Silva (PT), four rows that name SOMEBODY ELSE kept the PT the sweep wrote —
+   so Chris Lee (US), Amanda J Walker (US), Lars van der Berg (NL) and Anna
+   Müller (DE) were all filed as Portuguese. Nothing failed either time, because
+   the country a scenario states and the country its subject works in were never
+   compared anywhere.
+
+   AND THEY ARE NOT COMPARED IN PRODUCTION EITHER — deliberately, and the
+   sidebar says so beside the value: "it is not read from the Remote employment
+   record and is never compared to it, so a wrong country here is not caught
+   anywhere" (src/uc04/decisionFacts.js). That disclosure is the reason this
+   guard belongs on the DEMO DATA rather than in a gate: a demo whose rows
+   exercise exactly the hole the product discloses teaches the wrong lesson
+   twice, and the screen is telling the truth both times when it prints "Stated
+   home country: Portugal" over a US employment.
+
+   THE COUNTRY IS READ OUT OF THE MOCK, through the same client the portal uses.
+   A table restated here would be a second copy of the fixtures and would agree
+   with a scenario that had drifted — which is how both instances of this
+   survived review.
+
+   NATIONALITY IS DELIBERATELY NOT ASSERTED. The employment record carries no
+   nationality field (docs/INTAKE-RESEARCH.md §6.4 — one of the five UC-04 gate
+   inputs with no source in any Remote object), so there is nothing to compare
+   against, and asserting one would be this file inventing the fact whose
+   absence it is documenting.
+   ========================================================================== */
+test("every UC-04 quick-fill states the home country its subject actually works in", async () => {
+  const remote = new RemoteClient({ baseUrl: "http://mock.remote.invalid", fetchImpl: createInProcessFetch() });
+  const rows = scenarios().uc04;
+  assert.ok(rows.length >= 10, "the UC-04 scenario set has shrunk — this guard may be passing vacuously");
+
+  for (const scenario of rows) {
+    const employmentId = scenario.fields["uc04-employmentId"];
+    const stated = scenario.fields["uc04-homeCountry"];
+    const record = await remote.getEmployment(employmentId);
+    assert.ok(record, `${scenario.id} names an employment the mock does not hold: ${employmentId}`);
+    assert.equal(
+      stated,
+      record.country_code,
+      `${scenario.id} says the traveller works in ${stated}, but ${record.full_name}'s record says ` +
+        `${record.country_code}. A quick-fill may not state a fact about a real fixture person that the ` +
+        `fixture contradicts — nothing downstream compares the two, so nothing else will catch it.`
+    );
+  }
+});
+
+/* A workation has to GO somewhere, and after the rule above that is a second
+   thing a row can get wrong: a subject whose record country equals the
+   destination is a same-country request, which is nonsense on its face. It is
+   allowed only where that IS the demonstration. */
+test("no UC-04 quick-fill sends its subject to the country they already work in, except the one that means to", async () => {
+  const remote = new RemoteClient({ baseUrl: "http://mock.remote.invalid", fetchImpl: createInProcessFetch() });
+  for (const scenario of scenarios().uc04) {
+    const record = await remote.getEmployment(scenario.fields["uc04-employmentId"]);
+    const sameCountry = record.country_code === scenario.fields["uc04-destinationCountry"];
+    assert.equal(
+      sameCountry,
+      scenario.id === "uc04-same",
+      `${scenario.id}: destination ${scenario.fields["uc04-destinationCountry"]} against a record in ` +
+        `${record.country_code}. Only "uc04-same" may be a same-country trip, because that is the gate it shows.`
+    );
+  }
 });
 
 test("UC-04: the same trip is prepared for one traveller, blocked for a second, refused for a third", async () => {
@@ -955,12 +1052,29 @@ test("UC-04: the same trip is prepared for one traveller, blocked for a second, 
   const otherCompany = all.uc04.find((s) => s.id === "uc04-other-company");
   assert.ok(ok && noPermission && otherCompany, "the UC-04 persona trio has gone");
 
-  // EVERY FIELD EXCEPT THE SUBJECT IS IDENTICAL across the three. This is the
-  // claim the page makes when it says "the same trip", and it is the one a
-  // later edit is most likely to break silently.
+  /* WHAT IS IDENTICAL, AND WHY IT IS NO LONGER EVERYTHING (2026-08-31).
+     This loop used to require every field but the subject to match, as the
+     claim behind the words "the same trip". It cannot: a workation's origin is
+     where the person WORKS, and the three subjects work in three countries.
+     Requiring identity here is what kept Amanda J Walker (US) and Lars van der
+     Berg (NL) filed as Portuguese for weeks — the guard was pinning the defect
+     in place, which is the worst thing a guard can do.
+
+     So the trip is still identical in everything the FORM is free to vary —
+     the dates, the visa type, the duties, the signing authority, the prior
+     stays — and the subject's own country moves with the subject. The
+     destination is exempt for one row and one reason, named below. */
+  const SUBJECT_FIELDS = ["uc04-employmentId", "uc04-homeCountry", "uc04-nationality"];
   for (const other of [noPermission, otherCompany]) {
     for (const key of Object.keys(ok.fields)) {
-      if (key === "uc04-employmentId" || key === "uc04-externalRef") continue;
+      if (key === "uc04-externalRef" || key === "uc04-reasonText") continue;
+      if (SUBJECT_FIELDS.includes(key)) continue;
+      /* THE ONE DESTINATION EXEMPTION, and it exists because the alternative is
+         a self-contradictory request on screen. Lars works in the Netherlands,
+         so leaving the destination at NL would make his row a same-country
+         workation — nonsense on its face, and NOT what it refuses on, since
+         identity is checked first. His trip is João's mirrored: NL → PT. */
+      if (key === "uc04-destinationCountry" && other.id === "uc04-other-company") continue;
       assert.deepEqual(
         other.fields[key],
         ok.fields[key],

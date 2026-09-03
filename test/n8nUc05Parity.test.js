@@ -30,6 +30,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import vm from "node:vm";
 import { evaluate } from "../src/uc05/policyEngine.js";
+import { payoutCurrencyFor } from "../src/uc05/ptoPayout.js";
+import { normalizeEmployment } from "../src/remote/restClient.js";
 import { extractFromLetter } from "../src/uc05/letterExtractor.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -332,6 +334,81 @@ const SCENARIOS = [
       ],
     },
   },
+  // -------------------------------------------------------------------------
+  // The four items closed on 2026-09-02. Each of these exercises a code path
+  // that exists in BOTH copies and in NEITHER before that date, which is the
+  // class of change this file exists for: a drift here produces a Polish
+  // leaving date that is right in the Node app and up to six days wrong in
+  // production, or a Portuguese probationer told they owe 30 days on one
+  // execution path and nothing on the other.
+  // -------------------------------------------------------------------------
+  {
+    name: "PL two-week bracket lands on a SATURDAY (Kodeks pracy art. 30 \u00a72\u00b9), in both copies",
+    request: {
+      session: { authenticatedEmploymentId: "emp_pl_short" },
+      reason: "new opportunity",
+      now: "2026-09-02",
+    },
+    employmentOver: { id: "emp_pl_short", country_code: "PL", start_date: "2026-06-01" },
+  },
+  {
+    name: "PL monthly bracket still lands on a month END, so the two anchors did not swap",
+    request: {
+      session: { authenticatedEmploymentId: "emp_pl_year" },
+      now: "2026-09-02",
+    },
+    employmentOver: { id: "emp_pl_year", country_code: "PL", start_date: "2026-01-01" },
+  },
+  {
+    name: "PT inside probation owes NOTHING (art. 114.\u00ba(1)) and produces no end date, in both copies",
+    request: {
+      session: { authenticatedEmploymentId: "emp_pt_probation" },
+      now: "2026-09-02",
+    },
+    employmentOver: {
+      id: "emp_pt_probation",
+      country_code: "PT",
+      start_date: "2026-07-01",
+      probation_end_date: "2026-12-01",
+    },
+  },
+  {
+    name: "CA is a sourced absence with a Qu\u00e9bec variant — the extra flag must exist on both paths",
+    request: {
+      session: { authenticatedEmploymentId: "emp_ca_002" },
+      now: "2026-09-02",
+    },
+    employmentOver: { id: "emp_ca_002", country_code: "CA", start_date: "2019-01-01" },
+  },
+  {
+    name: "Remote's days_of_notice BELOW the statutory floor escalates identically on both paths",
+    request: {
+      session: { authenticatedEmploymentId: "emp_pt_reconcile" },
+      now: "2026-09-02",
+      remoteDaysOfNotice: 30,
+      offboardingRequestId: "ofb_parity_1",
+    },
+    employmentOver: { id: "emp_pt_reconcile", country_code: "PT", start_date: "2020-01-01" },
+  },
+  {
+    name: "Remote's days_of_notice ABOVE the floor is flagged and passes, identically on both paths",
+    request: {
+      session: { authenticatedEmploymentId: "emp_pt_reconcile" },
+      now: "2026-09-02",
+      remoteDaysOfNotice: 90,
+      offboardingRequestId: "ofb_parity_2",
+    },
+    employmentOver: { id: "emp_pt_reconcile", country_code: "PT", start_date: "2020-01-01" },
+  },
+  {
+    name: "a month-denominated statute is NOT compared with a day count, on either path",
+    request: {
+      session: { authenticatedEmploymentId: "emp_nl_reconcile" },
+      now: "2026-09-02",
+      remoteDaysOfNotice: 30,
+    },
+    employmentOver: { id: "emp_nl_reconcile", country_code: "NL", start_date: "2020-01-01" },
+  },
 ];
 
 for (const scenario of SCENARIOS) {
@@ -360,8 +437,19 @@ for (const scenario of SCENARIOS) {
       employment: fromN8n.employment,
       proposedEndDate: effectiveProposedEndDate,
       timeOffBalances: request.timeOffBalances,
-      currency: request.currency,
+      // THE SAME RULE THE NODE BODY RUNS. workflow.js picks the currency before
+      // calling evaluate() — stated, else Remote's compensation_currency_code,
+      // else nothing — and the gates body does the same inline. Feeding
+      // `request.currency` here would compare a null-currency evaluate() against
+      // a body that read the employment record, and the scenario that proves
+      // the n8n path stopped fabricating dollars would fail for the wrong reason.
+      currency: payoutCurrencyFor({ stated: request.currency, employment: fromN8n.employment }),
       now: request.now,
+      // Remote's own figure, when the scenario supplies one. Passed on BOTH
+      // sides or the comparison would be between a reconciled result and an
+      // unreconciled one, which would pass trivially and prove nothing.
+      remoteDaysOfNotice: request.remoteDaysOfNotice ?? null,
+      remoteRecordRef: request.offboardingRequestId ?? null,
     });
 
     assert.equal(fromN8n.decision, fromPolicyEngine.decision, "decision differs");
@@ -382,6 +470,9 @@ for (const scenario of SCENARIOS) {
       assert.equal(fromN8n.notice.discrepancy, fromPolicyEngine.notice.discrepancy, "notice.discrepancy differs");
       assert.equal(fromN8n.notice.discrepancyDays, fromPolicyEngine.notice.discrepancyDays, "notice.discrepancyDays differs");
       assert.equal(fromN8n.notice.anchorAdjusted, fromPolicyEngine.notice.anchorAdjusted, "notice.anchorAdjusted differs");
+      // The dates tenure was measured between travel on both copies (2026-09-02).
+      assert.equal(fromN8n.notice.tenureMeasuredFrom, fromPolicyEngine.notice.tenureMeasuredFrom, "notice.tenureMeasuredFrom differs");
+      assert.equal(fromN8n.notice.tenureMeasuredTo, fromPolicyEngine.notice.tenureMeasuredTo, "notice.tenureMeasuredTo differs");
       // Added 2026-08-20 with the NL/US rows. `statutoryMinimumExists` is the
       // three-valued field that keeps "no rule on file", "no statutory minimum"
       // and "no bracket for this tenure" apart; if the two copies disagreed on
@@ -395,6 +486,68 @@ for (const scenario of SCENARIOS) {
       assert.equal(fromN8n.notice.statutoryMinimumExists, fromPolicyEngine.notice.statutoryMinimumExists, "notice.statutoryMinimumExists differs");
       assert.equal(fromN8n.notice.noticeMonths, fromPolicyEngine.notice.noticeMonths, "notice.noticeMonths differs");
       assert.equal(fromN8n.notice.noticeQuantity, fromPolicyEngine.notice.noticeQuantity, "notice.noticeQuantity differs");
+      // Added 2026-09-02 with the probation exemption. `noStatutoryProbationNotice`
+      // is what separates "the statute gives a probationer no notice period"
+      // from the three absences beside it, and every one of those produces
+      // `noticeEndDate: null` too — so without this field the two copies could
+      // disagree about WHY a Portuguese probationer got no date while every
+      // other assertion here passed.
+      assert.equal(
+        fromN8n.notice.noStatutoryProbationNotice,
+        fromPolicyEngine.notice.noStatutoryProbationNotice,
+        "notice.noStatutoryProbationNotice differs"
+      );
+      // And the field that keeps Canada from being described as the United
+      // States. Both rows report `statutoryMinimumExists: false`; only one of
+      // them has a province where the obligation is statutory.
+      assert.equal(
+        fromN8n.notice.noticeStandardWithoutNumber,
+        fromPolicyEngine.notice.noticeStandardWithoutNumber,
+        "notice.noticeStandardWithoutNumber differs"
+      );
+      // THE WHOLE RECONCILIATION BLOCK, deep-equal, including its prose — with
+      // ONE field lifted out and checked separately, for a reason worth stating.
+      //
+      // Compared as an object rather than field by field on purpose: this block
+      // is the one thing on the row that carries a SENTENCE a specialist reads
+      // and acts on, and a paraphrase in the n8n copy would be invisible to any
+      // verdict-level check while telling two different stories about the same
+      // resignation on two execution paths.
+      //
+      // `statute.provenance` ends with the country row's own `sourceCitation`,
+      // and the two TABLES have differed in punctuation since long before this
+      // block existed — the n8n copies write "art. 400(1)" and an ASCII hyphen
+      // where src writes "art. 400.º(1)" and an em dash. Deep-equalling it here
+      // would turn this assertion into a check on that older, deliberate
+      // divergence and would fail on every scenario in this file for a reason
+      // that has nothing to do with the reconciliation. So the SHAPE of the
+      // provenance is asserted instead: both sides make the same claim about
+      // where their figure came from, and both name a statute.
+      const strip = (block) => {
+        if (!block) return block;
+        const copy = JSON.parse(JSON.stringify(block));
+        if (copy.statute) delete copy.statute.provenance;
+        return copy;
+      };
+      assert.deepEqual(
+        strip(fromN8n.notice.reconciliation),
+        strip(fromPolicyEngine.notice.reconciliation),
+        "notice.reconciliation differs — Remote's days_of_notice is described differently on the two paths"
+      );
+      if (fromPolicyEngine.notice.reconciliation) {
+        const nodeProv = fromN8n.notice.reconciliation.statute.provenance;
+        const srcProv = fromPolicyEngine.notice.reconciliation.statute.provenance;
+        // The class statement is identical prose on both paths; only the
+        // citation tail may differ.
+        const lead = "This system's own statutory notice table, derived from the statute named beside it and from length of service alone. It has read no contract.";
+        assert.ok(nodeProv.startsWith(lead), "the n8n copy no longer states where its figure came from");
+        assert.ok(srcProv.startsWith(lead), "src no longer states where its figure came from");
+        assert.equal(
+          nodeProv.includes("Statute applied:"),
+          srcProv.includes("Statute applied:"),
+          "one path names a statute behind its figure and the other does not"
+        );
+      }
     }
 
     // Payout parity: ×100 scaling is the load-bearing invariant. A drift
@@ -418,15 +571,21 @@ for (const scenario of SCENARIOS) {
     // (i.e. the node ran the rule-based extractor on letterText), the
     // n8n-side extraction must match what the real letterExtractor's
     // rule-based path would produce.
-    if (!request.proposedEndDate && !request.reason) {
+    // A TYPED DATE is what makes extraction unnecessary. A typed REASON alone
+    // used to skip it too — in both copies — so a letter that stated its last
+    // day beside a reason box was recorded as proposing no date (live ticket
+    // 227, 2026-09-02). Now: no date typed → both copies extract from the
+    // letter and a typed reason is merged in; date typed → structured_input.
+    if (!request.proposedEndDate) {
       const realRuleBased = await extractFromLetter(
         { text: request.letterText || "" },
         { isConfigured: () => false }
       );
       assert.equal(fromN8n.extraction.proposedEndDate, realRuleBased.proposedEndDate, "extraction.proposedEndDate differs from real rule-based path");
       assert.equal(fromN8n.extraction.source, realRuleBased.source, "extraction.source differs from real rule-based path");
+      if (request.reason != null) assert.equal(fromN8n.extraction.reason, request.reason, "a typed reason must survive extraction");
     } else {
-      assert.equal(fromN8n.extraction.source, "structured_input", "explicit form fields must yield source 'structured_input'");
+      assert.equal(fromN8n.extraction.source, "structured_input", "a typed date must yield source 'structured_input'");
       assert.equal(fromN8n.extraction.proposedEndDate, request.proposedEndDate);
       assert.equal(fromN8n.extraction.reason, request.reason);
     }
@@ -542,8 +701,13 @@ test("the n8n node body parses and returns n8n's item shape", () => {
   assert.equal(out.status, "pending_signoff");
   assert.equal(out.riskTier, "medium"); // no flags, UC-05's base tier is medium
   assert.equal(out.notice.countryCode, "GB");
-  assert.equal(out.notice.noticeDays, 21);
-  assert.equal(out.notice.noticeEndDate, "2026-09-06");
+  // SEVEN, NOT TWENTY-ONE (corrected 2026-09-02). This fixture's employee has
+  // ~37 months' service and used to land in the `37-48 months -> 21 days`
+  // bracket — which was ERA 1996 s.86(1), the EMPLOYER'S sliding scale. s.86(2)
+  // gives a resigning employee one week, flat, from one month's service and it
+  // does not rise. D-41, legislation.gov.uk.
+  assert.equal(out.notice.noticeDays, 7);
+  assert.equal(out.notice.noticeEndDate, "2026-08-23");
 });
 
 test("any flag pushes riskTier from medium to high (UC-05 \ud83d\udfe1 -> high under flag)", () => {
@@ -560,6 +724,127 @@ test("any flag pushes riskTier from medium to high (UC-05 \ud83d\udfe1 -> high u
   assert.equal(out.decision, "escalate");
   assert.equal(out.riskTier, "high");
   assert.ok(out.flags.includes("discrepancy_earlier_than_statutory"));
+});
+
+// ---------------------------------------------------------------------------
+// THE N8N PATH STOPPED FABRICATING DOLLARS — and both copies agree on what
+// replaces them. Until 2026-09-02 the normalize node filled an absent currency
+// with 'USD', the gates body did it again as `request.currency || 'USD'`, and
+// reconcilePtoPayout() a third time in three places — so the fix that stopped
+// the PORTAL denominating a Portuguese settlement in dollars (uc05PayoutCurrency
+// .test.js) never reached a ticket-filed resignation. Every scenario above
+// passes "USD" explicitly, which is why the drift was invisible here.
+// ---------------------------------------------------------------------------
+
+test("no currency anywhere, no balances: both copies carry null — not 'USD' — and 'no_time_off_records'", () => {
+  const out = runNoticePeriodGatesNode({
+    request: requestFor({ currency: undefined, timeOffBalances: [] }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(out.payout.source, "no_time_off_records");
+  assert.equal(out.payout.currency, null, "the n8n body padded an absent currency with 'USD'");
+  const fromSrc = evaluate({
+    identityVerified: true, employment: employmentResponse().data.employment,
+    proposedEndDate: "2026-09-15", timeOffBalances: [], now: "2026-08-16",
+  });
+  assert.equal(fromSrc.payout.currency, null);
+  assert.equal(fromSrc.payout.source, out.payout.source);
+});
+
+test("a balance line with no currency is REFUSED identically on both paths — 'currency' named as the missing field", () => {
+  const line = [{ timeOffType: "vacation", daysAccrued: 10, daysUsed: 2, hourlyRateInRemoteInteger: 4800 }];
+  const out = runNoticePeriodGatesNode({
+    request: requestFor({ currency: undefined, timeOffBalances: line }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(out.payout.computable, false, "the n8n body computed a total in a currency nobody stated");
+  assert.equal(out.payout.totalInRemoteInteger, null);
+  assert.ok(out.payout.unusableLines[0].missing.includes("currency"), JSON.stringify(out.payout.unusableLines));
+  const fromSrc = evaluate({
+    identityVerified: true, employment: employmentResponse().data.employment,
+    proposedEndDate: "2026-09-15", timeOffBalances: line, now: "2026-08-16",
+  });
+  assert.deepEqual(fromSrc.payout.unusableLines[0].missing, out.payout.unusableLines[0].missing);
+});
+
+test("no currency on the request: both copies take Remote's own compensation_currency_code off the employment record", () => {
+  const line = [{ timeOffType: "vacation", daysAccrued: 10, daysUsed: 2, hourlyRateInRemoteInteger: 4800 }];
+  const emp = employmentResponse({ contract_details: { compensation_currency_code: "EUR" } });
+  const out = runNoticePeriodGatesNode({
+    request: requestFor({ currency: undefined, timeOffBalances: line }),
+    employmentResponse: emp,
+  });
+  assert.equal(out.payout.computable, true);
+  assert.equal(out.payout.currency, "EUR", "the n8n body never read the employment record's currency");
+  assert.equal(out.payout.lines[0].currency, "EUR");
+  const chosen = payoutCurrencyFor({ stated: undefined, employment: emp.data.employment });
+  assert.equal(chosen, "EUR");
+  // …and a STATED currency still wins over the record's, on both sides.
+  const stated = runNoticePeriodGatesNode({
+    request: requestFor({ currency: "gbp", timeOffBalances: line }),
+    employmentResponse: emp,
+  });
+  assert.equal(stated.payout.currency, "GBP", "normalised, and the caller's word over the record's");
+  assert.equal(payoutCurrencyFor({ stated: "gbp", employment: emp.data.employment }), "GBP");
+});
+
+// ---------------------------------------------------------------------------
+// THE TWO NORMALISERS AGREE ON WHERE A START DATE COMES FROM. Every scenario
+// above hands the node a record with a top-level `start_date`, which the real
+// Sandbox never sends — it sends `provisional_start_date`. The node read only
+// `start_date` / `basic_information.start_date`, i.e. the stand-in's enriched
+// shape (filled for two hard-coded ids), so two real Portuguese employees
+// escalated `missing_seniority_date` on the graph (executions 11936, 11939)
+// while the src path processed them. The harness feeds evaluate() the NODE's
+// normalised record, so gate parity could never see it; this compares the
+// normalisers directly.
+// ---------------------------------------------------------------------------
+
+test("start-date precedence: the node's normaliser and normalizeEmployment() agree on every real shape", () => {
+  const shapes = {
+    "gateway: top-level provisional_start_date, basic_information without a date (the real Sandbox shape)":
+      { id: "emp_pt", status: "active", type: "contractor", provisional_start_date: "2023-06-26", basic_information: { name: "Inês Carvalho" }, country: { alpha_2_code: "PT" } },
+    "basic_information.provisional_start_date only":
+      { id: "emp_a", status: "active", employment_model: "eor", basic_information: { provisional_start_date: "2022-03-01" }, country: { alpha_2_code: "NL" } },
+    "basic_information.seniority_date only":
+      { id: "emp_b", status: "active", employment_model: "eor", basic_information: { seniority_date: "2021-01-15" }, country: { alpha_2_code: "NL" } },
+    "stand-in enriched: basic_information.start_date AND provisional_start_date":
+      { id: "emp_c", status: "active", type: "employee", provisional_start_date: "2023-06-26", basic_information: { start_date: "2023-06-26" }, country: { alpha_2_code: "US" } },
+    "no date anywhere":
+      { id: "emp_d", status: "active", type: "employee", basic_information: { name: "Nobody" }, country: { alpha_2_code: "NL" } },
+  };
+  for (const [label, raw] of Object.entries(shapes)) {
+    const out = runNoticePeriodGatesNode({
+      request: requestFor({ employmentId: raw.id, session: { authenticatedEmploymentId: raw.id }, proposedEndDate: "2026-12-31" }),
+      employmentResponse: { data: { employment: raw } },
+    });
+    const expected = normalizeEmployment(raw).start_date;
+    assert.equal(out.employment.start_date, expected, label);
+    if (expected === null) {
+      assert.equal(out.reason, "missing_seniority_date", label + " — nothing to compute tenure from");
+    } else {
+      assert.notEqual(out.reason, "missing_seniority_date", label + " — the node refused a record that carries a start date");
+    }
+  }
+});
+
+test("a typed reason no longer silences the letter: the last day stated in prose reaches the comparison, in both copies", () => {
+  const letter = "I am resigning for a new opportunity. My last working day will be 30 November 2026.";
+  const out = runNoticePeriodGatesNode({
+    request: requestFor({ proposedEndDate: null, reason: "new opportunity", letterText: letter }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(out.extraction.proposedEndDate, "2026-11-30", "the n8n copy discarded the letter's date because a reason was typed");
+  assert.equal(out.extraction.reason, "new opportunity", "the typed reason must be kept beside the extracted date");
+  assert.notEqual(out.extraction.source, "structured_input", "nothing structured supplied the date");
+  assert.equal(out.notice.proposedEndDate, "2026-11-30");
+  // …and with NO letter and only a reason, there is honestly no date.
+  const bare = runNoticePeriodGatesNode({
+    request: requestFor({ proposedEndDate: null, reason: "new opportunity", letterText: "" }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(bare.extraction.proposedEndDate, null);
+  assert.equal(bare.extraction.reason, "new opportunity");
 });
 
 test("empty balances returns a zero payout honestly tagged, never guesses", () => {
@@ -691,7 +976,13 @@ test("POSITIVE: every country in the 9-country table can still reach a signed-of
   // structurally incapable of producing a statutory end date. A typo in one
   // country's brackets or anchor rule would otherwise surface only as a
   // permanently-escalating country nobody notices.
-  const countries = ["GB", "IE", "DE", "PL", "IN", "PH", "MX", "CA", "PT"];
+  // CANADA IS DELIBERATELY NOT IN THIS LIST since 2026-09-02, and the US never
+  // was. Both are covered by a SOURCED FINDING that no statutory minimum binds
+  // a resigning employee, so neither can produce a statutory end date and
+  // neither should — CONTRADICTIONS.md C-30, and the assertion directly below.
+  // The check this test exists for is unchanged for every row that DOES hold a
+  // statutory rule: none of them may be structurally incapable of computing.
+  const countries = ["GB", "IE", "DE", "PL", "IN", "PH", "MX", "PT"];
   for (const country_code of countries) {
     const employment = { id: "emp_x", status: "active", country_code, start_date: "2018-01-10", probation_end_date: null };
     const out = runNoticePeriodGatesNode({
@@ -702,6 +993,21 @@ test("POSITIVE: every country in the 9-country table can still reach a signed-of
     assert.ok(out.notice.noticeEndDate, `${country_code} produced no statutory end date`);
     assert.equal(out.notice.noticeRuleFound, true);
     assert.equal(out.notice.discrepancy, "no_proposed_date");
+  }
+
+  // THE OTHER HALF, so removing a country from the list above can never be the
+  // way this test is made to pass. A sourced absence must escalate for its OWN
+  // reason — not `unsupported_country`, which means "a gap in our table" and
+  // goes to a different desk.
+  for (const country_code of ["CA", "US"]) {
+    const employment = { id: "emp_x", status: "active", country_code, start_date: "2018-01-10", probation_end_date: null };
+    const out = runNoticePeriodGatesNode({
+      request: requestFor({ session: { authenticatedEmploymentId: "emp_x" }, employmentId: "emp_x" }),
+      employmentResponse: employmentResponse(employment),
+    });
+    assert.equal(out.decision, "escalate", `${country_code} produced a signable report from a country with no statutory rule`);
+    assert.equal(out.reason, "no_statutory_notice_period", `${country_code} escalated for the wrong reason`);
+    assert.equal(out.notice.noticeEndDate, null, `${country_code} computed a date it has no rule for`);
   }
 });
 
@@ -739,7 +1045,6 @@ import {
   LIVE_EMPLOYMENT_CA,
   withoutAlpha2,
 } from "./fixtures/remoteEmployment.js";
-import { normalizeEmployment } from "../src/remote/restClient.js";
 
 /**
  * UC-05's graph reads employments through the Sandbox stand-in
@@ -815,8 +1120,14 @@ test("a real Canadian employment resolves 'CA' and gets the customary-notice row
   });
   assert.equal(out.employment.country_code, "CA");
   assert.equal(out.notice.countryCode, "CA");
-  assert.equal(out.notice.noticeDays, 14); // 36+ months tenure, customary bracket
-  assert.equal(out.decision, "prepared_for_signoff");
+  // NO NOTICE DAYS, AND THAT IS THE POINT (corrected 2026-09-02). This asserted
+  // `noticeDays: 14` from the invented customary bracket. What this test is
+  // really about is the alpha-2/alpha-3 resolution — that a live Canadian
+  // record resolves to "CA" and not "CAN" — and that half is untouched and
+  // still asserted above. The notice half now checks the sourced absence.
+  assert.equal(out.notice.noticeDays, null);
+  assert.equal(out.decision, "escalate");
+  assert.equal(out.reason, "no_statutory_notice_period");
   assert.equal(normalizeEmployment(record).country_code, "CA");
 });
 

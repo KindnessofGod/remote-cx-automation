@@ -476,6 +476,34 @@ export class RemoteClient {
   }
 
   /**
+   * GET /v1/companies/:companyId/legal-entities — every legal entity the
+   * CUSTOMER company has, normalised onto the alpha-2 axis every comparison in
+   * `src/` is written in.
+   *
+   * WHOSE ENTITIES THESE ARE, because getting it backwards is the whole risk.
+   * They are the CLIENT's, not Remote's. Remote's own employing entity is not
+   * exposed by any endpoint this project has found — measured live: 40 Sandbox
+   * employments, one company, six entities, and entity country matched
+   * employment country on only 3 of 5 EOR records. So this answers "where does
+   * the customer have a company", and nothing else. It is the input to the art.
+   * 15(2)(b) question and it is not an answer to "who employs this person"
+   * (`qa/HUMAN-DECISIONS-REQUIRED.md` K16).
+   *
+   * Returns `[]` when Remote answers with no entities, and THROWS when the read
+   * fails — the caller has to be able to tell "this customer has none there"
+   * from "we could not ask", and an empty array standing for both is the
+   * failure mode F-27 already cost this file once.
+   *
+   * @param {string} companyId
+   * @returns {Promise<object[]>}
+   */
+  async listLegalEntities(companyId) {
+    const list = await this.#get(`/v1/companies/${encodeURIComponent(companyId)}/legal-entities`);
+    const entities = Array.isArray(list?.legal_entities) ? list.legal_entities : [];
+    return Promise.all(entities.map((entity) => this.#normalizeLegalEntity(entity)));
+  }
+
+  /**
    * GET /v1/employments — used only by the live-verification script to pick a
    * real employment id to test getEmployment() against, so a real run doesn't
    * require hand-supplying one. Not used by UC-01 itself (the mock server has
@@ -2018,6 +2046,49 @@ export function normalizeEmployment(raw) {
     // paths disagreed about the same employment — which is what makes this a
     // parity defect and not only a missing field.
     custom_fields: raw.custom_fields ?? null,
+    // --- THE DOCUMENTS REMOTE HOLDS, WHICH THIS NORMALIZER ALSO DROPPED -----
+    // [CONFIRMED] `files` is a documented top-level array on
+    // GET /v1/employments/{id}: *"Documents associated with this employment
+    // (e.g., contracts, tax forms, identity documents)"*, whose `File` schema
+    // example is `{name: "id.pdf", type: "id", sub_type: "personal_id"}`.
+    //
+    // WHY IT MATTERS THAT IT WAS DROPPED, rather than being one more unused
+    // field. UC-04's fourth dimension is "Immigration authorization on file",
+    // and its evidence row read `Document read from Remote: none` as a HARD-
+    // CODED STRING — so the panel reported an absence it had never looked for,
+    // on a record it had already fetched, which is the P9 half of C-27 (saying
+    // more than was done) in the one dimension written to avoid it. Remote's
+    // own help centre says the opposite of "there is nothing to look at":
+    // *"Remote collects nationally recognized identification documents"*, and
+    // for cross-border work *"the Mobility team reviews residence permits and
+    // other relevant documentation"* (Right-to-Work Checks, art. 31105131499789,
+    // retrieved 2026-08-31). So there is a real fact, with a real home, on a
+    // record we already read, and we were discarding it before anyone asked.
+    //
+    // CARRIED RAW, AS THE ARRAY REMOTE SENDS, for the same reason
+    // `basic_information` / `contract_details` / `custom_fields` above are: a
+    // normalizer that renames `type`/`sub_type` puts itself back in the
+    // business of choosing the names a reader looks a document up by.
+    // `src/uc04/identityDocuments.js` is the one place that interprets it, and
+    // it interprets PRESENCE only — no name, no number, no document body ever
+    // leaves that summariser.
+    //
+    // WHAT THE SANDBOX ACTUALLY HOLDS, measured rather than assumed
+    // (2026-08-31, all 112 employments, 333 files): `contract` 108,
+    // `expense` 221, `document_scan` 2, `background_check` 2, and **zero of
+    // type `id`** — every `sub_type` null. So on live Sandbox data this field
+    // arrives populated and contains no identity document, and the honest
+    // reading is "read, none of this kind", which is a different sentence from
+    // both "not looked at" and "the employee has none". All three are distinct
+    // states in the summariser, and rung 2 holding none of a thing is rung 2
+    // being empty, never rung 1 answering (CLAUDE.md §3).
+    //
+    // AN ABSENT KEY IS NOT AN EMPTY ARRAY. `null` is preserved rather than
+    // defaulted to `[]`, because "this record did not carry the field" and
+    // "this record carried the field and it was empty" are the two states the
+    // summariser must keep apart, and `?? []` here would erase one of them
+    // before any caller could see it.
+    files: Array.isArray(raw.files) ? raw.files : null,
     // `amendment_contract_id` for POST /v1/contract-amendments comes from here
     // [CONFIRMED live: the record's own value answers 200 through
     // /v1/contract-amendments/automatable, an unknown uuid answers 404

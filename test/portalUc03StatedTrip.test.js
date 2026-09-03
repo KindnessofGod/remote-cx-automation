@@ -333,12 +333,25 @@ test("each quick-fill's stated trip agrees with its own text", () => {
   // scenario's text, so this checks the two against each other rather than
   // against a copy of the table: a scenario whose text is rewritten and whose
   // boxes are not now fails here.
+  // MOVED ONTO THE DEMO SET 2026-08-30 (NL/PT/CA/US). The table is a
+  // human-reviewed record of what each scenario's TEXT says; the assertion
+  // below it is what actually enforces the agreement, by checking the reader's
+  // own label for the code appears in the sentence. IR stays: that scenario
+  // exists to exercise the restricted-jurisdiction list.
   const EXPECTED = {
-    "uc03-trip": { destinationCountry: "ES", startDate: "2026-09-14", endDate: "2026-10-02", addressee: null },
-    "uc03-workation": { destinationCountry: "PT", startDate: null, endDate: null, addressee: null },
-    "uc03-letter": { destinationCountry: "DE", startDate: "2026-09-20", endDate: "2026-09-26", addressee: null },
-    "uc03-letter-no-entity": { destinationCountry: "DE", startDate: "2026-09-20", endDate: "2026-09-26", addressee: null },
-    "uc03-terminated": { destinationCountry: "ES", startDate: "2026-09-14", endDate: "2026-10-02", addressee: null },
+    "uc03-trip": { destinationCountry: "NL", startDate: "2026-09-14", endDate: "2026-10-02", addressee: null },
+    "uc03-workation": { destinationCountry: "NL", startDate: null, endDate: null, addressee: null },
+    // The refusal chip (2026-08-30). Its trip is well-formed on purpose: the
+    // request is turned down for WHERE it goes, not for anything malformed, so
+    // a reader watching it fail cannot mistake the reason.
+    "uc03-restricted": { destinationCountry: "IR", startDate: "2026-09-10", endDate: "2026-09-20", addressee: null },
+    "uc03-letter": { destinationCountry: "PT", startDate: "2026-09-20", endDate: "2026-09-26", addressee: null },
+    "uc03-letter-no-entity": { destinationCountry: "PT", startDate: "2026-09-20", endDate: "2026-09-26", addressee: null },
+    // Same words and same trip as `uc03-letter` and `uc03-letter-no-entity` —
+    // all three exist to change ONLY the person asking, so their trips must be
+    // identical or the comparison is about something else (2026-09-03).
+    "uc03-letter-needs-signature": { destinationCountry: "PT", startDate: "2026-09-20", endDate: "2026-09-26", addressee: null },
+    "uc03-terminated": { destinationCountry: "NL", startDate: "2026-09-14", endDate: "2026-10-02", addressee: null },
   };
 
   const scenarios = uc03Scenarios();

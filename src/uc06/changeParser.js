@@ -61,10 +61,20 @@ export function amendmentType(changes) {
 }
 
 /** Deterministic fallback — always correct, if plain. Used when no LLM is configured or on any failure. */
+// A figure that is not a finite number is said to be UNSTATED, never printed.
+// "salary from 50000 to null EUR" reached a real ticket (2026-09-02, ticket
+// 271), and a quoted "60000" was restated by the LLM as a real increase above
+// a `change_value_underivable` refusal (ticket 281). The template is the floor
+// under both: it names the absence, and the value-refusal short-circuits to it.
+const amountOrUnstated = (v) => (typeof v === "number" && Number.isFinite(v) ? String(v) : "an unstated amount");
+
 function draftSummaryTemplate({ changes, requestedEffectiveDate }) {
   const parts = [];
   if (changes.salary) {
-    parts.push(`salary from ${changes.salary.oldAmount} to ${changes.salary.newAmount} ${changes.salary.currency}`);
+    parts.push(
+      `salary from ${amountOrUnstated(changes.salary.oldAmount)} to ${amountOrUnstated(changes.salary.newAmount)}` +
+        `${changes.salary.currency ? ` ${changes.salary.currency}` : ""}`
+    );
   }
   if (changes.jobTitle) {
     parts.push(`job title from "${changes.jobTitle.oldValue}" to "${changes.jobTitle.newValue}"`);

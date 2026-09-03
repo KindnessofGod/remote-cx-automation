@@ -70,7 +70,7 @@ if (ticket) {
       // the extracted date is never the decision, only one side of a comparison.
       letterText: [ticket.subject, ticket.description].filter(Boolean).join('\n\n'),
       timeOffBalances: Array.isArray(raw.timeOffBalances) ? raw.timeOffBalances : [],
-      currency: raw.currency ? String(raw.currency) : 'USD',
+      currency: raw.currency ? String(raw.currency) : null, // never 'USD' — the gates read Remote's own currency; an absent one refuses the line
       proposedEndDate: raw.proposedEndDate ? String(raw.proposedEndDate) : null,
       reason: raw.reason ? String(raw.reason) : null,
       externalRef: String(ticket.id),
@@ -102,7 +102,7 @@ return [{
     session,
     letterText: body.letterText ? String(body.letterText) : '',
     timeOffBalances: Array.isArray(body.timeOffBalances) ? body.timeOffBalances : [],
-    currency: body.currency ? String(body.currency) : 'USD',
+    currency: body.currency ? String(body.currency) : null, // never 'USD' — see the Zendesk branch above
     proposedEndDate: body.proposedEndDate ? String(body.proposedEndDate) : null,
     reason: body.reason ? String(body.reason) : null,
     externalRef: body.externalRef ? String(body.externalRef) : null,

@@ -53,7 +53,7 @@ export function renderReport({ simulation, findings = FINDINGS } = {}) {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>QA — Remote CX Automation</title>
+<title>QA — Gatehouse CX Automation</title>
 <style>
 ${sharedCss()}
 body { background: var(--r-bg, #fff); color: var(--r-text, #111827); font-family: var(--r-font, Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif); margin: 0; line-height: 1.55; }

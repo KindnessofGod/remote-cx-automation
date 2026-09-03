@@ -11,14 +11,17 @@
 // ---------------------------------------------------------------------------
 
 // ACCOUNT-SPECIFIC. A custom-field id does not survive a Zendesk account
-// change: this was 99900000000006 on the retired your-subdomain account, and that
-// field does not exist at all on your-subdomain, so every ticket threw here. If
-// this node starts refusing every ticket, check the field id before anything
+// change, and this project has now paid for that twice: 99900000000006 on the
+// retired your-subdomain account, then 9990000000001 on your-subdomain, and neither
+// exists on the current account (your-subdomainhelp, migrated 2026-08-29). A field
+// id that does not exist does not error — the ticket simply arrives with no
+// employment id, so this node refuses EVERY ticket while every layer reports
+// success. If that is what you are seeing, check this number before anything
 // else. Must match ZENDESK_EMPLOYMENT_ID_FIELD_ID in the app's environment.
 //
-// This file held the retired id while the DEPLOYED node held the current one —
-// drift in the opposite direction to the rest of this directory, and a reason
-// to diff both ways rather than assuming the repo is always ahead.
+// This file once held the retired id while the DEPLOYED node held the current
+// one — drift in the opposite direction to the rest of this directory, and the
+// reason the migration diffed both ways rather than assuming the repo leads.
 const EMPLOYMENT_FIELD_ID = 9990000000001;
 const body = $input.first().json.body ?? $input.first().json;
 const ticket = body.ticket ?? body;

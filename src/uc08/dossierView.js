@@ -31,6 +31,7 @@
 // ---------------------------------------------------------------------------
 
 import { TREATY_CORPUS, describeRetrievalMode } from "./treatyRetriever.js";
+import { corpusStats } from "../knowledge/statutoryRetrieval.js";
 import { describeJurisdictionCoverage } from "./jurisdictionKnowledge.js";
 import {
   sourcesForFinding,
@@ -38,6 +39,7 @@ import {
   pairKey,
   SOURCE_FRAMING,
   CAVEAT_FRAMING,
+  CONFIRMATION_FRAMING,
   SOURCED_PAIRS,
 } from "./decisionSources.js";
 
@@ -184,7 +186,7 @@ function describeStatutorySources({ inPlay, presenceCountry }) {
     // browser. See docs/use-cases/UC-08.md §15 for the one line in
     // main.js's loadUc08() that has to pass `basis` through before it renders.
     basis: {
-      sources: { framing: SOURCE_FRAMING, caveatFraming: CAVEAT_FRAMING },
+      sources: { framing: SOURCE_FRAMING, caveatFraming: CAVEAT_FRAMING, confirmationFraming: CONFIRMATION_FRAMING },
       residence: {
         sentence: residence.length
           ? `The domestic residence test of ${residence.map((r) => r.scope).join(" and ")}, quoted from the authority that administers it. These are not values of one rule — they are differently shaped rules, and nothing in this system measures anyone against any of them.`
@@ -315,18 +317,37 @@ function describePresence({ presenceDays, evidence, jurisdictionKnowledge }) {
  * What the cited material IS, and — the part that matters — what it is not.
  *
  * A citation with no statement of what it covers acquires authority it has not
- * earned. This corpus is three passages of GENERAL model-convention and
- * totalization principle. It contains no bilateral instrument for any
- * jurisdiction pair, and the applicable treaty for a DE/ES question is a
- * DE/ES treaty, not the OECD Model the treaty was drafted from. A specialist
- * who reads "OECD Model Article 4 — Resident (tie-breaker rules)" without that
- * sentence may reasonably believe the retrieval step looked for the governing
- * instrument and found this. It did not look.
+ * earned. That was written when the corpus was three passages of GENERAL
+ * model-convention and totalization principle holding no bilateral instrument
+ * for any pair, and every sentence below was built to stop those three reading
+ * as jurisdiction-specific authority.
  *
- * THIS IS A FINDING MADE LEGIBLE, NOT A GAP CLOSED. Expanding the corpus is
- * out of scope for this pass and is the owner's call; what is in scope is
- * refusing to let three general passages read as jurisdiction-specific
- * authority.
+ * THE GAP IS NOW CLOSED AND THIS FUNCTION HAD NOT NOTICED (fixed 2026-08-30).
+ * §3.95 replaced the retrieval leg with a country-filtered lexical index over
+ * the 55 retrieved statutory passages in `src/knowledge/`, and the caution
+ * survived it verbatim — so on the flagship demo pair the sidebar printed,
+ * directly above the IRS's own substantial presence test, Portugal's CIRS
+ * art. 16.º and the text of the US–Portugal convention:
+ *
+ *   "The reference corpus is 3 passage(s) of GENERAL principle — OECD Model
+ *    Tax Convention articles … Nothing in the corpus matched this request at
+ *    all. … they are not the governing instrument for this request and must
+ *    not be cited to the requester as if they were."
+ *
+ * Three false claims and one dangerous one. "Nothing matched" was the `else`
+ * arm of a ternary that had never been given a `statutory_lexical` limb; the
+ * count came from TREATY_CORPUS, which is no longer where these passages come
+ * from; and the last clause — a disclaimer written to stop a PARAPHRASE being
+ * over-trusted — was telling a specialist to discount the instrument in force.
+ * A stale caution is not the safe direction of a stale sentence: it spends the
+ * credibility of every other caution on this page.
+ *
+ * SO THE DISCRIMINATOR IS THE CITATION, NOT THE MODE. Each passage carries
+ * `authority: "instrument" | "model"`, and the caution is now attached to the
+ * model passages only, which is the population it was always about. A mode
+ * label alone cannot do this: a `statutory_lexical` result falls back to the
+ * OECD Model paraphrases when nothing statutory matched, and that result needs
+ * the original warning word for word.
  */
 function describeCitationCoverage({ citations, jurisdictions, statutory = null }) {
   const mode = describeRetrievalMode(citations);
@@ -337,12 +358,24 @@ function describeCitationCoverage({ citations, jurisdictions, statutory = null }
         ? `${jurisdictions[0]} and the other jurisdiction involved`
         : null;
 
+  // WHAT THE SPECIALIST WAS ACTUALLY HANDED, counted off the citations rather
+  // than inferred from the mode. `instrument` is set by the retriever from the
+  // passage's own `authority`; a dossier stored before 2026-08-30 carries
+  // neither field, so both counts fall to zero and every sentence below reads
+  // exactly as it did then.
+  const instrumentsRetrieved = citations.filter((c) => c?.authority === "instrument").length;
+  const modelPassagesRetrieved = citations.filter((c) => c?.authority === "model").length;
+  const statutory_ = mode === "statutory_lexical";
+  const stats = statutory_ ? corpusStats() : null;
+
   const modeStatement =
     mode === "embedding_similarity"
       ? "Retrieved by embedding similarity over the stored corpus vectors."
-      : mode === "keyword_fallback"
-        ? "Retrieved by KEYWORD match, not by meaning — the embedding path is unconfigured, so a passage surfaced because a literal term appeared in the request text."
-        : "Nothing in the corpus matched this request at all.";
+      : mode === "statutory_lexical"
+        ? "Retrieved by lexical match (BM25) over the retrieved statutory corpus, filtered to the jurisdictions this request names — so a passage from an unrelated country's law cannot surface here."
+        : mode === "keyword_fallback"
+          ? "Retrieved by KEYWORD match, not by meaning — the embedding path is unconfigured, so a passage surfaced because a literal term appeared in the request text."
+          : "Nothing in the corpus matched this request at all.";
 
   // THIS SENTENCE USED TO BE UNCONDITIONAL AND IS NOW A FACT ABOUT THE PAIR.
   // It said "no bilateral treaty was consulted — none is held", which was true
@@ -353,8 +386,16 @@ function describeCitationCoverage({ citations, jurisdictions, statutory = null }
   // does not exist, printed above the material, is the same class of staleness
   // as a status line nobody rechecked.
   const bilateralHeld = Boolean(statutory?.treatyHeld);
+  // THE TRAILING CLAUSE IS NOW A QUESTION ABOUT THIS RESULT, not a standing
+  // fact. It used to end "— it is not one of the passages below, which are
+  // general principle only", which was true of every result for as long as the
+  // only corpus was the three OECD paraphrases. The statutory index can and
+  // does return the convention text itself (D-27/D-28/D-29 on a US pair), so
+  // on the flagship demo pair that clause told the specialist the instrument
+  // was absent from a list it was sitting in.
+  const passagesAreGeneralOnly = instrumentsRetrieved === 0;
   const bilateralStatement = bilateralHeld
-    ? `The bilateral convention in force for ${statutory.pairKey.replace("|", "–")} IS held and is cited, with its employment-income article quoted, under the sources block — it is not one of the passages below, which are general principle only.`
+    ? `The bilateral convention in force for ${statutory.pairKey.replace("|", "\u2013")} IS held and is cited, with its employment-income article quoted, under the sources block${passagesAreGeneralOnly ? " \u2014 it is not one of the passages below, which are general principle only." : "."}`
     : pair
       ? `No bilateral treaty between ${pair} was consulted — none is held.`
       : "No bilateral treaty was consulted — none is held, and no jurisdiction pair was identified to look one up for.";
@@ -362,7 +403,13 @@ function describeCitationCoverage({ citations, jurisdictions, statutory = null }
   return {
     retrievalMode: mode,
     citationsReturned: citations.length,
-    corpusSize: TREATY_CORPUS.length,
+    // THE CORPUS THESE CITATIONS CAME FROM, not whichever one this module
+    // imported first. Reporting TREATY_CORPUS.length against a statutory result
+    // said "3" about a body of 55 passages.
+    corpusSize: stats ? stats.byFeed["UC-08"] : TREATY_CORPUS.length,
+    corpusDocuments: stats ? stats.documents : null,
+    instrumentsRetrieved,
+    modelPassagesRetrieved,
     // The vendored instruments are counted separately from the retrieved
     // passages on purpose: they arrive by a different mechanism (a person wrote
     // them down) and carry a different kind of authority (the instrument in
@@ -371,11 +418,33 @@ function describeCitationCoverage({ citations, jurisdictions, statutory = null }
     bilateralInstrumentHeld: bilateralHeld,
     // Stated as a scope, not as a disclaimer to skim. Every clause is a fact a
     // specialist would otherwise have to ask for.
-    scope:
-      `The reference corpus is ${TREATY_CORPUS.length} passage(s) of GENERAL principle — OECD Model Tax Convention ` +
-      `articles and the general shape of social-security totalization agreements. ${bilateralStatement} ` +
-      `${modeStatement} These passages are background for the specialist's own analysis; they are not the ` +
-      "governing instrument for this request and must not be cited to the requester as if they were.",
+    scope: [
+      statutory_
+        ? `The reference corpus is ${stats.byFeed["UC-08"]} passage(s) drawn from ${stats.documents} statutory and agency ` +
+          "documents retrieved from their own publishers, each carrying its source URL, retrieval date and a SHA-256 of " +
+          "the retrieved bytes."
+        : `The reference corpus is ${TREATY_CORPUS.length} passage(s) of GENERAL principle — OECD Model Tax Convention ` +
+          "articles and the general shape of social-security totalization agreements.",
+      bilateralStatement,
+      modeStatement,
+      // THE CAUTION, ATTACHED TO THE POPULATION IT IS ABOUT. Model paraphrases
+      // get it verbatim; retrieved instruments get the different warning that
+      // actually applies to them, which is currency rather than authority — the
+      // repository holds the text as published on the retrieval date and cannot
+      // tell whether it has since been amended.
+      modelPassagesRetrieved > 0 || !statutory_
+        ? (statutory_
+            ? `${modelPassagesRetrieved} of the passage(s) below are GENERAL principle (an OECD Model article or the shape of a totalization agreement) rather than an instrument in force. Those `
+            : "These passages are background for the specialist's own analysis; they are not the ") +
+          (statutory_ ? "are not " : "") +
+          "governing instrument for this request and must not be cited to the requester as if they were."
+        : null,
+      instrumentsRetrieved > 0
+        ? `${instrumentsRetrieved} of the passage(s) below are the publisher's own text, quoted, not a paraphrase — check the retrieval date on each before relying on it, because this system holds the text as published on that date and does not track later amendments.`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
   };
 }
 
@@ -475,6 +544,26 @@ function collectOpenQuestions({ presence, citationCoverage, jurisdictionKnowledg
       code: "no_citations",
       priority: 2,
       question: "Nothing in the reference corpus matched this request, so the dossier carries no background material at all.",
+    });
+  } else if (
+    citationCoverage.retrievalMode === "statutory_lexical" &&
+    citationCoverage.instrumentsRetrieved === 0
+  ) {
+    // THE LAST-RESORT ARM, RAISED AS A QUESTION RATHER THAN LEFT TO THE SCOPE
+    // SENTENCE. The statutory index is country-filtered, so returning nothing
+    // statutory means it held nothing for the jurisdictions this request names
+    // — and what a reader then sees is the OECD Model paraphrase the retriever
+    // falls back to. That is precisely the case the original
+    // `citations_keyword_matched` warning was written for, and it must keep
+    // firing now that the mode label around it has changed.
+    questions.push({
+      code: "citations_model_only",
+      priority: 2,
+      question:
+        "Nothing STATUTORY matched for the jurisdictions this request names, so the passages below are general " +
+        "principle only — an OECD Model article is the template a convention was drafted from, not the convention. " +
+        "The governing instrument for this pair is either cited separately in the sources block or is not held here " +
+        "at all; treat these passages as a starting point, not as the applicable authority.",
     });
   } else if (citationCoverage.retrievalMode === "keyword_fallback") {
     questions.push({

@@ -247,6 +247,11 @@
     if (state === "confirmed") return "ticket confirmed";
     if (state === "not_found") return "no such ticket";
     if (state === "unverified") return "not checked";
+    // NOT "no ticket": there is one, and it is in a Zendesk account this view
+    // is not reading. Saying "no ticket" would describe a hand-off that never
+    // happened, when what actually happened is that the account was migrated
+    // out from under the reference (honest-gaps item 23).
+    if (state === "foreign_account") return "other Zendesk account";
     return "no ticket";
   }
 

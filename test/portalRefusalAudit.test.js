@@ -302,11 +302,19 @@ test("all five 403 persona refusals are recorded, each under its own use case an
     ["uc02", { persona: "admin", expenseId: "exp_sandbox_clean_401" }, "UC-02", "low", "persona_cannot_claim"],
     ["uc03", { persona: "admin", text: "Can I work from Spain for a fortnight?" }, "UC-03", "low", "persona_cannot_ask"],
     [
+      // UC-04'S 403 CHANGED SHAPE ON 2026-08-30, and it is still a 403 about
+      // identity — which is what this test is really asserting is recorded.
+      // The refusal used to be "an employee may not file one of these at all",
+      // which was the portal restating a defect in the identity gate (see
+      // test/uc04SubmissionIdentity.test.js). An employee may now file about
+      // their own trip; filing about SOMEBODY ELSE'S employment is the refusal
+      // that survived, and it is the one worth auditing, because it is an
+      // attempt to act on another person's record.
       "uc04",
       { persona: "chris", employmentId: "emp_active_001", destinationCountry: "ES" },
       "UC-04",
       "medium",
-      "persona_cannot_request",
+      "not_your_employment",
     ],
     ["uc05", { persona: "admin", text: "I am resigning on 30 September 2026." }, "UC-05", "medium", "persona_cannot_resign"],
     [

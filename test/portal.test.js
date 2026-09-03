@@ -65,6 +65,7 @@ import { parseInquiryRuleBased } from "../src/uc08/inquiryParser.js";
 import { draftNarrative as draftTaxNarrative } from "../src/uc08/dossierBuilder.js";
 import { parseAdjustmentRequest } from "../src/uc09/adjustmentParser.js";
 import { judgeNarrative } from "../src/shared/narrativeJudge.js";
+import { fakeZendesk, lastNoteRows } from "./portalNoteHelpers.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ASSETS = join(__dirname, "..", "src", "portal", "assets");
@@ -132,6 +133,7 @@ let remote;
 let remoteServer;
 let audit;
 let handler;
+let zendesk;
 
 function freshStores() {
   return {
@@ -179,7 +181,10 @@ before(async () => {
   remoteServer = await startMockServer(REMOTE_PORT);
   remote = new RemoteClient({ baseUrl: `http://localhost:${REMOTE_PORT}` });
   audit = new AuditLogger();
-  handler = createPortalHandler({ remote, audit, stores: freshStores(), llm: FAKE_LLM });
+  // [N-14] A recording Zendesk double, so UC-05's figures — now specialist-only
+  // rows — can be read off the note they reach. See test/portalNoteHelpers.js.
+  zendesk = fakeZendesk();
+  handler = createPortalHandler({ remote, audit, stores: freshStores(), llm: FAKE_LLM, zendesk });
 });
 
 after(async () => {
@@ -912,10 +917,69 @@ test("app.js renders no gate machinery on the requester's panel at all", () => {
   );
 });
 
-test("UC-04: an employee cannot file a workation request on their own behalf", async () => {
-  const res = await post("uc04", { persona: "chris", employmentId: "emp_active_001", destinationCountry: "ES" });
+// UC-04'S FILER RULE, BOTH WAYS ROUND (2026-08-30). This used to be one test
+// asserting that an employee "cannot file a workation request on their own
+// behalf", which was the portal restating a defect: UC-04's identity gate
+// compared a session's COMPANY id to the employment's, only an admin session
+// carries one, so an employee filing their own trip came back
+// identity_not_verified and the portal grew a rule to explain it. Remote's own
+// object says a work-authorization request is submitted BY THE EMPLOYEE, and so
+// does docs/use-cases/UC-04.md §1. The pair below is what replaced it, and it
+// is a pair on purpose: the widening is only safe if the boundary it does NOT
+// cross is asserted in the same breath.
+test("UC-04: an employee files a workation request about their own trip", async () => {
+  const res = await post("uc04", {
+    persona: "chris",
+    // Chris Lee's own employment id — the same value his session carries.
+    employmentId: "8ab12460-b568-4c1e-af9d-09b1fabd8f46",
+    homeCountry: "DE",
+    nationality: "DE",
+    destinationCountry: "ES",
+    startDate: "2026-09-01",
+    endDate: "2026-09-14",
+    visaType: "schengen_short_stay",
+    jobDuties: "engineering",
+    hasContractSigningAuthority: false,
+    externalRef: "portal-4100",
+    now: "2026-08-15",
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.decision, "ready_for_approval", `an employee's own trip was refused: ${res.body.reason}`);
+  assert.equal(res.body.reason, "all_gates_passed");
+});
+
+test("UC-04: an employee cannot file one about SOMEBODY ELSE's employment", async () => {
+  const res = await post("uc04", {
+    persona: "chris",
+    // Anna Müller's id, sent from Chris Lee's session. Refused rather than
+    // quietly retargeted at the filer: deciding a different question from the
+    // one that was asked is worse than refusing to decide.
+    employmentId: "09b65526-643b-4956-959b-916e6429bd23",
+    destinationCountry: "ES",
+  });
   assert.equal(res.status, 403);
-  assert.equal(res.body.code, "persona_cannot_request");
+  assert.equal(res.body.code, "not_your_employment");
+});
+
+test("UC-04: the subject of an employee's request comes from the session, never from the body", async () => {
+  // No employmentId in the body at all. The request is still about the filer,
+  // because the session is what names the subject — and the decision that comes
+  // back is a real one rather than "pick the travelling employee".
+  const res = await post("uc04", {
+    persona: "chris",
+    homeCountry: "DE",
+    nationality: "DE",
+    destinationCountry: "ES",
+    startDate: "2026-09-01",
+    endDate: "2026-09-14",
+    visaType: "schengen_short_stay",
+    jobDuties: "engineering",
+    hasContractSigningAuthority: false,
+    externalRef: "portal-4101",
+    now: "2026-08-15",
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.decision, "ready_for_approval");
 });
 
 test("UC-05: a UK resignation within statute is prepared for HR Ops sign-off, with a real PTO payout", async () => {
@@ -942,7 +1006,7 @@ test("UC-05: a UK resignation within statute is prepared for HR Ops sign-off, wi
     undefined,
     "the extraction-source slug is on the requester's panel"
   );
-  const payout = res.body.details.find((d) => d.label === "PTO payout");
+  const payout = { value: lastNoteRows(zendesk)["PTO payout"] }; // [N-14] the specialist's row
   assert.match(payout.value, /GBP/, "the payout must be reported in human units with its currency");
   // WHERE THE BALANCES CAME FROM, IN WORDS AND NOT AS THE SOURCE TAG. The line
   // used to end `(time_off_records)` — an identifier from a table the resigning
@@ -951,7 +1015,27 @@ test("UC-05: a UK resignation within statute is prepared for HR Ops sign-off, wi
   // is recorded are different statements, and the second is the one a reader
   // would otherwise supply from memory.
   assert.doesNotMatch(payout.value, /time_off_records/, "the reconciler's own source tag is still printed raw");
-  assert.match(payout.value, /leave balances on record/, "where the figure came from must still be said");
+  // WHERE THE FIGURE CAME FROM, AND IT IS NOT "the leave balances on record".
+  // That was what this line asserted, and it was a false statement to the
+  // employee: the four numbers behind this total were typed into this form
+  // seconds earlier and nothing had read a leave record. `payout.source` cannot
+  // answer provenance — it only separates some balances from none from unusable
+  // — and `workflow.js`'s `ptoSource` can and always could.
+  assert.doesNotMatch(
+    payout.value,
+    /leave balances on record/,
+    "figures the requester typed are still attributed to records nobody read"
+  );
+  assert.match(
+    payout.value,
+    /worked out from the holiday figures given on this request, not from Remote's records/,
+    "where the figure came from must be said, and said truthfully"
+  );
+  // AND THE WORKING, because a settlement total with none of its inputs on
+  // screen cannot be checked or challenged by the person it is paid to.
+  assert.match(payout.value, /18 days accrued − 6 taken = 12 days/, "the subtraction must be shown");
+  assert.match(payout.value, /× 8 hours per day/, "the day-to-hours conversion must be shown");
+  assert.match(payout.value, /× 32\.50 GBP per hour/, "the rate must be shown, in the units it was typed in");
 });
 
 test("UC-05: a proposed date shorter than statutory notice is a discrepancy, never a silent acceptance", async () => {
@@ -978,13 +1062,17 @@ test("UC-05: with no accrued days sent, the payout reports no records rather tha
   });
   assert.equal(res.status, 200);
   assert.equal(res.body.decision, "prepared_for_signoff");
-  // Said in words rather than as `no_time_off_records`. The absence is the
-  // point of this test and it survives the rewording — see ptoSourceWords().
-  assert.match(
-    res.body.details.find((d) => d.label === "PTO payout").value,
-    /no leave balances are recorded/,
-    "a zero payout must still say WHY it is zero"
-  );
+  // THERE IS NO ZERO ANY MORE, AND THAT IS THE FIX. This asserted the line said
+  // `no leave balances are recorded` — which the page printed as
+  // `0.00 EUR — no leave balances are recorded for this employee`. Two things
+  // were wrong with it and this test could see neither: the 0.00 is a
+  // settlement figure nobody derived, shown to a resigning employee; and "no
+  // leave balances are recorded for this employee" is a claim about the
+  // EMPLOYMENT RECORD, asserted here off an empty leave-policy list.
+  const blank = lastNoteRows(zendesk)["PTO payout"]; // [N-14]
+  assert.ok(!/\d/.test(blank), `a figure was shown for a balance nobody counted: ${blank}`);
+  assert.ok(blank.startsWith("not known"), `the balance must be reported as unknown: ${blank}`);
+  assert.match(blank, /not a finding that no holiday is owed/, "the absence must not read as a nil entitlement");
 });
 
 // --- finding F-30: the adapter must not manufacture a rate it was not given ---
@@ -1058,9 +1146,20 @@ test("UC-05: a resignation with accrued days and a blank rate escalates as pto_b
   assert.equal(res.body.reason, "pto_balance_unusable");
   assert.ok(res.body.flags.includes("pto_balance_unusable"));
   assert.ok(res.body.flags.includes("pto_missing_hourlyRateInRemoteInteger"), "the escalation must name the missing field");
-  const payout = res.body.details.find((d) => d.label === "PTO payout").value;
+  const payout = lastNoteRows(zendesk)["PTO payout"]; // [N-14]
   assert.ok(!/0\.00/.test(payout), `the page must not state a payout figure it never derived: ${payout}`);
-  assert.match(payout, /hourlyRateInRemoteInteger/, "the page must name what was missing");
+  // NAMED IN WORDS, NOT AS A COLUMN NAME. This asserted the page printed
+  // `hourlyRateInRemoteInteger` — a database field name, rendered verbatim to a
+  // person who is resigning, inside the string
+  // `unusable_time_off_records: vacation — missing hourlyRateInRemoteInteger`.
+  // It also pointed at the wrong action: a field name reads as a value to go
+  // and fetch, and there is nothing to fetch — Remote publishes no pay rate on
+  // any endpoint, so the only thing that closes this is a person supplying the
+  // contractual rate.
+  assert.doesNotMatch(payout, /hourlyRateInRemoteInteger/, "a database column name is still being shown to the requester");
+  assert.doesNotMatch(payout, /unusable_time_off_records/, "the reconciler's own source tag is still printed raw");
+  assert.match(payout, /no hourly rate was given/, "the page must name what was missing, in words");
+  assert.match(payout, /Remote does not publish a pay rate on any endpoint/, "the page must name the action that closes it");
 });
 
 test("UC-05: a rate that IS supplied still produces the real payout — the fix refuses absence, not everything", async () => {
@@ -1086,8 +1185,9 @@ test("UC-05: a rate that IS supplied still produces the real payout — the fix 
   assert.equal(res.body.decision, "prepared_for_signoff");
   assert.ok(!res.body.flags.includes("pto_balance_unusable"), "a complete balance must not be refused");
   assert.equal(
-    res.body.details.find((d) => d.label === "PTO payout").value,
-    "3120.00 GBP — from the leave balances on record"
+    ({ value: lastNoteRows(zendesk)["PTO payout"] }) /* [N-14] */.value,
+    "3120.00 GBP — vacation: 18 days accrued − 6 taken = 12 days × 8 hours per day × 32.50 GBP per hour = 3,120.00 GBP" +
+      " — worked out from the holiday figures given on this request, not from Remote's records"
   );
 });
 
@@ -1512,6 +1612,14 @@ const MIRRORED = {
   // requester THEY are — src/livedemo/employees.js's real-ticket Alex Morgan —
   // and the roster had nowhere for them to say so.
   alex: "2f7f8210-91fc-47db-803c-77a1cc625781",
+  // Added 2026-09-03 to give UC-03's letterhead rung a persona again. The
+  // engagement gate shipped the same day refuses Alexandre five rungs before
+  // that check, and his was the only record carrying the missing employing
+  // entity the check is about — so the one UC-03 outcome where a named
+  // specialist must act became unreachable from the portal. David is an EOR
+  // EMPLOYEE with the same absence, so he passes the gate that stops Alexandre.
+  // Same rule as every row above: a real Sandbox id, mirrored by a fixture.
+  david: "436cf2b4-d1e3-48bd-9a10-5311b01aa330",
 };
 
 /** The personas that were removed when the roster became Sandbox-only. */
@@ -1643,7 +1751,7 @@ test("POSITIVE: Anna Müller's German resignation reaches prepared_for_signoff, 
   assert.equal(res.status, 200);
   assert.equal(res.body.decision, "prepared_for_signoff");
   assert.equal(res.body.reason, "all_gates_passed");
-  assert.match(res.body.details.find((d) => d.label === "Rule applied").value, /BGB/);
+  assert.match(lastNoteRows(zendesk)["Rule applied"], /BGB/); // [N-14]
 });
 
 test("João Silva's short notice escalates on PORTUGAL's own rule — not Poland's, relabelled", async () => {
@@ -1661,7 +1769,7 @@ test("João Silva's short notice escalates on PORTUGAL's own rule — not Poland
   assert.equal(res.body.decision, "escalate");
   assert.equal(res.body.reason, "statutory_discrepancy");
   assert.ok(res.body.flags.includes("discrepancy_earlier_than_statutory"));
-  assert.match(res.body.details.find((d) => d.label === "Rule applied").value, /Código do Trabalho/);
+  assert.match(lastNoteRows(zendesk)["Rule applied"], /Código do Trabalho/); // [N-14]
 });
 
 test("POSITIVE: James Wilson's own claim auto-approves, and the SAME shape of claim from Chris is refused for ownership", async () => {
@@ -1705,19 +1813,41 @@ test("POSITIVE: Emma Thompson's UK resignation reaches prepared_for_signoff, on 
   assert.equal(res.status, 200);
   assert.equal(res.body.decision, "prepared_for_signoff");
   assert.equal(res.body.reason, "all_gates_passed");
-  const rule = res.body.details.find((d) => d.label === "Rule applied");
+  const rule = ({ value: lastNoteRows(zendesk)["Rule applied"] }) /* [N-14] */;
   assert.match(rule.value, /Employment Rights Act 1996/);
 });
 
-test("POSITIVE: Carlos Silva's trip auto_resolves — the contractor record clears UC-03's gates too", async () => {
+test("POSITIVE: Lars van der Berg's trip auto_resolves — an EOR persona can SUCCEED on UC-03, not merely be refused", async () => {
+  // THE PERSONA MOVED, AND WHY (2026-09-03). This test used to be Carlos
+  // Silva's and its own name asserted the defect: "the contractor record
+  // clears UC-03's gates too". It did, and it should not have — Remote
+  // publishes the travel support letter for EOR customers only. Nothing here
+  // argued that a contractor SHOULD qualify; the test's purpose is that a
+  // mirrored persona can reach a success, and an EOR persona serves it
+  // exactly as well. The contractor's real answer is the test below.
   const res = await post("uc03", {
-    persona: "carlos",
+    persona: "lars",
     text: "I'm travelling to Spain for a client meeting from September 14 to October 2, 2026. Can you confirm business travel is fine?",
     externalRef: "portal-3101",
   });
   assert.equal(res.status, 200);
   assert.equal(res.body.decision, "auto_resolve");
   assert.equal(res.body.reason, "all_gates_passed");
+});
+
+test("Carlos Silva is a contractor, so UC-03 blocks him — and raises no ticket, because no specialist can overturn it", async () => {
+  const res = await post("uc03", {
+    persona: "carlos",
+    text: "I'm travelling to Spain for a client meeting from September 14 to October 2, 2026. Can you confirm business travel is fine?",
+    externalRef: "portal-3103",
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.decision, "blocked");
+  assert.equal(res.body.reason, "engagement_not_eor_contractor");
+  assert.ok(res.body.flags.includes("engagement_contractor"), "the refusal must name the engagement it read");
+  // NO HAND-OFF. The fact is one Remote publishes; a ticket would be a
+  // hand-off to nobody, which is what `NO_TICKET_DECISIONS.uc03` now says.
+  assert.equal(res.body.ticketCreated, false, "a blocked engagement must not raise a ticket");
 });
 
 test("Chris Lee's over-cap claim is still refused — the same person demonstrates both directions", async () => {

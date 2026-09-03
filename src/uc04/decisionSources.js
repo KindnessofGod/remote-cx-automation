@@ -76,9 +76,28 @@ export const CAVEAT_FRAMING =
   "Where a check applies a rule one of these documents disputes, the dispute is printed with the finding. " +
   "A contradicted finding is not evidence for the opposite conclusion — it is a finding whose basis you now know the limits of.";
 
+/**
+ * Rendered once above the confirmations, for the same reason as the two above.
+ *
+ * WHY A CONFIRMATION IS PRINTED AT ALL, since it changes no decision: the
+ * CONFIRMATION_LIBRARY's own header states it — "a list that only ever reports
+ * faults teaches distrust of everything equally". A finding shown with four
+ * caveats and no confirmation reads as a finding nobody has checked, and on the
+ * Schengen allowance that is exactly wrong: the 90 and the 180 ARE Article
+ * 6(1)'s own numbers, and it is only their APPLICATION that is disputed.
+ *
+ * VERBATIM IN UC-04, UC-07 AND UC-08, like CAVEAT_FRAMING beside it. The
+ * SOURCE_FRAMING sentences are tailored per use case because each names its own
+ * decision; this one names none, so a shared wording is the same wording rather
+ * than three that will drift.
+ */
+export const CONFIRMATION_FRAMING =
+  "Where a check was tested against its authority and the two agreed, that is printed with the finding as well. " +
+  "A confirmation is bounded: it says that one named thing — a number, a list, a date — matched the source it was taken from, and it says nothing whatever about whether this request should be approved. It is here because a page that reports only faults teaches a reader to distrust every part of it equally, including the parts that were checked and held.";
+
 /** How the citations got here. Stated because the alternative is assumed. */
 export const RETRIEVAL_METHOD =
-  "Hand-curated: each document below is listed against this finding in src/uc04/decisionSources.js, by someone who read it. There is no search, no ranking and no similarity score, so no figure of confidence is quoted. A finding with no entry gets no citation rather than a nearest match.";
+  "Hand-curated: each document below is listed against this finding by a person who had read it. There is no search, no ranking and no similarity score, so no figure of confidence is quoted. A finding with no entry gets no citation rather than a nearest match.";
 
 // ---------------------------------------------------------------------------
 // The documents
@@ -534,6 +553,23 @@ export const CAVEAT_LIBRARY = Object.freeze({
 
 /** The one confirmation worth carrying: a list of faults teaches distrust of everything equally. */
 export const CONFIRMATION_LIBRARY = Object.freeze({
+  /* ADDED 2026-08-31, when UC-04 started printing a "maximum initial
+     detachment" column. It is here for the same reason C-24 is: those two
+     findings are neighbours in the corpus and opposite in outcome — the
+     Canada–Portugal maximum was checked against the agreement text and held,
+     the Canada–Netherlands one was checked and did not. Rendering only the
+     failure would teach a reader that the register is unverified, when what is
+     true is that it was verified pair by pair and one pair came back wrong.
+     CONTRADICTIONS.md K-4 says this in its own words: "a reader needs to know
+     that the pair was checked rather than assumed to fail together." */
+  "K-4": {
+    id: "K-4",
+    section: "K-4",
+    path: CONTRADICTIONS,
+    headline: "Canada–Portugal's 24-month detachment maximum is confirmed by the agreement itself.",
+    detail:
+      "The CRA's table said 24 months; art. VII(1) of the agreement says \"for a period of up to 24 months\". Two independent sources, same answer — recorded because its Netherlands neighbour did not check out (C-24).",
+  },
   "K-3": {
     id: "K-3",
     section: "K-3",
@@ -602,6 +638,76 @@ export const FINDING_SOURCES = Object.freeze({
       },
     ],
     caveats: ["C-6", "C-7", "C-22", "C-23"],
+  },
+
+  /* THE COVERED CASE, ADDED 2026-08-31. Every document below was already in
+     this library and already tagged with its pairs in
+     src/knowledge/documentCountries.js — which is what lets all seven be listed
+     here and the route filter (sourceJurisdiction.js) drop the ones that govern
+     other jurisdictions. Listing them all is deliberate: naming only the pair
+     in hand would put a jurisdiction decision in this file, where a reader
+     cannot see it, instead of in the filter that is tested for it.
+
+     C-9 IS DELIBERATELY ABSENT, and it is the only caveat that moved. It says
+     "four country pairs this system reports as unknown are in fact covered" —
+     a contradiction against a claim UC-04 no longer makes, because this key
+     exists. C-8 and C-24 stay, because both are about the "maximum initial
+     detachment" column this finding now PRINTS, and neither was discharged by
+     anything: there is still no single detachment maximum, and the CRA's
+     Canada–Netherlands row still pairs one agreement's date with another's
+     limit. A caveat is retired when the claim it disputes stops being made,
+     never when the finding it sits under turns green. */
+  treaty_coverage_confirmed: {
+    label: "A social-security agreement and a tax convention are both in force for this country pair",
+    cite: [
+      {
+        source: "D-20",
+        locator: "Status of Totalization Agreements; territoriality and detached-worker rules",
+        citedFor:
+          "that the US agreement for this pair is in force, with its effective date and TIAS citation, and the two rules that turn 'covered' into an answer — territoriality puts the worker under the law of the country they work in, and the detached-worker exception keeps a temporary transfer under the sending country's.",
+      },
+      {
+        source: "D-21",
+        locator: "CRA agreement table, with the CTS agreement texts and forms CPT63 / CPT55",
+        citedFor:
+          "Canada's side of the same question — the agreement network, the certificate form per country, and the maximum detachment each agreement allows, which is where the Netherlands row and the agreement text disagree.",
+      },
+      {
+        source: "D-17",
+        locator: "Articles 11(3)(a) and 12(1)",
+        citedFor:
+          "for an intra-EU pair, the rule that a person is subject to one Member State's legislation only, and the 24-month ceiling on a posting that keeps them under the sending state's.",
+      },
+      {
+        source: "D-18",
+        locator: "Article 19(2)",
+        citedFor:
+          "the attestation that evidences it — the instrument everyone calls an A1, which neither regulation ever names.",
+      },
+      {
+        source: "D-24",
+        locator: "art. 15 — employment income; art. 4 — resident",
+        citedFor: "the Netherlands–Portugal taxing right over employment income, and which state a person is resident of for the convention's purposes.",
+      },
+      {
+        source: "D-25",
+        locator: "art. 15 — employment income; art. 4 — resident",
+        citedFor: "the same two questions for Canada–Netherlands.",
+      },
+      {
+        source: "D-26",
+        locator: "art. 15 — employment income; art. 4 — resident",
+        citedFor: "the same two questions for Canada–Portugal.",
+      },
+      {
+        source: "D-27",
+        locator: "arts 16 / XV — dependent personal services; arts 4 / IV — residence",
+        citedFor:
+          "the same two questions for the three United States pairs, where the day test is only the first of three cumulative conditions and the other two are the ones an Employer-of-Record arrangement turns on.",
+      },
+    ],
+    caveats: ["C-8", "C-24"],
+    confirmations: ["K-4"],
   },
 
   treaty_coverage_unconfirmed: {
@@ -882,7 +988,7 @@ export const UNCITED_FINDINGS = Object.freeze({
   pe_risk_dape: {
     label: "Permanent-establishment / dependent-agent exposure",
     why:
-      "No source. The material that governs this is the OECD Model Tax Convention art. 5 and its Commentary, plus BEPS Action 7 — a copyrighted publication that may be paraphrased with a precise citation but never copied here, and which this repository has not read: docs/knowledge/layer-1-statutory/L1-01-L1-11-oecd-citation-register.md is a register of article numbers whose own evidence tag marks the source binding [PROPOSED] because the documents could not be retrieved. So this flag — the one that alone forces an escalation regardless of every other dimension — is the least sourced finding UC-04 produces, and that is worth knowing before weighing it.",
+      "No source. The material that governs this is the OECD Model Tax Convention art. 5 and its Commentary, plus BEPS Action 7 — a copyrighted publication that may be paraphrased with a precise citation but never copied here, and which this repository has not read: what it holds is a register of article numbers whose own evidence tag marks the source binding [PROPOSED], because the documents could not be retrieved. So this flag — the one that alone forces an escalation regardless of every other dimension — is the least sourced finding UC-04 produces, and that is worth knowing before weighing it.",
   },
   destination_out_of_scope: {
     label: "Destination outside the curated risk matrix",
@@ -897,7 +1003,7 @@ export const UNCITED_FINDINGS = Object.freeze({
   immigration_document_on_file: {
     label: "Immigration authorization on file",
     why:
-      "No source, and the absence is the finding. The requirement never to infer the document from the destination comes from this use case's own specification (UC-04.md §5 and §9), not from any authority — and no document is read from Remote at all, so there is nothing to cite about a particular traveller's entitlement.",
+      "No source, and the absence is the finding. The requirement never to infer the document from the destination is this use case's own rule, not an authority's. Remote's employment record IS read for identity documents — but what that read can establish is right to work in the country of EMPLOYMENT, which Remote's own Right-to-Work guidance describes and which is not what this dimension asks. Nothing is cited here because no authority speaks to a particular traveller's entitlement at a particular destination.",
   },
   same_country: {
     label: "Destination is the employee's own work country",
@@ -947,15 +1053,45 @@ export const UNCITED_FINDINGS = Object.freeze({
  *   confirmations: Array<{id:string,section:string,path:string,headline:string,detail:string}>
  * }|null}
  */
-export function sourcesForFinding(findingKey) {
+export function sourcesForFinding(findingKey, { serves = null } = {}) {
   const entry = Object.hasOwn(FINDING_SOURCES, findingKey) ? FINDING_SOURCES[findingKey] : null;
   if (!entry) return null;
+
+  /* THE JURISDICTION TEST ARRIVES AS A PREDICATE, IT IS NOT IMPORTED (§3.100).
+     This file is frozen data and `test/uc04DecisionSources.test.js` asserts it
+     imports NOTHING — the sibling assertion being that policyEngine, riskMatrix,
+     approvalPolicy and workflow must never import THIS, "a citation must never
+     be able to change an outcome". Reaching the other way, for SCHENGEN out of
+     riskMatrix.js, would have coupled the source map to the gate engine in
+     exactly the direction that guard exists to keep clear. So the caller
+     supplies `serves`; see src/uc04/sourceJurisdiction.js.
+
+     Absent ⇒ everything is served, which is what every caller did before there
+     was a filter at all. */
+  const keep = typeof serves === "function" ? serves : () => true;
+  const cited = entry.cite.filter((c) => keep(c.source));
+  const excluded = entry.cite.length - cited.length;
 
   return {
     finding: findingKey,
     label: entry.label,
     method: RETRIEVAL_METHOD,
-    citations: entry.cite.map((c) => {
+    /* EVERY DOCUMENT EXCLUDED IS A STATEMENT, NOT AN EMPTY BOX. The group is
+       still returned, and its CAVEATS still render — which is the whole reason
+       it is not returned as null. On a Germany → Mexico trip this repository
+       holds no residence test for either country, so every citation drops; C-12,
+       the contradiction recording that ONE 183-in-365 line stands in for four
+       different domestic tests, applies to that trip MORE than to a sourced one,
+       and dropping the group would have taken the warning with the citations. */
+    citationsExcludedForRoute: excluded,
+    noCitationForRoute:
+      cited.length === 0 && entry.cite.length > 0
+        ? "Every document mapped to this finding governs other jurisdictions, so none is shown for this " +
+          "route — citing one would dress an unrelated authority as the rule for this trip. This is a " +
+          "statement about THIS finding's own reading list and not about the shelf: material for this " +
+          "pair may well be cited under another finding on this page."
+        : null,
+    citations: cited.map((c) => {
       const doc = SOURCE_LIBRARY[c.source];
       return {
         sourceId: doc.id,

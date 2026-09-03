@@ -379,11 +379,19 @@ export function evaluate({
 // prose — it is the string in `audit_log`, in the metrics exception ranking
 // and in the n8n port.
 //
-// NOTE the tiers this ladder crosses: positions 1–2 escalate, 3–12 BLOCK (no
-// approval can override them), 13 escalates to Mobility Legal, and 14 is the
-// only rung that opens a specialist approval. `means` distinguishes "a human
-// must weigh this" from "this cannot be granted by anyone", because those look
-// identical from a slug.
+// NOTE the tiers this ladder crosses: positions 1–2 escalate, 3–15 BLOCK (no
+// approval can override them), 16 escalates on a pair the matrix has no rules
+// for at all, 17 escalates a high-risk pair to Mobility Legal, and 18 is the
+// outcome rung. `means` distinguishes "a human must weigh this" from "this
+// cannot be granted by anyone", because those look identical from a slug.
+//
+// CORRECTED 2026-08-31, and every number in the previous version was wrong: it
+// described a 14-rung ladder ending in "the only rung that opens a specialist
+// approval", and the ladder has been 18 rungs for some time — with NO rung that
+// opens a specialist approval, since §3.94 established that no stage this
+// system can reach approves a work authorization at all. Nothing renders this
+// comment, which is what makes a stale one expensive: it is the map the next
+// person edits the ladder from.
 // ---------------------------------------------------------------------------
 export const GATE_SEQUENCE = Object.freeze([
   {
@@ -512,7 +520,13 @@ export const GATE_SEQUENCE = Object.freeze([
     position: 15,
     reason: "risk_matrix_blocked",
     gate: "risk_matrix",
-    checks: "—",
+    // AN EM DASH IS NOT A DESCRIPTION, and it walked through the guard that
+    // exists to say so: test/gateLadder.test.js required `checks.length > 0`
+    // and "—" is length 1, while `means` two lines down was guarded at > 20.
+    // So the ladder rendered this rung as "15. risk_matrix passed — Checks: —":
+    // a bug canary, presented to a specialist as a check that ran and cleared
+    // with nothing to say. The guard is now > 20 for both fields.
+    checks: "the risk matrix never reports a block without naming which rule blocked it",
     means:
       "A fallback that the risk matrix cannot actually produce today: it only ever reports 'blocked' with at least one named reason, and that named reason is used instead. Seeing this slug on a real case means the matrix blocked something without saying why, which is a bug worth reporting rather than a decision to explain to the requester.",
   },
@@ -537,8 +551,28 @@ export const GATE_SEQUENCE = Object.freeze([
     reason: "all_gates_passed",
     gate: "outcome",
     checks: "every gate above passed and the assessed risk is low or medium",
+    // REWRITTEN 2026-08-31, AND THE OLD SENTENCE WAS FLATLY FALSE IN THE
+    // LOUDEST POSITION ON THE PAGE. It read: "a dossier was prepared for a
+    // mobility specialist to approve. The workation is NOT approved yet — a
+    // named human still has to approve it". The 2026-08-30 three-stage rework
+    // (§3.94, qa/HUMAN-DECISIONS-REQUIRED.md §K14) established that NO mobility
+    // specialist approves anything at any stage this system can reach: the only
+    // work-authorization decision Remote's API accepts is the customer's own
+    // manager's, made in Remote's product, and `approved_by_remote` is a status
+    // Remote publishes no endpoint to set. That pass rewrote the ZAF panel and
+    // src/uc04/server.js and never touched this string — so the panel said
+    // "Nobody approves this here" while the sentence at the top of the same
+    // page, which is this one, told the reader four inches above that a named
+    // human still had to approve it.
+    // NOTE THE VOCABULARY, WHICH IS NOT A STYLE CHOICE. This string is
+    // requester-facing — the portal prints it as "What happened" to the
+    // employee who filed the trip — and test/portalRequesterFacts.test.js bans
+    // "API" and "endpoint" from anything they read. The first draft of this
+    // rewrite used both and was caught by that guard, which is the guard doing
+    // its job: the reason no approval happens here is a fact about who owns the
+    // decision, and a requester does not need to hear it in terms of wiring.
     means:
-      "Every check passed, so a dossier was prepared for a mobility specialist to approve. The workation is NOT approved yet — a named human still has to approve it, and the risk flags on the case are what they are being asked to weigh.",
+      "Every check passed, so the case is prepared and nothing is blocking it. It is NOT approved yet, and it will not be approved here: that decision belongs to the employer, and it is made by the customer's own manager in Remote's own product. What the checks above buy is a case somebody can decide from — not a decision.",
   },
 ]);
 

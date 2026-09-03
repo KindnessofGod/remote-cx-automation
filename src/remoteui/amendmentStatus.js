@@ -61,9 +61,19 @@ export const STATES = Object.freeze({
  * than as two hand-written branches so "how many signatures does this need"
  * has one answer and a reader can count it.
  */
+//
+// SLOT 1 IS THE EMPLOYER'S SIGNATORY, and the label says so (2026-09-02,
+// `[A-2]` in qa/contracts/UC-06-acceptance.md). The ROLE ID stays
+// `customer_admin` — it is the key in `APPROVER_ROLES`, in `audit_log` and in
+// the n8n graph, and renaming a live entitlement key drops every approve to
+// `approver_entitlement_not_configured` (contract §18, F3). What changed is the
+// word a requester reads: the admin who filed the request saw "Customer Admin:
+// not yet signed" on their own tracking page and read that THEY were the
+// missing signature — the one person UC-06 refuses from that slot by name
+// (`requester_cannot_approve`).
 const SLOTS = Object.freeze([
-  { key: "adminApproval", role: "customer_admin", label: "Customer Admin" },
-  { key: "payrollApproval", role: "payroll_specialist", label: "Payroll Specialist" },
+  { key: "adminApproval", role: "customer_admin", label: "Employer's signatory" },
+  { key: "payrollApproval", role: "payroll_specialist", label: "Remote payroll specialist" },
 ]);
 
 /**

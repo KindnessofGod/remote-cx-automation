@@ -28,6 +28,7 @@
 // classifiers injected everywhere, in-memory stores. No test may reach OpenAI.
 // ---------------------------------------------------------------------------
 
+import { shortReference } from "../src/shared/publicReference.js";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 
@@ -404,7 +405,17 @@ test("UC-02: a duplicate refusal names the expense it duplicates", async () => {
   const text = textOf(second.decisionFacts);
   assert.match(text, /exp_dup_a_102/, "the earlier expense id — the pointer to the original");
   assert.match(text, /t-dup-1/, "its ticket, so the reviewer can open it");
-  assert.ok(text.includes(first.storeId), "its store row id, for the audit viewer");
+  // SHORTENED, NOT DROPPED (2026-08-31). This asserted the FULL store-row UUID
+  // appeared in the text. It is a customer-facing panel, so the reference is now
+  // rendered as its first block — a PREFIX of the real id, which still resolves
+  // by prefix search, so the pointer does exactly the job this assertion is
+  // about: the reviewer can open the earlier record instead of searching for a
+  // row they have no key for. See test/zafNoDeveloperArtifacts.test.js.
+  assert.ok(
+    text.includes(shortReference(first.storeId)),
+    "its store row reference, for the audit viewer"
+  );
+  assert.ok(!text.includes(first.storeId), "the full UUID is back on a customer-facing panel");
 });
 
 test("UC-02: a currency refusal names BOTH currencies", async () => {

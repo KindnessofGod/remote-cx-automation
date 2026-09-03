@@ -31,6 +31,7 @@ import { dirname, join } from "node:path";
 import vm from "node:vm";
 import { evaluate } from "../src/uc04/policyEngine.js";
 import { RESTRICTED_JURISDICTIONS } from "../src/uc04/riskMatrix.js";
+import { draftSummaryTemplate } from "../src/uc04/requestParser.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GATES_PATH = join(__dirname, "..", "workflows", "nodes-uc04", "workationGates.js");
@@ -593,6 +594,68 @@ const SCENARIOS = [
       hasContractSigningAuthority: false,
     },
   },
+  // --- THE SANCTIONS GATE'S PRECEDENCE, not just its membership -------------
+  // Every restricted-jurisdiction row above uses a permission-granted
+  // employment and well-formed factors, so BOTH copies reach the risk matrix
+  // and agree there. That made the table blind to the thing that was actually
+  // wrong: src/uc04/policyEngine.js screens the destination in its OWN gate,
+  // third, before employer permission and before factor validation, while the
+  // n8n port had no such gate at all and reached `sanctioned_region` only from
+  // inside classifyRisk() — four gates later, and only on a request that had
+  // already cleared the two gates below.
+  //
+  // Reproduced on 2026-08-31, before the port gained the gate:
+  //
+  //     destination IR + workation_permission:false
+  //       src/uc04/policyEngine.js  -> blocked / sanctioned_region
+  //       workflows/nodes-uc04/...  -> blocked / employer_permission_not_granted
+  //
+  // Same DECISION — so nothing went red, no alert fired, and the parity table
+  // above passed — and a different REASON on the customer's ticket. A
+  // specialist reading `employer_permission_not_granted` goes looking for a
+  // permissions problem and never learns the destination was sanctioned. That
+  // is finding F-13, which policyEngine.js's header records fixing "in the one
+  // file that had not had it applied"; it was applied WITHIN src and never
+  // BETWEEN the two copies, and the port stayed wrong for thirteen days.
+  //
+  // These two rows are the shape the table was missing: a sanctioned
+  // destination paired with a LOWER gate that would also have fired. Relative
+  // parity alone would not be enough (two copies that both lost the gate would
+  // agree), so both carry an explicit `expect`.
+  {
+    name: "sanctions gate OUTRANKS employer permission (IR + permission not granted)",
+    expect: { decision: "blocked", reason: "sanctioned_region", flags: ["sanctioned_region"] },
+    employmentOver: { custom_fields: { workation_permission: false } },
+    factors: {
+      homeCountry: "NL",
+      nationality: "NL",
+      destination: { country: "IR" },
+      startDate: "2026-10-01",
+      endDate: "2026-10-10",
+      visaType: "business_visa",
+      jobDuties: "engineering",
+      hasContractSigningAuthority: false,
+    },
+  },
+  {
+    // The second lower gate, and the one where `risk` must stay NULL: the
+    // factors are malformed, so nothing can score them, and both copies say so
+    // rather than manufacturing an absence. `visaType` is not a member of
+    // VALID_VISA_TYPES, which is exactly the shape the portal's own form has
+    // produced (three of its options were not in the set).
+    name: "sanctions gate OUTRANKS factor validation (IR + invalid factors, risk stays null)",
+    expect: { decision: "blocked", reason: "sanctioned_region", flags: ["sanctioned_region"] },
+    factors: {
+      homeCountry: "NL",
+      nationality: "NL",
+      destination: { country: "IR" },
+      startDate: "2026-10-01",
+      endDate: "2026-10-10",
+      visaType: "not_a_real_visa_type",
+      jobDuties: "engineering",
+      hasContractSigningAuthority: false,
+    },
+  },
   // --- F-32: a length that cannot be derived is null in BOTH copies ---------
   // Against the pre-fix node body these rows fail on the tripDays comparison
   // added above (0 !== null) while decision/reason/flags all agree — which is
@@ -786,11 +849,32 @@ test("summary uses the deterministic template, never an LLM call", () => {
   const b = runWorkationGatesNode({ request: requestFor(), employmentResponse: employmentResponse() });
   assert.equal(a.summary, b.summary);
   assert.match(a.summary, /Risk-matrix level: low/);
-  assert.match(a.summary, /specialist's approval/);
+  // WAS `/specialist's approval/` UNTIL 2026-08-31, and it was asserting the
+  // defect. A `ready_for_approval` UC-04 request waits on the CUSTOMER'S OWN
+  // MANAGER, in Remote's own product (UC-04.md §1a) — not on a Remote mobility
+  // specialist, who `src/uc04/approvalPolicy.js` refuses and whose sidebar
+  // panel offers no approve control. The DECISION vocabulary this file exists
+  // to pin is untouched; only the prose moved. The corrected sentence and every
+  // phrase that must never come back are pinned in
+  // test/n8nUc04StageVocabulary.test.js.
+  assert.match(a.summary, /the customer's own manager/);
 });
 
-test("blocked / escalated cases don't claim a 1-click approval path in the summary", () => {
-  // Blocked: the matrix's "visitor visa blocks remote work" rule.
+test("blocked / escalated summaries name the cause and claim no approval path at all", () => {
+  // REWRITTEN 2026-08-31. The previous version asserted
+  // /Blocked by the risk matrix/ and /Mobility Legal Tier-2/ — it was PINNING
+  // the two defects, in a test whose own name said it was guarding against a
+  // false approval claim:
+  //   - "Blocked by the risk matrix" is accurate for 5 of the 12 reachable
+  //     blocked reasons and FALSE for `factors_invalid`, where `risk` is null.
+  //   - "not open to 1-click approval here" implies a slower approval exists in
+  //     Zendesk. None does, on any UC-04 decision, on any surface.
+  //   - "Mobility Legal Tier-2" is not a group name; the live group is
+  //     `Mobility & Legal (Tier-2)` (id 99900000000009).
+  // The test name was right and its assertions were one abstraction too shallow
+  // — it checked WHICH WORDS appeared rather than what they claimed.
+
+  // Blocked, matrix on merit: the matrix really did run, so it may be named.
   const blocked = runWorkationGatesNode({
     request: requestFor({
       factors: {
@@ -807,9 +891,41 @@ test("blocked / escalated cases don't claim a 1-click approval path in the summa
     employmentResponse: employmentResponse(),
   });
   assert.equal(blocked.decision, "blocked");
-  assert.match(blocked.summary, /Blocked by the risk matrix/);
+  assert.match(blocked.summary, /Blocked by the risk matrix \(/, "a real matrix refusal should still name the matrix");
+  assert.match(blocked.summary, new RegExp(`\\(${blocked.reason}\\)`), "the summary must name the deciding reason");
 
-  // Escalated: the matrix's "high PE risk" path.
+  // Blocked, NOTHING SCORED. `visaType` is outside VALID_VISA_TYPES — the exact
+  // shape the portal's own form has produced — so the request is refused on
+  // completeness and `risk` is null. The summary must not claim the matrix ran.
+  const incomplete = runWorkationGatesNode({
+    request: requestFor({
+      factors: {
+        homeCountry: "NL",
+        nationality: "NL",
+        destination: { country: "PT" },
+        startDate: "2026-09-01",
+        endDate: "2026-09-10",
+        visaType: "not_a_real_visa_type",
+        jobDuties: "engineering",
+        hasContractSigningAuthority: false,
+      },
+    }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(incomplete.decision, "blocked");
+  assert.equal(incomplete.reason, "factors_invalid");
+  assert.equal(incomplete.risk, null, "the matrix must not have run");
+  assert.ok(
+    !incomplete.summary.includes("Blocked by the risk matrix"),
+    `the summary claims a computation that never happened: ${incomplete.summary}`
+  );
+  assert.match(incomplete.summary, /the risk matrix did not run on this request/);
+  assert.match(incomplete.summary, /nothing was refused on its merits/);
+  // The self-contradiction that was live: "Risk-matrix level: unknown." one
+  // clause before "Blocked by the risk matrix."
+  assert.match(incomplete.summary, /Risk-matrix level: unknown\./);
+
+  // Escalated: names the real group, and claims no approval path of any speed.
   const escalated = runWorkationGatesNode({
     request: requestFor({
       factors: {
@@ -826,7 +942,141 @@ test("blocked / escalated cases don't claim a 1-click approval path in the summa
     employmentResponse: employmentResponse(),
   });
   assert.equal(escalated.decision, "escalate");
-  assert.match(escalated.summary, /Mobility Legal Tier-2/);
+  assert.match(escalated.summary, /Mobility & Legal \(Tier-2\)/, "must name the group as the account spells it");
+  assert.match(escalated.summary, /no approve\/decline path here/);
+  assert.ok(!escalated.summary.includes("1-click"), "must not imply a slower approval exists in Zendesk");
+
+  // CROSS-COPY: src carries the identical branches and its own comment says
+  // "If you edit one, edit both." For a day the port was fixed and src was not.
+  for (const run of [blocked, incomplete, escalated]) {
+    const src = draftSummaryTemplate({
+      factors: run.factors,
+      riskLevel: run.risk?.riskLevel ?? "unknown",
+      tripDays: run.risk?.tripDays ?? null,
+      approvalRoute: run.approvalRoute,
+      reason: run.reason,
+    });
+    const clause = run.summary.slice(run.summary.lastIndexOf("Blocked") >= 0 ? run.summary.lastIndexOf("Blocked") : run.summary.lastIndexOf("Escalated"));
+    assert.ok(src.includes(clause), `src and the n8n port disagree.\n  src : ${src}\n  n8n : ${run.summary}`);
+  }
+});
+
+test("a sanctions block names the DESTINATION, in both copies, not the risk matrix", () => {
+  // THE CROSS-COPY PIN, and it is a real one — unlike `assert.equal(a.summary,
+  // b.summary)` above, which compares two runs of the SAME (n8n) body and so
+  // only proves byte-stability. Here src's exported draftSummaryTemplate and
+  // the n8n node's own emitted summary are compared against each other.
+  //
+  // WHAT WENT WRONG WITHOUT IT. src/uc04/requestParser.js has special-cased
+  // `sanctioned_region` since the sanctions gate existed; the port never did,
+  // so a sanctions block's stored summary said "Blocked by the risk matrix"
+  // — naming a computation as the cause of a decision the matrix did not make.
+  // Observed on a REAL execution (11038, unpinned): the note on the ticket read
+  // "Risk-matrix level: blocked. Blocked by the risk matrix — not open to
+  // approval here." for a destination refused on jurisdiction.
+  const factors = {
+    homeCountry: "NL",
+    nationality: "NL",
+    destination: { country: "IR" },
+    startDate: "2026-10-01",
+    endDate: "2026-10-10",
+    visaType: "business_visa",
+    jobDuties: "engineering",
+    hasContractSigningAuthority: false,
+  };
+  const node = runWorkationGatesNode({
+    request: requestFor({ factors }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(node.decision, "blocked");
+  assert.equal(node.reason, "sanctioned_region");
+
+  const src = draftSummaryTemplate({
+    factors,
+    riskLevel: node.risk?.riskLevel ?? "unknown",
+    tripDays: node.risk?.tripDays ?? null,
+    approvalRoute: node.approvalRoute,
+    reason: node.reason,
+  });
+
+  // THE CLAUSE, in both copies. Matched on the invariant part rather than the
+  // whole sentence, because the two templates DO differ on how they render a
+  // country — and that difference is recorded below rather than smoothed over.
+  const CLAUSE = /is a sanctioned\/restricted destination; not open to approval here\./;
+  assert.match(src, CLAUSE, `src summary lacks the sanctions clause: ${src}`);
+  assert.match(node.summary, CLAUSE, `n8n summary lacks the sanctions clause: ${node.summary}`);
+
+  // And the phrase that must NOT be there. Asserted separately from the
+  // positive: a copy could gain the right sentence and keep the wrong one.
+  assert.ok(!src.includes("Blocked by the risk matrix"), "src still blames the risk matrix");
+  assert.ok(!node.summary.includes("Blocked by the risk matrix"), "n8n still blames the risk matrix");
+
+  // Each names the destination in its own vocabulary — the point of the fix is
+  // that the DESTINATION is named at all, not which spelling of it.
+  assert.match(src, /Blocked — Iran is/);
+  assert.match(node.summary, /Blocked — IR is/);
+
+  // The composed internal note interpolates the summary, so the ticket a real
+  // customer receives carries the corrected clause too — this is the one that
+  // was observed wrong in production (execution 11038).
+  assert.match(node.internalNote, CLAUSE, "the composed note still carries the wrong cause");
+});
+
+test("KNOWN DIVERGENCE: the two summary templates do not render alike, and this records it", () => {
+  // FOUND 2026-08-31 by the test above failing on its first, stricter form.
+  // These two templates were ported from one another and have since drifted in
+  // ways no test looked at, because test/n8nUc04Parity.test.js's scenario table
+  // compares decision / reason / flags / riskLevel / factorIssues and NOT the
+  // prose, and its one summary assertion (`assert.equal(a.summary, b.summary)`)
+  // compares two runs of the n8n body against each other.
+  //
+  // TWO DIFFERENCES, both live today:
+  //   1. src renders COUNTRY NAMES ("Netherlands", "Iran"); the port renders
+  //      ISO CODES ("NL", "IR"). So the same request produces "Workation
+  //      request from Netherlands to Iran" on the Node path and "from NL to IR"
+  //      on the n8n path.
+  //   2. src describes the visa and duties in prose — "The travel document the
+  //      requester stated is X, and the work they describe doing there is Y" —
+  //      where the port prints "Visa type: X; job duties: Y".
+  //
+  // NEITHER IS WRONG, which is why this is a recorded divergence and not a fix:
+  // both are honest about the same facts, and picking a winner means editing a
+  // live graph body or a live Node path for prose alone. It is filed so that a
+  // future pass reconciling them starts from a measurement instead of a
+  // surprise — and so the drift cannot QUIETLY widen: this test fails the
+  // moment either copy changes shape.
+  const factors = {
+    homeCountry: "NL",
+    nationality: "NL",
+    destination: { country: "PT" },
+    startDate: "2026-10-01",
+    endDate: "2026-10-10",
+    visaType: "business_visa",
+    jobDuties: "engineering",
+    hasContractSigningAuthority: false,
+  };
+  const node = runWorkationGatesNode({
+    request: requestFor({ factors }),
+    employmentResponse: employmentResponse(),
+  });
+  const src = draftSummaryTemplate({
+    factors,
+    riskLevel: node.risk?.riskLevel ?? "unknown",
+    tripDays: node.risk?.tripDays ?? null,
+    approvalRoute: node.approvalRoute,
+    reason: node.reason,
+  });
+
+  assert.match(src, /from Netherlands to Portugal/, "src stopped rendering country names");
+  assert.match(node.summary, /from NL to PT/, "the n8n port stopped rendering ISO codes");
+  assert.match(src, /The travel document the requester stated is/, "src's visa prose changed");
+  assert.match(node.summary, /Visa type: business_visa; job duties: engineering/, "the port's visa prose changed");
+
+  // The one thing that must NOT diverge: the facts underneath. Same trip
+  // length, same decision — the templates may word it differently, they may not
+  // disagree about it.
+  assert.match(src, /10 day\(s\)/);
+  assert.match(node.summary, /10 day\(s\)/);
 });
 
 test("the n8n Code node body is syntactically valid", () => {
@@ -892,4 +1142,127 @@ test("the n8n node's restricted-jurisdiction set is IDENTICAL to src/'s", () => 
     "the deployed node and src/uc04/riskMatrix.js block different jurisdictions. " +
       "Whichever list is shorter is a live sanctions gap; reconcile them before shipping."
   );
+});
+
+// ---------------------------------------------------------------------------
+// THE IDENTITY DERIVATION, WHICH THE SCENARIO TABLE ABOVE CANNOT SEE
+// ---------------------------------------------------------------------------
+// The per-scenario comparison feeds policyEngine.evaluate() the identity the
+// NODE derived, so that the gates are what is being compared. That is the right
+// isolation and it is also a blind spot: a divergence in the identity rule
+// itself passes every row above. UC-04 gained a second accepted relationship on
+// 2026-08-30 — the employee who IS the subject may file their own request, per
+// Remote's own object and docs/use-cases/UC-04.md §1 — and it had to be added
+// to both copies. These rows drive the node's own derivation directly.
+//
+// (The node keeps a THIRD leg the Node path does not have: an
+// `authenticatedEmail` matched against the record's email, which exists because
+// this graph has a Zendesk intake and a ticket carries no Remote session. That
+// asymmetry is deliberate and predates this; see the node's own comment.)
+
+test("n8n identity: the employee who IS the subject verifies", () => {
+  const out = runWorkationGatesNode({
+    request: requestFor({ session: { authenticatedEmploymentId: "emp_active_001" } }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(out.decision, "ready_for_approval", `an employee's own request was refused: ${out.reason}`);
+  assert.ok(!out.flags.includes("identity_not_verified"));
+});
+
+test("n8n identity: an employee session naming ANOTHER employment does not verify", () => {
+  const out = runWorkationGatesNode({
+    request: requestFor({ session: { authenticatedEmploymentId: "emp_active_003" } }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(out.decision, "escalate");
+  assert.equal(out.reason, "identity_not_verified");
+});
+
+test("n8n identity: the session is matched against the RECORD's id, never the requested one", () => {
+  // THE TRAP THIS NODE HAS AND src/ DOES NOT. Its `employment.id` deliberately
+  // falls back to `request.employmentId` so a downstream node always has
+  // something to name — so comparing the session against THAT would compare a
+  // session's claim with a body's claim and call their agreement an identity.
+  // Here the Remote read produced nothing at all: the two claims agree and
+  // there is no record behind either.
+  const out = runWorkationGatesNode({
+    request: requestFor({ employmentId: "emp_missing", session: { authenticatedEmploymentId: "emp_missing" } }),
+    employmentResponse: {},
+  });
+  assert.equal(out.reason, "identity_not_verified");
+});
+
+test("n8n identity: fails closed on absent and empty ids on either side", () => {
+  const noneEither = runWorkationGatesNode({
+    request: requestFor({ session: { authenticatedEmploymentId: null } }),
+    employmentResponse: employmentResponse({ id: null, company_id: null }),
+  });
+  assert.equal(noneEither.reason, "identity_not_verified", "two absent ids verified an identity");
+
+  const emptyEither = runWorkationGatesNode({
+    request: requestFor({ session: { authenticatedEmploymentId: "   " } }),
+    employmentResponse: employmentResponse({ id: "   ", company_id: null }),
+  });
+  assert.equal(emptyEither.reason, "identity_not_verified", "whitespace matched whitespace");
+});
+
+test("n8n identity: the company-admin leg is unchanged, including the company boundary", () => {
+  const ok = runWorkationGatesNode({ request: requestFor(), employmentResponse: employmentResponse() });
+  assert.equal(ok.decision, "ready_for_approval");
+
+  const other = runWorkationGatesNode({
+    request: requestFor({ session: { companyId: "co_other", authenticatedAdminId: "admin_jane" } }),
+    employmentResponse: employmentResponse(),
+  });
+  assert.equal(other.reason, "identity_not_verified");
+});
+
+// ---------------------------------------------------------------------------
+// THE STAGE SENTENCE, PINNED ACROSS BOTH COPIES (2026-08-31)
+// ---------------------------------------------------------------------------
+// The sentence naming WHO DECIDES A `ready_for_approval` REQUEST AND WHERE was
+// wrong in both copies — "Awaiting one mobility specialist's approval" — on a
+// request that waits on the CUSTOMER'S OWN MANAGER in Remote's own product. It
+// survived the 2026-08-30 three-stage correction because it is PROSE: it changes
+// no decision, so nothing in this file compared it.
+//
+// AND THE TEST ABOVE LOOKS LIKE IT WOULD HAVE CAUGHT IT AND DOES NOT.
+// `assert.equal(a.summary, b.summary)` compares two runs of the n8n node against
+// EACH OTHER — a byte-stability check. Neither side is src/. So for one day the
+// port said "the customer's own manager" and requestParser.js still said
+// "mobility specialist", and the whole suite was green.
+//
+// THE PIN IS THE SENTENCE, NOT THE SUMMARY. The two templates are deliberately
+// different shapes (prose here, fields there), so asserting the whole strings
+// equal would fail for a reason that is not a defect. What must never diverge
+// is the actor and the surface.
+test("the stage sentence agrees between src/uc04/requestParser.js and the n8n port", async () => {
+  const { draftSummaryTemplate } = await import("../src/uc04/requestParser.js");
+  const args = {
+    factors: requestFor().factors,
+    riskLevel: "low",
+    tripDays: 12,
+    approvalRoute: "specialist_approval",
+    reason: "all_gates_passed",
+  };
+  const fromSrc = draftSummaryTemplate(args);
+  const fromNode = runWorkationGatesNode({ request: requestFor(), employmentResponse: employmentResponse() }).summary;
+
+  // Every phrase that carries the three-stage fact. Both copies must make all
+  // of these claims; a copy that drops one has stopped saying who decides.
+  for (const phrase of [
+    "the customer's own manager",
+    "Remote's own product",
+    "no Zendesk agent can make it",
+    "Remote's Mobility Team",
+    "never sent to Remote",
+  ]) {
+    assert.ok(fromSrc.includes(phrase), `src/uc04/requestParser.js lost: ${phrase}`);
+    assert.ok(fromNode.includes(phrase), `workflows/nodes-uc04/workationGates.js lost: ${phrase}`);
+  }
+
+  // And the phrase that must never come back, in either copy.
+  for (const [where, text] of [["src", fromSrc], ["n8n", fromNode]]) {
+    assert.doesNotMatch(text, /mobility specialist'?s? approval/i, `${where} reintroduced the wrong actor`);
+  }
 });

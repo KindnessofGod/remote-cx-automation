@@ -338,7 +338,7 @@
      turns out to be down. `polite` because none of these interrupt a decision
      the agent is in the middle of making. */
   root.setAttribute("role", "region");
-  root.setAttribute("aria-label", "Remote CX automation — case review");
+  root.setAttribute("aria-label", "Gatehouse CX automation — case review");
   root.setAttribute("aria-live", "polite");
 
   function renderLoading() {
@@ -433,15 +433,27 @@
     var word = CASE_RISK_WORDS[view.caseRisk];
     if (!word) return null;
     var line = el("p", "r-case-risk");
-    line.appendChild(el("strong", null, "This request: " + word + " risk"));
+    /* THE SUBJECT IS THE USE CASE WHEN NOTHING WAS RAISED, and saying "this
+       request" there is what made two honest numbers look like a disagreement
+       (2026-08-31). With no escalating flag, `caseRisk` is the STATIC baseline
+       out of riskEngine.js's USE_CASE_TIERS — a property of UC-04, not of this
+       trip. The only per-request assessment on the page is `basis.riskLevel`,
+       printed at the very bottom as "Risk rollup: low" under a note telling the
+       reader to read the dimensions instead. So the loudest line called the
+       request medium, the quietest called it low, and nothing said they were
+       different quantities. Reworded rather than removed: both facts are worth
+       having, and the fix is that each names its own subject. */
+    line.appendChild(
+      el("strong", null, (view.caseRiskEscalated ? "This request: " : "This use case: ") + word + " risk")
+    );
     var baseline = USE_CASE_TIERS[view.useCaseTier] ? CASE_RISK_WORDS[view.useCaseTier] : null;
     var count = typeof view.escalatingFlagCount === "number" ? view.escalatingFlagCount : null;
     var flags = count === null ? "flags" : count + (count === 1 ? " flag" : " flags");
     var detail;
     if (!view.caseRiskEscalated) {
       detail =
-        " — this use case's own " + (baseline || "baseline") +
-        " baseline, and no flags were raised on this request. It does not change what may be executed.";
+        " — its own " + (baseline || "baseline") +
+        " baseline, and no flags were raised on this request, so it stays there. This is a property of the use case, not an assessment of this request; what was assessed is in the findings below. It does not change what may be executed.";
     } else if (baseline && baseline !== view.caseRisk) {
       detail =
         " — raised above this use case's " + baseline + " baseline by " + flags +
@@ -521,6 +533,31 @@
       badgeKey = review.status;
       badgeLabel = REVIEW_STATUS_LABELS[review.status];
     }
+    /* THE SETTLEMENT THAT NEVER REACHES `review_queue`, and the reason the fix
+       above did not cover it (2026-09-01, rca reported by the project owner
+       driving UC-03 -> UC-04 -> approve -> Zendesk).
+
+       `view.review` is the SHARED review queue. UC-04's settlement is not in
+       it: the customer's manager approves in Remote's own product and the
+       verdict lands on `uc04_authorizations` itself. So the branch above never
+       fired, `c.decision` stayed `ready_for_approval` forever, and a trip
+       approved by admin_jane at 17:02 was still headed "Awaiting specialist
+       approval" — above a settled block on the SAME panel naming the approver
+       and the minute. Two true sentences on one screen contradicting each
+       other, which is word for word what rca-il7 was about.
+
+       THE WORDS ARE THE SERVER'S. `settled.badge` is composed in
+       src/uc04/approvalPolicy.js's settledFacts(); this file derives no status
+       word from `headline` or from any other prose, exactly as it derives none
+       anywhere else. A server that sends no `badge` changes nothing here.
+
+       LAST, so it wins over the review-queue branch on any use case that
+       somehow had both — a settlement on the record itself is the later and
+       more specific fact. */
+    if (view.settled && view.settled.badge) {
+      badgeKey = view.settled.state || badgeKey;
+      badgeLabel = view.settled.badge;
+    }
     badges.appendChild(el("span", "badge decision-" + badgeKey, badgeLabel));
     header.appendChild(badges);
 
@@ -599,11 +636,16 @@
   };
 
   /** One labelled line with the server's own sentence beneath it. */
-  function subjectRow(parent, label, value, note) {
+  function subjectRow(parent, label, value, note, valueClass) {
     var row = el("div", "r-fact" + (value ? "" : " is-unknown"));
     var head = el("p", "r-fact-head");
     head.appendChild(el("span", "r-fact-label", label));
-    head.appendChild(el("span", "r-fact-value", value || "Not stated"));
+    /* AN IDENTIFIER IS DRAWN AS ONE. Every other value in this card is a fact
+       about a person in words — "Data Scientist", "active", "Chris Lee" — so a
+       raw session id set in the same face reads as another one of those, which
+       is how "Filed by admin_jane" came to look like a name the system had
+       resolved. See renderEmployee's filedBy block. */
+    head.appendChild(el("span", valueClass ? "r-fact-value " + valueClass : "r-fact-value", value || "Not stated"));
     row.appendChild(head);
     if (note) appendOnce(row, el("p", "muted r-small", note));
     parent.appendChild(row);
@@ -614,6 +656,157 @@
    * neither field — seven of the nine publish no `employee` today, and a panel
    * that drew an empty card for them would be claiming the read failed.
    */
+  /**
+   * The linked Remote work-authorization request — the one the employee raised,
+   * read live at the moment this panel opened (src/uc04/linkedRequest.js).
+   *
+   * ITS OWN CARD, NOT ROWS ON THE SUBJECT CARD, because its provenance is
+   * different: the subject card is the EMPLOYMENT record, this is the REQUEST,
+   * and they can disagree. Two provenances under one heading is how a reader
+   * stops being able to say where a fact came from.
+   *
+   * EVERY STATE RENDERS, INCLUDING THE ABSENCES. "There is no linked request"
+   * (the ordinary case for anything filed through this system's own portal),
+   * "Remote says it no longer exists" and "we could not ask" are three
+   * different facts, and the server sends a sentence for each. A card that
+   * appeared only when there was something to show would leave a specialist
+   * unable to tell the first from a panel that simply does not have the field.
+   */
+  function renderRemoteRequest(view) {
+    var request = view.remoteRequest;
+    if (!request || !request.finding) return null;
+
+    var box = el("section", "card r-subject-card");
+    box.appendChild(el("h3", "h3", "The request the employee raised in Remote"));
+
+    var fields = request.fields || null;
+    if (fields) {
+      // NAMED ONE BY ONE, never spread. A field Remote adds later must not
+      // appear on an approval screen with no label and nobody's decision
+      // behind it.
+      // `subjectRow`'s fourth argument is a NOTE, and it renders whether or not
+      // the value is present — so the absence sentence is passed ONLY when
+      // there is an absence. The same shape renderEmployee uses for its own
+      // fields; getting it wrong prints "not stated on the request" underneath
+      // a stated value.
+      var stated = function (label, value, absence) {
+        subjectRow(box, label, value, value ? null : absence);
+      };
+      stated("Travel document number", fields.travelDocumentNumber, "Remote holds no number for this request.");
+      stated("Work location", fields.workLocation, "Remote holds no work location for this request.");
+      stated(
+        "Will negotiate or sign contracts",
+        // TRISTATE. `false` is an answer and must render as "No"; absent is not
+        // an answer and must not render as one. A falsy check here would report
+        // an unanswered question as a confident no — the same defect the server
+        // side is written to avoid.
+        fields.willNegotiateOrSignContracts === true
+          ? "Yes"
+          : fields.willNegotiateOrSignContracts === false
+            ? "No"
+            : null,
+        "Unanswered on the request — not the same as no."
+      );
+      // A DATE, NOT A TIMESTAMP. `submitted_at` arrives as
+      // "2026-08-28T10:00:00Z"; a specialist reading when the employee filed
+      // this needs the day, and the machine-readable form printed in a row of
+      // plain-language facts reads as something nobody looked at.
+      stated(
+        "Submitted",
+        fields.submittedAt ? String(fields.submittedAt).slice(0, 10) : null,
+        "No submission time on the request."
+      );
+      stated("Status in Remote", fields.status, "No status on the request.");
+      stated("Reason given", fields.reason, "The employee gave no reason on the request.");
+      stated("Additional information", fields.additionalInformation, "Nothing added.");
+    }
+
+    // The provenance sentence is the server's, verbatim — including which of
+    // the four absences this is. Nothing here paraphrases it.
+    appendOnce(box, elOnce("p", "muted r-small", request.finding));
+    return box;
+  }
+
+  /**
+   * The three questions Remote's own RWA form asks, plus the work location.
+   *
+   * NO STATE MARK, NO TONE, NO VERDICT — and that is the design, not an
+   * omission. The server publishes no state for this block because nothing
+   * judged it: `src/uc04/activityProfile.js` normalises, bounds and describes,
+   * and the gate files are asserted not to import it at all. Drawing a chip
+   * here would be this bundle inventing an assessment, which is the one thing
+   * every renderer in this file is forbidden from doing.
+   *
+   * RENDERED WHEN IT WAS NOT ASKED, TOO. "This surface does not ask the
+   * question" and "asked, and left blank" are different facts about a request,
+   * and a card that appeared only when there was text would render them
+   * identically — as nothing.
+   */
+  function renderActivityProfile(view) {
+    var profile = view.basis && view.basis.activityProfile;
+    if (!profile || !profile.fields) return null;
+
+    var box = el("section", "card r-subject-card");
+    box.appendChild(el("h3", "h3", "What they will be doing there"));
+    profile.fields.forEach(function (field) {
+      subjectRow(box, field.label, field.value, field.value ? null : field.absence);
+    });
+    appendOnce(box, elOnce("p", "muted r-small", profile.finding));
+    return box;
+  }
+
+  /**
+   * Where the CUSTOMER has legal entities, and whether one of them is at the
+   * destination — the art. 15(2)(b) question.
+   *
+   * THESE ARE THE CLIENT'S ENTITIES AND THE HEADING SAYS SO. Remote's own
+   * employing entity is exposed by no endpoint this project has found, and
+   * printing one of these under a word like "Employer" is the defect recorded
+   * as K16. The label here is deliberately about the CUSTOMER.
+   *
+   * FIVE STATES, ALL RENDERED. "We could not ask" must never look like "they
+   * have none there": that is the reassuring answer from a comparison that
+   * never ran, and it is the exact shape of finding F-27 one endpoint over.
+   * The server sends a sentence for each and this paraphrases none of them.
+   */
+  function renderEmployerPresence(view) {
+    var presence = view.employerPresence;
+    if (!presence || !presence.finding) return null;
+
+    var box = el("section", "card r-subject-card");
+    box.appendChild(el("h3", "h3", "Where the customer has companies"));
+
+    var matched = presence.matched || [];
+    var countries = presence.entityCountries || [];
+    subjectRow(
+      box,
+      "An entity at the destination",
+      presence.state === "in_destination"
+        ? // NAMES ONLY. Falling back to `entity.id` here would print a raw UUID
+          // in a row of plain-language facts — the bare-UUID defect this panel
+          // already fixed once, and the one the linked-request sentence was
+          // caught making a few lines above.
+          matched
+            .map(function (entity) {
+              return entity.name;
+            })
+            .filter(Boolean)
+            .join(", ") || "Yes"
+        : presence.state === "elsewhere"
+          ? "No"
+          : null,
+      // The absence is the STATE's own sentence, not a word this file chose:
+      // "unknown" and "no" are the two answers that must never be confused.
+      presence.state === "in_destination" || presence.state === "elsewhere" ? null : "Unknown — see below."
+    );
+    if (countries.length) {
+      subjectRow(box, "Countries Remote lists entities in", countries.join(", "), null);
+    }
+
+    appendOnce(box, elOnce("p", "muted r-small", presence.finding));
+    return box;
+  }
+
   function renderEmployee(view) {
     var employee = view.employee || null;
     var requester = view.basis && view.basis.requester ? view.basis.requester : null;
@@ -670,13 +863,44 @@
          LONGFORM_FIELDS_CHARS), because a second set of numbers meaning the
          same thing is how the page came to have eight type sizes. */
       var notes = [];
-      function requesterRow(label, value, note) {
-        subjectRow(box, label, value, null);
+      function requesterRow(label, value, note, valueClass) {
+        subjectRow(box, label, value, null, valueClass);
         if (note) notes.push({ label: label, note: note });
       }
 
+      /* A NAME WHERE A NAME EXISTS, and the precedent is 190 lines up in this
+         same file: renderSubject already refuses to print "filed by <uuid>"
+         when the requester IS the employment — "the same UUID twice is not two
+         facts". Then this function printed it anyway, on the same page, for the
+         same id, six inches under a card resolving it to "Chris Lee".
+
+         SUBSTITUTED ONLY WHEN THE TWO IDS ARE THE SAME VALUE, so the name is
+         never asserted of a filer this page has not read a record for: a
+         company admin filing on someone else's behalf still shows their own
+         raw id, because nothing here knows who they are. The id is not lost —
+         "The case record" carries it verbatim, which is where somebody quoting
+         it into Remote goes. */
       var filedBy = requester.filedBy || {};
-      requesterRow("Filed by", filedBy.id ? String(filedBy.id) : null, filedBy.finding);
+      var subjectOfRecord = view.employee || {};
+      var filedByIsSubject =
+        filedBy.id && subjectOfRecord.employmentId && String(filedBy.id) === String(subjectOfRecord.employmentId);
+      var filedByValue = filedByIsSubject && subjectOfRecord.displayName
+        ? String(subjectOfRecord.displayName)
+        : filedBy.id
+          ? String(filedBy.id)
+          : null;
+      /* WHEN IT IS NOT A NAME, IT MUST NOT LOOK LIKE ONE. The substitution
+         above resolves the filer only when the two ids are the same value; a
+         company admin filing on someone else's behalf shows a raw session id,
+         because nothing here has read a record for them and this file must not
+         invent one. What it CAN do is stop the id being drawn like a name —
+         the owner read "Filed by admin_jane" straight after the bare-UUID
+         defect this substitution was built to fix, and the two look identical
+         at a glance while being opposite problems: that one had a name and
+         did not use it, this one has no name at all. The explanatory note
+         under "What each of these does not establish" already says what the
+         value is; this makes the row agree with it at a glance. */
+      requesterRow("Filed by", filedByValue, filedBy.finding, filedByIsSubject ? null : "r-fact-id");
 
       var actingFor = requester.actingFor || {};
       requesterRow("Acting for", ACTING_FOR_WORDS[actingFor.state] || null, actingFor.finding);
@@ -709,9 +933,16 @@
          truth is that the words exist and this table has no column for them.
          `whatItWouldTake` — the column to add — is not printed: it is a work
          item for whoever owns the store, not for the person deciding. */
+      /* "NOT STATED" WAS A FALSE CLAIM, AND THE CORRECTION WAS BEHIND A CLICK
+         (2026-08-31). Passing null fell through to subjectRow's default, so the
+         row asserted the requester said nothing — while the note directly
+         attached to it, which the disclosure below collapses, says the opposite:
+         the words exist, in the audit record, and this table has no column for
+         them. The comment above predicted exactly this misreading and the code
+         under it produced it. An absence has to name WHICH absence it is. */
       var statedReason = requester.statedReason || null;
       if (statedReason && statedReason.finding) {
-        requesterRow("The requester's own words", null, statedReason.finding);
+        requesterRow("The requester's own words", "Not kept with this decision", statedReason.finding);
       }
 
       var noteChars = 0;
@@ -795,6 +1026,13 @@
     passed: "passed",
     decided: "decided this",
     not_reached: "not reached",
+    /* A rung ABOVE the deciding one whose check could not run. UC-05's gate 9
+       compares the statute's notice with Remote's own days_of_notice, and when
+       Remote's figure was not read the ladder used to mark it "passed" —
+       directly beneath prose saying the comparison "has NOT been checked".
+       Position says the rung was reached; only the server knows whether it
+       evaluated anything, and it says so with this status. */
+    not_evaluated: "not evaluated",
   };
 
   /* State -> the word an agent reads, and the tone that word is drawn in.
@@ -878,7 +1116,18 @@
     unavailable: {
       word: "Not held",
       tone: "open",
-      means: "The check does not exist yet — nothing was ever consulted, so nothing here confirms or denies it.",
+      // "THE CHECK DOES NOT EXIST YET — NOTHING WAS EVER CONSULTED" was this
+      // sentence until 2026-08-31, and it was wrong for BOTH of its two users.
+      // UC-09's `pending_approval` branch consults the record at assessment
+      // time and again at the final signature, and holds no confirmation only
+      // BETWEEN them. UC-04's immigration dimension now reads the employment's
+      // `files[]` and reports what Remote holds — it stays `unavailable`
+      // because an identity document proves right to work in the country of
+      // employment and this dimension asks about the destination, which is a
+      // bound on what the evidence MEANS, not an admission that nothing was
+      // looked at. A shared state word must not assert how any one dimension
+      // reached it; the finding beside it says what was consulted.
+      means: "Nothing held here confirms or denies this. Read the finding for what was consulted and what it does not settle.",
     },
     not_assessed: {
       word: "Not assessed",
@@ -1046,7 +1295,7 @@
       el(
         "p",
         "muted r-small",
-        "They run top to bottom and the first refusal wins. So every gate above the one that decided passed — and every gate below it never ran, and has said nothing about this case in either direction."
+        "They run top to bottom and the first refusal wins. So every gate above the one that decided passed — or, where marked, was reached but could not evaluate anything — and every gate below it never ran, and has said nothing about this case in either direction."
       )
     );
 
@@ -1076,7 +1325,7 @@
    * every part of the account that is provenance rather than a finding.
    *
    * WHAT MOVED IN HERE AND WHY. Four separate blocks used to sit between the
-   * decision sentence and the controls: "Decided by gate 17 of 17 — outcome",
+   * decision sentence and the controls: "Decided by check 17 of 17 — outcome",
    * "That gate checks: …", the reason slug, the flag chips, and a disclosure
    * holding the ladder. Not one of them is something a specialist weighs. They
    * are how the decision is TRACED — the slug is the exact string in
@@ -1109,19 +1358,22 @@
       ? "How this was decided"
       : decidedBy.position === null || decidedBy.position === undefined
         ? "Decided by: " + decidedBy.gate
-        : "Decided by gate " + decidedBy.position + (total ? " of " + total : "") + " — " + decidedBy.gate;
+        // "check N of M", not "gate N of M": the position is one CHECK, and the
+        // gate it belongs to is the word after the dash. See the ladder heading.
+        : "Decided by check " + decidedBy.position + (total ? " of " + total : "") + " — " + decidedBy.gate;
     box.appendChild(el("summary", null, headline));
 
     if (decidedBy && decidedBy.checks) box.appendChild(el("p", "muted r-small", "That gate checks: " + decidedBy.checks));
     if (decidedBy && decidedBy.note) box.appendChild(el("p", "muted r-small", decidedBy.note));
 
-    // The audit strings, together, labelled as such. `reason-slug` keeps its
-    // class: it is the string somebody searches by, and prose that REPLACED it
-    // would make this panel readable and the system harder to trace.
-    if (view.case && view.case.reason) {
-      var slug = el("p", "muted r-small reason-slug", view.case.reason);
-      box.appendChild(slug);
-    }
+    /* THE REASON SLUG IS NO LONGER PRINTED (2026-08-31). `all_gates_passed` is
+       the audit string, and the two lines directly above it already say the
+       same thing in words a customer can read ("Decided by check 18 of 18 —
+       outcome", "That gate checks: every gate above passed…"). The old comment
+       here defended it as "the string somebody searches by" — true of a
+       specialist with database access, and this panel is shown to people who
+       have none. Nothing is lost from the audit trail: the slug is on the
+       `audit_log` row, which is where a searchable identifier belongs. */
     if (codes.length) {
       var list = el("ul", "flags");
       codes.forEach(function (flag) {
@@ -1131,11 +1383,35 @@
     }
 
     if (ladder.length) {
-      // rca-iih7 / D-31: counts distinct GATES (groupRungsByGate), not rows —
-      // `ladder.length` is 20 for UC-01 while the number this heading and the
-      // rendered rungs must agree on is 13. See groupRungsByGate's comment.
-      var gateCount = groupRungsByGate(ladder).length;
-      box.appendChild(el("p", "r-detail-head", "All " + gateCount + " gates, in the order they run"));
+      /* THE NUMBER IS RIGHT AND THE NOUN WAS WRONG (2026-08-31).
+         `groupRungsByGate` dedupes on POSITION, so this counts the rows that
+         will actually render — which is what rca-iih7 / D-31 required, and it
+         still holds: `ladder.length` is 20 for UC-01 while the rendered rungs
+         and this heading agree at 13. What it is NOT is a count of distinct
+         gates. UC-04 has 18 positions across 8 gate names — `risk_matrix`
+         appears ten times — so "All 18 gates" was a row count wearing the wrong
+         word, over ten consecutive rows all captioned `risk_matrix`.
+         "Checks" is what a position is; `gate` is the stage it belongs to, and
+         both are printed on every row so a reader can see the grouping. */
+      var stepCount = groupRungsByGate(ladder).length;
+      var gateNames = {};
+      var distinctGates = 0;
+      ladder.forEach(function (rung) {
+        if (rung.gate && !gateNames[rung.gate]) {
+          gateNames[rung.gate] = true;
+          distinctGates += 1;
+        }
+      });
+      box.appendChild(
+        el(
+          "p",
+          "r-detail-head",
+          "All " + stepCount + " checks, in the order they run" +
+            (distinctGates && distinctGates !== stepCount
+              ? " — grouped into " + distinctGates + " gates, named on each row"
+              : "")
+        )
+      );
       box.appendChild(renderGateLadder(ladder));
     }
     return box;
@@ -1219,28 +1495,148 @@
      finding whose basis you now know the limits of, not evidence for the
      opposite conclusion.
      ====================================================================== */
-  function renderSources(sources) {
+  /* -------------------------------------------------------------------------
+     A FINDING WITH NO SOURCE, SAID RATHER THAN LEFT BLANK
+     -------------------------------------------------------------------------
+     WHY THIS EXISTS (2026-08-30). Five use cases compute an `uncited` list —
+     the findings this repository deliberately records as resting on NO
+     citation, each with the reason — and until today not one of them reached a
+     screen. src/uc04/decisionFacts.js even said so in a comment: "`uncited` is
+     the same statement in the other direction, AND IT IS RENDERED TOO: a
+     citation block that only ever appears where a citation exists teaches a
+     reader that everything unmarked is fine." That sentence described a
+     renderer that did not exist. It is the §3.98 defect class again — a data
+     layer moved, the view layer did not, and nothing failed because the output
+     is prose no test reads.
+
+     WHY IT BELONGS INSIDE THE SAME DISCLOSURE AS THE CITATIONS, not in a
+     section of its own. The question an absence answers is the one the
+     citation box has just raised: the reader has opened "the rule this is
+     based on" and needs to know that for THIS finding there is no rule to
+     open. A separate panel further down would be a bibliography of silences —
+     true, and read by nobody at the moment it mattered.
+
+     IT IS NOT A CAVEAT AND MUST NOT BE DRAWN AS ONE. A caveat is a
+     contradiction the corpus records AGAINST a source it holds; this is the
+     absence of any source at all. `.r-caveat` carries the warning colour, and
+     borrowing it would say the corpus found something wrong here when what it
+     found was nothing.
+     ---------------------------------------------------------------------- */
+  function renderUncitedEntry(absence) {
+    var item = el("div", "r-uncited");
+    /* The SCOPE in the heading, because two absences of the same finding are
+       otherwise identical lines. UC-08 emits one `residence_test` absence per
+       jurisdiction in play, so a US/PT dossier holding neither test would print
+       "No source — Domestic residence test" twice with nothing to tell them
+       apart. The pair KEY form ("CA|NL") is how decisionSources.js indexes a
+       pair and is not how anybody reads one. */
+    var scope = absence.scope || absence.country || null;
+    var scopeWords = scope ? COUNTRY.text(String(scope).replace(/\|/g, " – "), "") : "";
+    item.appendChild(
+      el("p", "r-uncited-head", "No source — " + (absence.label || absence.finding) + (scopeWords ? " · " + scopeWords : ""))
+    );
+    if (absence.why) item.appendChild(el("p", "r-small", absence.why));
+    return item;
+  }
+
+  function renderSources(sources, uncited) {
     var groups = (sources || []).filter(function (group) {
-      return group && ((group.citations || []).length || (group.caveats || []).length);
+      /* CONFIRMATIONS COUNT AS CONTENT. Until they were rendered, a group whose
+         only entries were confirmations was dropped here and its whole
+         contribution vanished — which is the failure mode the confirmations
+         exist to prevent, arriving through the filter that decides whether they
+         are drawn at all. */
+      return (
+        group &&
+        ((group.citations || []).length || (group.caveats || []).length || (group.confirmations || []).length)
+      );
     });
-    if (!groups.length) return null;
+    /* An absence with neither a label nor a reason states nothing, and an empty
+       "No source" line is worse than no line: it reads as a rendering fault. */
+    var absences = (uncited || []).filter(function (a) {
+      return a && (a.label || a.finding) && a.why;
+    });
+    if (!groups.length && !absences.length) return null;
 
     var count = 0;
+    var caveatCount = 0;
     groups.forEach(function (group) {
       count += (group.citations || []).length;
+      caveatCount += (group.caveats || []).length;
     });
 
     var box = el("details", "r-sources");
+    /* "0 documents" IS NOT A COUNT, IT IS A STATE (2026-08-30, §3.100). Since
+       UC-04 began filtering a finding's citations by the jurisdictions the trip
+       involves, a group can legitimately arrive with no document and still be
+       worth opening — its caveats are the warnings a specialist needs MOST on a
+       pair nothing on the shelf governs. Rendering that as "The rules this is
+       based on — 0 documents" invites the reader to close it, and reads as a
+       bug rather than as the finding it is. */
+    /* THE SUMMARY COUNTS BOTH POPULATIONS, because a disclosure that counts
+       only the documents makes the absences invisible until it is opened —
+       and the whole reason for stating an absence is that a reader who never
+       opens the box would otherwise take silence for a clean bill.
+
+       THE "BOTH" LIMB IS CURRENTLY UNREACHABLE AND IS KEPT ON PURPOSE, said
+       here rather than left for someone to discover as dead code. Only one
+       finding group in the repository can raise a cited and an uncited finding
+       at once — UC-04's `immigration_document` — and its two populations are
+       mutually exclusive today: `immigration_document_on_file` is emitted only
+       when the dimension's state is `unavailable`, and the work-permit
+       citations only when it is not (src/uc04/decisionFacts.js's
+       findingKeysForDimension / uncitedKeysForDimension). UC-05's readingList()
+       already takes an ARRAY of keys, so one added key makes it reachable with
+       no change here; dropping the limb would mean that group then names one
+       population and hides the other. No fixture exercises it, because a
+       fixture written to reach it would have to be written to agree with this
+       panel, which is the failure this repo pays for most often. */
+    var docWords = count === 1 ? "1 document" : count + " documents";
+    var gapWords = absences.length === 1 ? "1 finding with none" : absences.length + " findings with none";
+    /* CAVEATS ARE COUNTED TOO, ADDED 2026-08-31. A caveat is the corpus
+       contradicting code this repo SHIPS — more decision-relevant than the
+       citation it hangs under — and it was invisible until the box was opened.
+       Measured on a real US → PT case: the summary advertised "1 document" over
+       one citation and THREE recorded contradictions, including C-9, which says
+       the pair the finding calls unknown is in fact covered. The comment above
+       already claims this box counts both populations; it counted citations and
+       absences, and caveats were the third. */
+    var caveatWords = caveatCount === 1 ? "1 caveat" : caveatCount + " caveats";
     box.appendChild(
-      el("summary", null, count === 1 ? "The rule this is based on — 1 document" : "The rules this is based on — " + count + " documents")
+      el(
+        "summary",
+        null,
+        count && absences.length
+          ? "The rules this is based on — " + docWords + (caveatCount ? ", " + caveatWords : "") + ", and " + gapWords
+          : count
+            ? "The rule" + (count === 1 ? "" : "s") + " this is based on — " + docWords +
+              (caveatCount ? ", " + caveatWords : "")
+            : absences.length
+              ? (absences.length === 1 ? "This finding rests on no source" : "These " + absences.length + " findings rest on no source") +
+                " — the reason for each"
+              : "No document here governs this route — why, and what still applies",
+      )
     );
-    // Every group carries the same `method` sentence; say it once.
-    var method = groups[0].method;
+    // Every group carries the same `method` sentence; say it once. Guarded on
+    // `groups[0]` because a box can now be built out of absences alone, and
+    // there is no method to describe when nothing was retrieved.
+    var method = groups.length ? groups[0].method : null;
     if (method) box.appendChild(el("p", "muted r-small", method));
 
     groups.forEach(function (group) {
       var groupBox = el("div", "r-source-group");
       if (group.label) groupBox.appendChild(el("p", "r-source-finding", group.label));
+      /* WHY THIS FINDING SHOWS NO DOCUMENT (2026-08-30, §3.100). UC-04 now
+         filters a finding's citations by the jurisdictions the trip actually
+         involves, so a Portugal → Netherlands workation no longer cites the
+         U.S. Social Security Administration. When that filter removes every
+         document, the group still renders — its caveats are the warnings a
+         specialist needs MOST on an unsourced pair — and without this line the
+         reader would see caveats under a heading with no sources and no way to
+         tell "nothing governs this route" from "nobody mapped this finding". */
+      if (group.noCitationForRoute) {
+        groupBox.appendChild(el("p", "muted r-small", group.noCitationForRoute));
+      }
       (group.citations || []).forEach(function (citation) {
         var item = el("div", "r-citation");
         item.appendChild(el("p", "r-citation-title", citation.title));
@@ -1248,19 +1644,67 @@
         if (citation.locator) item.appendChild(el("p", "muted r-small", citation.locator));
         if (citation.citedFor) item.appendChild(el("p", "r-small", "Cited for " + citation.citedFor));
         if (citation.evidence) item.appendChild(el("p", "muted r-small r-citation-standing", citation.evidence));
-        if (citation.path) item.appendChild(el("p", "muted r-small r-citation-path", citation.path));
+        /* `citation.path` IS DELIBERATELY NOT RENDERED (2026-08-31). It is a
+           path inside this repository — `docs/knowledge/layer-1-statutory/
+           D-07-….md` — and it tells a reader where OUR COPY lives, which is not
+           a fact about the law and is not something anyone outside this project
+           can open. What makes the citation checkable is above it and all still
+           renders: the instrument, the article locator, the publisher and the
+           retrieval standing. The API still publishes `path` for a reviewer who
+           has the repository; a screen is not that reviewer. */
         groupBox.appendChild(item);
       });
-      (group.caveats || []).forEach(function (caveat) {
+      /* .filter(Boolean): a caveat the server could not resolve arrived as
+         `null` on every UK and Polish case (C-31/C-32/C-33 referenced, never
+         defined) and `caveat.weight` below threw — which ended rendering with
+         the identity box and took the Sign off button with it. The server no
+         longer publishes a null; the browser no longer dies on one. */
+      (group.caveats || []).filter(Boolean).forEach(function (caveat) {
         var item = el("div", "r-caveat");
+        /* THE HEADLINE, NEVER THE REGISTER ID. `caveat.id` is "C-8" — an entry
+           number in an internal findings register, meaningless off this
+           project, and it used to be BOTH the fallback here and half of the
+           path line below ("CONTRADICTIONS.md C-8"). The weight word is the
+           honest fallback: it still says whether the finding is disputed or
+           incomplete, which is the part that changes how the reader treats it. */
         item.appendChild(
-          el("p", "r-caveat-head", (caveat.weight ? caveat.weight + " — " : "") + (caveat.headline || caveat.id))
+          el("p", "r-caveat-head", (caveat.weight ? caveat.weight + " — " : "") + (caveat.headline || caveat.weight || "Recorded limitation"))
         );
         if (caveat.detail) item.appendChild(el("p", "r-small", caveat.detail));
-        if (caveat.path) item.appendChild(el("p", "muted r-small r-citation-path", caveat.path + " " + (caveat.section || "")));
+        groupBox.appendChild(item);
+      });
+      /* AFTER THE CAVEATS, AND THE ORDER IS THE CORPUS'S OWN (2026-08-30).
+         K-2's detail ends "How they are applied is THE CAVEAT ABOVE" — the
+         confirmation is written as a bound on the dispute that precedes it, so
+         printing confirmations first would leave that sentence pointing at
+         nothing. It is also the safer order on its own merits: a reader
+         scanning a finding meets what changes their action before what does
+         not.
+
+         A CONFIRMATION IS NOT AN APPROVAL AND THE MARKER SAYS SO. "Checked and
+         matched" names what was done — one number, one list, one date, tested
+         against the authority it was taken from. The bounding sentence is
+         CONFIRMATION_FRAMING, published by the server and rendered once for the
+         page by renderSourceFramings(); nothing about the claim is composed
+         here. */
+      (group.confirmations || []).forEach(function (confirmation) {
+        var item = el("div", "r-confirmation");
+        item.appendChild(
+          el("p", "r-confirmation-head", "Checked and matched — " + (confirmation.headline || "a source was checked and agreed"))
+        );
+        if (confirmation.detail) item.appendChild(el("p", "r-small", confirmation.detail));
+        /* Same as the caveat above: the register id and the repo path are
+           internal, the sentence is not. */
         groupBox.appendChild(item);
       });
       box.appendChild(groupBox);
+    });
+
+    /* AFTER the sourced findings, never interleaved. A reader scanning for the
+       instrument that governs their case should reach every document this
+       system holds before reaching the list of what it does not. */
+    absences.forEach(function (absence) {
+      box.appendChild(renderUncitedEntry(absence));
     });
     return box;
   }
@@ -1282,7 +1726,7 @@
    * still computes them and the audit record still carries them); this panel
    * simply stops printing them at the person deciding.
    */
-  function renderDimension(dimension, isDeciding) {
+  function renderDimension(dimension, isDeciding, ordinal) {
     // The tone in the class, so the row's rail can BE the state. See the
     // "THE RAIL IS THE STATE" note in style.css: it is the one place on this
     // page a state colour is spent, and the chip beside the label still
@@ -1290,7 +1734,15 @@
     var item = el("li", "r-dimension tone-" + factState(dimension.state).tone + (isDeciding ? " is-deciding" : ""));
     var head = el("p", "r-dimension-head");
     head.appendChild(
-      el("span", "r-dimension-label", (dimension.position ? dimension.position + ". " : "") + dimension.label)
+      /* NUMBERED BY WHERE IT RENDERS, NOT BY THE SERVER'S FIXED POSITION
+         (2026-08-31). `dimension.position` is a constant on each of UC-04's
+         four dimensions, and a CLEARED dimension is filed into the collapsed
+         "Every check that cleared" section below the controls — taking its
+         number with it. So a specialist read "1. … 3. … 4." and went looking
+         for a missing finding 2 that was one click away in a different section,
+         under its own "2.". The server's number is not a citation anybody
+         quotes; the sequence a reader is counting is the one in front of them. */
+      el("span", "r-dimension-label", (ordinal ? ordinal + ". " : "") + dimension.label)
     );
     head.appendChild(renderStateMark(dimension.state));
     item.appendChild(head);
@@ -1303,7 +1755,8 @@
     appendOnce(item, elOnce("p", "r-finding", dimension.finding));
     appendStateMeaning(item, dimension.state);
     if (dimension.evidence && dimension.evidence.length) item.appendChild(renderEvidence(dimension.evidence));
-    var sources = renderSources(dimension.sources);
+    // `uncited` beside `sources`, per dimension — see renderUncitedEntry.
+    var sources = renderSources(dimension.sources, dimension.uncited);
     if (sources) item.appendChild(sources);
     return item;
   }
@@ -1318,9 +1771,28 @@
    * as a row nobody thought to include; a stated absence reads as the finding
    * it is.
    */
-  function renderProvenance(provenance) {
+  /**
+   * "3 days", "1 day" — a count with its unit, singularised. Only the floor
+   * rows reach this: "1 days short" is the sort of thing a specialist reads as
+   * evidence nobody looked at the screen.
+   */
+  function amount(n, unit) {
+    if (!unit) return String(n);
+    var word = n === 1 && unit.slice(-1) === "s" ? unit.slice(0, -1) : unit;
+    return n + " " + word;
+  }
+
+  /**
+   * @param {object} provenance
+   * @param {string} [heading] — "The basis for excusing it" is right for a
+   *   limit that was WAIVED and wrong for one that was merely proposed, and
+   *   both kinds of row carry a `basis`. The caller says which it has.
+   */
+  function renderProvenance(provenance, heading) {
     var box = el("div", "r-provenance");
-    box.appendChild(el("p", "r-provenance-head", "The basis for excusing it: " + (provenance.table || "an unnamed table")));
+    box.appendChild(
+      el("p", "r-provenance-head", (heading || "The basis for excusing it") + ": " + (provenance.table || "an unnamed table"))
+    );
     box.appendChild(
       renderEvidence([
         { label: "Standing", value: provenance.status || "not stated" },
@@ -1351,7 +1823,15 @@
     item.appendChild(head);
 
     var unit = measurement.unit ? " " + measurement.unit : "";
-    var rows = [{ label: "Limit", value: measurement.limit === null || measurement.limit === undefined ? "not stated" : measurement.limit + unit }];
+    // See the note in renderNumbers: a floor borrowing a ceiling's vocabulary
+    // reads as its own opposite.
+    var isFloor = measurement.comparison === "floor";
+    var rows = [
+      {
+        label: isFloor ? "Minimum" : "Limit",
+        value: measurement.limit === null || measurement.limit === undefined ? "not stated" : measurement.limit + unit,
+      },
+    ];
     rows.push({
       label: "Measured",
       value:
@@ -1360,7 +1840,14 @@
           : measurement.measured + unit,
     });
     if (measurement.headroom !== null && measurement.headroom !== undefined) {
-      rows.push({ label: "Headroom", value: measurement.headroom + unit });
+      rows.push(
+        isFloor
+          ? {
+              label: measurement.headroom < 0 ? "Short by" : "Margin",
+              value: amount(Math.abs(measurement.headroom), measurement.unit),
+            }
+          : { label: "Headroom", value: measurement.headroom + unit }
+      );
     }
     if (measurement.window) {
       rows.push({
@@ -1372,8 +1859,15 @@
 
     appendOnce(item, elOnce("p", "r-finding", measurement.note));
     appendStateMeaning(item, measurement.state);
-    if (measurement.basis) item.appendChild(renderProvenance(measurement.basis));
-    var sources = renderSources(measurement.sources);
+    if (measurement.basis) {
+      item.appendChild(
+        renderProvenance(
+          measurement.basis,
+          measurement.state === "suppressed" ? "The basis for excusing it" : "Where this line comes from"
+        )
+      );
+    }
+    var sources = renderSources(measurement.sources, measurement.uncited);
     if (sources) item.appendChild(sources);
     return item;
   }
@@ -1519,7 +2013,10 @@
         item.appendChild(fieldSentence(field));
       });
     }
-    var sources = renderSources(block.sources);
+    // UC-05's blocks publish `{sources, uncited}` as one reading list (see
+    // readingList() in src/uc05/decisionFacts.js), so the absence travels with
+    // the block it belongs to and needs no separate wiring here.
+    var sources = renderSources(block.sources, block.uncited);
     if (sources) item.appendChild(sources);
     return item;
   }
@@ -1541,6 +2038,205 @@
       box.appendChild(item);
     });
     return box;
+  }
+
+  /* =========================================================================
+     HOW TO READ THE SOURCES ON THIS PAGE — the three framing sentences
+     =========================================================================
+     WHY THESE ARE NOT DECORATION, in their own authors' words: SOURCE_FRAMING
+     and CAVEAT_FRAMING are each commented "Rendered once above the citation
+     block. Not decoration — see rule 2." Neither had ever been rendered
+     anywhere. They are published on `basis.sources` by UC-04, UC-05, UC-07 and
+     UC-08, and until today the page drew citations with no statement that a
+     citation decides nothing, and caveats with no statement that a contradicted
+     finding is not evidence for the opposite conclusion.
+
+     ONCE FOR THE PAGE, NOT ONCE PER DISCLOSURE. "Rendered once above the
+     citation block" was written when a citation block was a single list; they
+     are now a collapsed disclosure per finding, and a UC-04 case has five. Three
+     framing sentences repeated five times would be most of the panel, and
+     repetition is the specific complaint this page's design answers. So they sit
+     once, above the findings, where they govern every disclosure below.
+
+     COLLAPSED, because they are read once by a specialist and never again, and
+     the page's job is the decision. The summary says what is inside rather than
+     "Show more", the same rule renderSources follows.
+
+     COMPOSED BY THE SERVER, EVERY WORD. This function chooses placement and
+     nothing else; a panel that wrote its own version of "nothing here is a
+     recommendation" would be a second copy of a safety sentence, which is how
+     the first one goes stale.
+     ====================================================================== */
+  function renderSourceFramings(basis) {
+    var framings = (basis && basis.sources) || {};
+    var sentences = [framings.framing, framings.caveatFraming, framings.confirmationFraming].filter(function (t) {
+      return typeof t === "string" && t.trim();
+    });
+    if (!sentences.length) return null;
+
+    var box = el("details", "r-sources r-framings");
+    box.appendChild(el("summary", null, "How to read the sources under each finding"));
+    sentences.forEach(function (sentence) {
+      box.appendChild(el("p", "r-small", sentence));
+    });
+    return box;
+  }
+
+  /* =========================================================================
+     WHAT STILL HAS TO BE ESTABLISHED — `openQuestions`
+     =========================================================================
+     WHO SENDS IT. UC-07 and UC-08 only, at the top level of the dossier view
+     (src/uc07/dossierView.js, src/uc08/dossierView.js). They are the two use
+     cases with NO execution path, so nothing on their page is a decision and
+     everything on it is research handed to a specialist — which makes "what
+     this dossier could not settle" the most decision-relevant thing it holds,
+     and it reached the screen nowhere at all. Computed on every read since the
+     views were written, serialised, sent over the wire, dropped by the loader.
+
+     ABOVE THE RECORD, BELOW THE FINDINGS. A priority-1 question qualifies
+     every figure underneath it — "a day count is present and this system holds
+     no residence test for any jurisdiction it concerns" is precisely the
+     sentence a reader needs BEFORE they read the count, not after. That is the
+     same argument the mandatory framing statement wins on, one rung down.
+
+     PRIORITY IS AN ORDER, NOT A SEVERITY WORD. The server publishes 1 and 2
+     and no vocabulary for them, so this sorts by it and says nothing else: a
+     panel inventing "critical"/"minor" from a bare integer would be a claim
+     the server never made. A stable sort keeps each priority band in the order
+     the view raised it, which is the order the dossier reasoned in.
+     ====================================================================== */
+  function renderOpenQuestions(view) {
+    var questions = (view.openQuestions || []).filter(function (q) {
+      return q && q.question;
+    });
+    if (!questions.length) return null;
+
+    // Stable: Array.prototype.sort is not guaranteed stable in every engine a
+    // ZAF iframe may run in, so the original index is the tiebreak rather than
+    // a trusted property of the sort.
+    var ordered = questions
+      .map(function (q, i) {
+        return { q: q, i: i };
+      })
+      .sort(function (a, b) {
+        var pa = typeof a.q.priority === "number" ? a.q.priority : 99;
+        var pb = typeof b.q.priority === "number" ? b.q.priority : 99;
+        return pa === pb ? a.i - b.i : pa - pb;
+      })
+      .map(function (entry) {
+        return entry.q;
+      });
+
+    var section = el("section", "card r-questions");
+    section.appendChild(el("h2", "h2", "What still has to be established"));
+    section.appendChild(
+      el(
+        "p",
+        "muted r-small",
+        ordered.length === 1
+          ? "One question this dossier could not answer. It is not a finding against the request — it is work that has not been done."
+          : ordered.length +
+            " questions this dossier could not answer, most consequential first. None of them is a finding against the request — they are work that has not been done."
+      )
+    );
+    function questionItem(q) {
+      var item = el("li", "r-question");
+      item.appendChild(el("p", "r-finding", q.question));
+      /* THE CODE, QUIETLY. A specialist quotes it back when they escalate or
+         when they ask why the dossier stopped where it did, and it is the only
+         stable handle on a question whose wording may change. Rendered under
+         the sentence and in the muted register so it never competes with it. */
+      if (q.code) item.appendChild(el("p", "muted r-small r-question-code", q.code));
+      return item;
+    }
+
+    /* THE TOP BAND IS OPEN AND THE REST IS COUNTED, and the split is the
+       SERVER'S OWN ORDERING rather than a judgement this panel makes. A real
+       UC-07 relocation raises eight of these, 1,780 characters, and rendering
+       all eight open puts a fifth of the page above the record they qualify —
+       which is the "multiple reports in one" complaint that produced this
+       page's design. Collapsing all of them would be worse: a section that is
+       only a summary line states nothing at the moment it is read.
+
+       "THE HIGHEST BAND PRESENT", not "priority 1". A view that emits no
+       priority-1 question would otherwise collapse entirely, and there is
+       nothing in the contract promising band 1 is ever populated. Whatever the
+       most consequential band on THIS dossier is, it is open. */
+    var topBand = ordered.length ? (typeof ordered[0].priority === "number" ? ordered[0].priority : 99) : null;
+    var lead = ordered.filter(function (q) {
+      return (typeof q.priority === "number" ? q.priority : 99) === topBand;
+    });
+    var rest = ordered.slice(lead.length);
+
+    var list = el("ul", "r-basis-list");
+    lead.forEach(function (q) {
+      list.appendChild(questionItem(q));
+    });
+    section.appendChild(list);
+
+    if (rest.length) {
+      var box = el("details", "r-cleared");
+      box.appendChild(
+        el("summary", null, rest.length === 1 ? "1 further question" : rest.length + " further questions")
+      );
+      var restList = el("ul", "r-basis-list");
+      rest.forEach(function (q) {
+        restList.appendChild(questionItem(q));
+      });
+      box.appendChild(restList);
+      section.appendChild(box);
+    }
+    return section;
+  }
+
+  /* =========================================================================
+     THE FINDINGS THAT REST ON NO SOURCE — the view-level `uncited` list
+     =========================================================================
+     WHY A SECTION AND NOT A DISCLOSURE BESIDE A FINDING. UC-04's and UC-05's
+     absences are attached to the dimension or block they belong to, and
+     renderSources draws them there (see renderUncitedEntry). UC-07 and UC-08
+     publish a FLAT list instead, because most of their absences belong to no
+     block at all: three of UC-08's are stated unconditionally on every dossier
+     — citizenship-based taxation, the treaty residence tie-breaker, permanent
+     -establishment exposure — and there is no finding on the page for them to
+     sit under. They are silences that read as absences of a problem unless
+     something says otherwise, which is the whole reason the server states them.
+
+     `basis.sources.uncited` IS DELIBERATELY NOT READ HERE. UC-04 publishes the
+     same absences twice: once per dimension, and once deduped under `sources`
+     for an API reader. Rendering both would print every one of them a second
+     time under a heading of its own — the bibliography-of-silences this file
+     already refuses one function up.
+     ====================================================================== */
+  function renderUncitedFindings(view) {
+    var absences = (view.uncited || []).filter(function (a) {
+      return a && (a.label || a.finding) && a.why;
+    });
+    if (!absences.length) return null;
+
+    var section = el("section", "card");
+    var box = el("details", "r-sources");
+    box.appendChild(
+      el(
+        "summary",
+        null,
+        absences.length === 1
+          ? "One finding here rests on no source — the reason"
+          : absences.length + " findings here rest on no source — the reason for each"
+      )
+    );
+    box.appendChild(
+      el(
+        "p",
+        "muted r-small",
+        "None of these is a finding that no rule exists. Each is a statement that this repository has never looked, so nothing below may be read as a clearance."
+      )
+    );
+    absences.forEach(function (absence) {
+      box.appendChild(renderUncitedEntry(absence));
+    });
+    section.appendChild(box);
+    return section;
   }
 
   /**
@@ -1668,6 +2364,17 @@
   function partitionBasis(basis) {
     if (partitionCache.basis === basis) return partitionCache.groups;
     var groups = { context: [], weigh: [], open: [], cleared: [] };
+    /* WHICH LIST AN ITEM LANDS IN, ANSWERED BEFORE IT IS DRAWN. It used to be
+       answered only after, because `place()` took a finished node — which is
+       why a dimension could not know its own position in the list a reader
+       counts. See renderDimension's ordinal. */
+    function bucketFor(item) {
+      var tone = item.state ? factState(item.state).tone : null;
+      if (!item.state) return "context";
+      if (tone === "settled") return "cleared";
+      return tone === "open" ? "open" : "weigh";
+    }
+    var counts = { context: 0, weigh: 0, open: 0, cleared: 0 };
     function place(item, node) {
       var tone = item.state ? factState(item.state).tone : null;
       if (!item.state) groups.context.push(node);
@@ -1690,7 +2397,12 @@
     (basis.dimensions || []).forEach(function (dimension) {
       var isDeciding = Boolean(decidingKey) && dimension.key === decidingKey;
       if (isDeciding) decidingMatched = true;
-      place(dimension, renderDimension(dimension, isDeciding));
+      // Numbered within the list it will appear in, so a reader counting the
+      // rows in front of them never finds a gap where a cleared dimension was
+      // filed into a different section.
+      var bucket = bucketFor(dimension);
+      counts[bucket] += 1;
+      place(dimension, renderDimension(dimension, isDeciding, counts[bucket]));
     });
     (basis.measurements || []).forEach(function (measurement) {
       place(measurement, renderMeasurement(measurement));
@@ -1837,6 +2549,10 @@
 
     var box = el("div", "r-context");
     if (basis.trip) box.appendChild(renderTrip(basis.trip));
+    // Directly under the trip it is about, and before anything that qualifies
+    // it — see renderMeasurementStrip's header for why it is here at all.
+    var numbers = renderMeasurementStrip(basis);
+    if (numbers) box.appendChild(numbers);
     if (groups.context.length && hasVerdict) {
       var list = el("ul", "r-basis-list");
       groups.context.forEach(function (node) {
@@ -1844,6 +2560,89 @@
       });
       box.appendChild(list);
     }
+    return box;
+  }
+
+  /**
+   * THE NUMBERS THE DECISION TURNS ON — open, always, above everything else.
+   *
+   * WHY THIS EXISTS (2026-08-31). A mobility specialist opened this panel to
+   * decide a work authorization and asked what the automation was FOR: the page
+   * led with who filed it, then a long list of what was NOT established, and
+   * put every measurement the system had actually computed behind a collapsed
+   * "Every check that cleared (N)" toggle — 3,613 characters of it on a real
+   * case. So the days already spent in the destination, the Schengen allowance
+   * and the tax-residency watch line — the figures a person weighs before
+   * approving or declining — were the one thing the reader had to go looking
+   * for, while the caveats were unmissable.
+   *
+   * That is the wrong way round for a screen whose whole purpose is a decision.
+   * A panel that leads with its own limitations reads as though it has nothing
+   * to say; the work HAD been done and was one click from invisible.
+   *
+   * WHAT THIS IS NOT. It adds no figure, recomputes nothing and reorders no
+   * finding — every number here is `basis.measurements`, rendered by the same
+   * data the collapsed block renders in full. The detail, the window, the
+   * citations and the caveats all stay exactly where they are, because a
+   * headline number without its caveat is the failure this repository is most
+   * careful about. This is a pointer INTO that material, not a replacement for
+   * it: each line ends in the state word the full finding carries, so a
+   * measurement that is NOT within its limit says so here first.
+   */
+  function renderMeasurementStrip(basis) {
+    var measurements = (basis && basis.measurements) || [];
+    if (!measurements.length) return null;
+
+    var box = el("div", "r-numbers");
+    box.appendChild(el("p", "r-numbers-head", "The counts this decision turns on"));
+    var list = el("ul", "r-numbers-list");
+    measurements.forEach(function (m) {
+      var unit = m.unit ? " " + m.unit : "";
+      var row = el("li", "r-numbers-row tone-" + factState(m.state).tone);
+      row.appendChild(el("span", "r-numbers-label", m.label));
+      // "67 of 90 days" — the shape a person says out loud. A missing figure is
+      // stated as missing rather than rendered as a zero, which would be a
+      // measurement claim nobody made.
+      // A FLOOR IS NOT A CEILING AND MUST NOT BORROW ITS WORDS. "67 of 90 days
+      // / 23 days left" is the shape a person says out loud about an allowance
+      // being spent. Said about a minimum it inverts: "91 of 14 days, 77 days
+      // left" reads as the worst row on the page when it is the safest. Rows
+      // carrying `comparison: "floor"` say the measured value first and the
+      // minimum second, and their margin is stated as a shortfall or a spare.
+      var floor = m.comparison === "floor";
+      var measured =
+        m.measured === null || m.measured === undefined
+          ? "not measured on this run"
+          : m.limit === null || m.limit === undefined
+            ? m.measured + unit
+            : floor
+              ? m.measured + unit + " · " + m.limit + unit + " minimum"
+              : m.measured + " of " + m.limit + unit;
+      row.appendChild(el("span", "r-numbers-value", measured));
+      if (m.headroom !== null && m.headroom !== undefined) {
+        row.appendChild(
+          el(
+            "span",
+            "r-numbers-headroom",
+            floor
+              ? m.headroom < 0
+                ? amount(Math.abs(m.headroom), m.unit) + " short"
+                : amount(m.headroom, m.unit) + " spare"
+              : m.headroom + unit + " left"
+          )
+        );
+      }
+      row.appendChild(renderStateMark(m.state));
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+    box.appendChild(
+      el(
+        "p",
+        "muted r-small",
+        "Each figure is repeated in full below, with the window it was measured over and what the source says about it."
+      )
+    );
     return box;
   }
 
@@ -1933,6 +2732,18 @@
           )
         );
       }
+
+      /* HOW TO READ THE CITATIONS UNDER EVERY FINDING ABOVE — and it sits HERE,
+         after the lists, because yesterday it sat directly under the section's
+         own H2 and retitled it. On a case with nothing to weigh that H2 reads
+         "What was not established", the sub-label that would have re-headed the
+         findings list is suppressed when nothing preceded it, and the note
+         landed between a heading and the content it names. The findings are
+         what the section is for; this is how to read what hangs off them, and a
+         reader reaches it in the same scroll either way. Null on a panel whose
+         API publishes no framing, so nothing renders an empty promise. */
+      var framings = renderSourceFramings(basis);
+      if (framings) section.appendChild(framings);
 
       // THE FACT THAT SETTLED IT. Normally it is MARKED on its own row rather
       // than restated (see renderDimension) — the server lifts the same finding
@@ -2205,7 +3016,10 @@
     // A panel with nothing else on the page has already rendered these rows
     // open, above the controls — see render().
     if (hasFindings) record.appendChild(renderRows(window.CXPanelFor(c.useCase).rows(view)));
-    record.appendChild(el("p", "muted r-small r-case-id", c.useCase + " · case " + String(c.id)));
+    /* SHORTENED — see shortRef() below. It is a prefix of the real id, so it
+       still finds the record; the whole key is on the record and on the audit
+       row, which is where an exact key belongs. */
+    record.appendChild(el("p", "muted r-small r-case-id", c.useCase + " · case " + shortRef(c.id)));
     // rca-iih7 / D-31: "Classified as a low-risk use case" used to repeat here
     // — the tier's name is ALREADY on the page, either inside renderCaseRisk's
     // "This request: … — this use case's own X baseline …" sentence (every
@@ -2398,7 +3212,24 @@
       // The exact grant string, for the person who needs to ask to be added to
       // the roster. It is monospace and small because it is a precise internal
       // term next to plain language, not a substitute for it.
-      if (role.roleId) item.appendChild(el("p", "muted r-small r-capacity-id", role.roleId));
+      /* GATING THIS ON `openHere` WAS TRIED ON 2026-08-31 AND REVERTED THE SAME
+         HOUR. The argument was sound — on UC-04 the state beside it reads "not
+         open here" and no roster grant can open it, so a slug whose stated
+         purpose is "quote this when asking for access" invites a request that
+         would change nothing. test/zafApprovalRole.test.js refused it, and the
+         test is right: the rendered string is an IDENTIFIER, not an invitation.
+         Nothing on the page tells the reader to ask for it, the sentence two
+         lines up already says the absence is structural rather than a
+         permissions problem, and the slug is what a specialist quotes when they
+         ask what this role IS. The invitation lives in this comment, which is
+         the thing to fix if it ever misleads anyone. */
+      /* `role.roleId` IS NOT RENDERED (2026-08-31). "uc04:mobility_specialist"
+         is an entitlement-roster key. The comment above used to argue it was
+         "what a specialist quotes when they ask what this role IS" — but the
+         row already names the role in words and says what it decides, and the
+         panel is shown to people outside Remote. An identifier nobody outside
+         this system can look up is not a clarification. It is still checked
+         server-side on submit, unchanged; only the display is dropped. */
 
       list.appendChild(item);
     });
@@ -2447,8 +3278,8 @@
           "p",
           "muted r-small r-capacity-unknown",
           (roles.length === 1 ? "Whether you hold this role" : "Whether you hold one of these roles") +
-            " is checked by the API when you submit — this panel is not told, and does not decide it. If a " +
-            "decision comes back refused as “approver_not_entitled”, that is what happened."
+            " is checked when you submit — this panel is not told, and does not decide it. If your decision " +
+            "comes back refused because you do not hold it, that is what happened."
         )
       );
     }
@@ -2578,6 +3409,31 @@
     show(initial);
   }
 
+  /* A UUID, shortened for a person to read (2026-08-31).
+
+     A database key in the middle of a customer-facing line is noise: nobody
+     outside this system can look it up, it cannot be read over a phone, and a
+     page full of them looks like a debug dump — which is what the project owner
+     found on opening this panel to show it to an audience.
+
+     A PREFIX OF THE REAL ID, not a hash and not a new identifier, so it still
+     resolves by prefix search and can never name a record that does not exist.
+     Anything that is not a UUID is returned unchanged — an email address, a
+     session name or a ticket number is already readable, and truncating one
+     would destroy information rather than hide noise.
+
+     DEFINED HERE AND IN panels.js AND IN src/shared/publicReference.js. Three
+     copies of four lines, because the two browser files are separate <script>
+     tags with no module system between them and the server composes some of
+     this prose itself. test/zafNoDeveloperArtifacts.test.js holds all three to
+     the same answers, which is the same discipline test/n8nParity.test.js
+     applies to the gates. */
+  var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function shortRef(value) {
+    var v = value === null || value === undefined ? "" : String(value).trim();
+    return UUID_RE.test(v) ? v.slice(0, 8) : v;
+  }
+
   function renderActions(view, ticketId, currentUser) {
     var section = el("section", "card actions");
     section.appendChild(el("h2", "h2", "Decision"));
@@ -2596,6 +3452,31 @@
        two sentences are true in. */
     var capacity = renderApprovalRoles(view);
     var described = approvalRolesFor(view);
+
+    /* A DECISION THAT IS ALREADY MADE IS SHOWN WHETHER OR NOT ANOTHER ONE IS
+       OPEN (2026-08-31), and this is a defect a reader found before any test
+       did. `settled` used to be drawn only in the `!actionable` branch below —
+       a rule written when "settled" and "nothing left to do here" were the same
+       thing. Since 2026-08-31 UC-04 has a case that is BOTH: stage 2, the
+       employer's approval, is settled, and stage 3, Remote's own mobility
+       review, is open on this very screen. So the employer's approval vanished
+       from the panel at exactly the moment a specialist is asked to review it —
+       the one moment knowing who approved it matters. The API published it the
+       whole time; only the rendering dropped it.
+
+       THE `finality` SENTENCE IS DELIBERATELY WITHHELD HERE. It reads "an
+       approved request cannot be approved or declined again", which is true of
+       the stage below and would be read as "there is nothing to do here" when
+       printed directly above a live control. It is still printed in full on a
+       case with nothing open, where it means what it says. */
+    var settledAlready = view.settled;
+    if (view.actionable && settledAlready && settledAlready.headline) {
+      var done = el("div", "r-settled-earlier");
+      done.appendChild(el("p", "r-settled-headline", settledAlready.headline));
+      if (settledAlready.facts && settledAlready.facts.length) done.appendChild(renderRows(settledAlready.facts));
+      section.appendChild(done);
+    }
+
     if (capacity && view.actionable) section.appendChild(capacity);
 
     if (!view.actionable) {
@@ -2659,6 +3540,30 @@
     }
 
     var panel = window.CXPanelFor(view.case.useCase);
+
+    /* A CONTROL IS NEVER DRAWN WITHOUT SOMEWHERE TO SEND IT (2026-08-30).
+       Every set of controls below — the panel's own and the shared pair —
+       submits through `view.post`, which the use case's loader attaches. A
+       loader that attaches none is saying this surface performs no write for
+       this use case; UC-07 and UC-08 have always been in that state, and UC-04
+       joined them when the employer's approval moved to the customer's own
+       surface.
+
+       Without this line that intent rests entirely on the server answering
+       `actionable: false` forever. One stale fixture, one hand-built view, one
+       future route that forgets, and the sidebar draws an Approve button whose
+       click throws — or worse, is wired back to something that writes. The
+       panel's own hint says why there is nothing here, which is the same
+       sentence the refusal branch above would have printed.
+
+       IT DECIDES NOTHING. `view.actionable` is still the only question about
+       whether a decision MAY be made, asked once, above. This asks the
+       strictly mechanical question of whether this bundle has anywhere to send
+       one, and it can only ever withhold a control. */
+    if (typeof view.post !== "function") {
+      section.appendChild(el("p", "hint", panel.approveHint(view)));
+      return section;
+    }
 
     // A panel may render its own controls — UC-06's two independently-filled
     // role slots don't fit a single approve/decline pair. When it doesn't, this
@@ -2954,6 +3859,31 @@
     var about = renderEmployee(view);
     if (about) root.appendChild(about);
 
+    /* THE EMPLOYEE'S OWN ACCOUNT OF THE TRIP, in their words on Remote's form.
+       It sits directly under "who this is about" because it is the other half
+       of the same question, and because until W-1 the panel had already read
+       every value in it at decision time and kept none of them — so dimension 4
+       said "no document" about a request naming a travel document number. */
+    var remoteRequest = renderRemoteRequest(view);
+    if (remoteRequest) root.appendChild(remoteRequest);
+
+    /* WHAT THEY WILL ACTUALLY BE DOING THERE. Remote's Mobility Team assesses
+       "nature of intended activities"; until W-2 this panel offered one of
+       seven dropdown categories and nothing else. It sits beside the request
+       rather than under the findings because it is evidence a person reads,
+       not a verdict anything reached. */
+    var activities = renderActivityProfile(view);
+    if (activities) root.appendChild(activities);
+
+    /* THE TREATY CONDITION NOTHING MEASURED. The 183-day row on this page
+       carries a caveat saying the day test is one of three cumulative
+       conditions and that this system represents neither of the other two.
+       Where the destination is a country the customer itself has a company in,
+       the second fails on day one — and that is two country codes, not a
+       judgement. See src/uc04/employerPresence.js. */
+    var presence = renderEmployerPresence(view);
+    if (presence) root.appendChild(presence);
+
     /* THE ORDER OF THIS PAGE IS THE DESIGN (2026-08-19).
        It answers one question, in the order a specialist asks it:
 
@@ -2987,6 +3917,13 @@
     var basis = renderDecisionBasis(view);
     if (basis) root.appendChild(basis);
 
+    /* WHAT THIS RUN COULD NOT SETTLE, above the record it qualifies. Null on
+       the seven use cases whose API publishes no `openQuestions`; see
+       renderOpenQuestions for why the two that do are the two that need it
+       most. */
+    var questions = renderOpenQuestions(view);
+    if (questions) root.appendChild(questions);
+
     /* A PANEL WITH NO FINDINGS SECTION LEADS WITH ITS RECORD. UC-01's review
        publishes no `basis` and no `decisionFacts` at all, and UC-07's and
        UC-08's dossiers publish one that is entirely CONTEXT — a citation map,
@@ -3001,6 +3938,14 @@
       detail.appendChild(renderRows(window.CXPanelFor(view.case.useCase).rows(view)));
       root.appendChild(detail);
     }
+
+    /* THE SILENCES, AFTER THE RECORD AND BEFORE THE CONTROLS. Collapsed,
+       because it is reference-grade and long — UC-08 states three of these on
+       every dossier ever compiled — and above the controls, because "this was
+       never looked at" is not a footnote to a decision. See
+       renderUncitedFindings. */
+    var unsourced = renderUncitedFindings(view);
+    if (unsourced) root.appendChild(unsourced);
 
     root.appendChild(renderActions(view, ticketId, currentUser));
 
@@ -3423,7 +4368,25 @@
           // describeAmendmentBasis() (src/uc06/decisionFacts.js).
           decidedBy: data.decidedBy || null,
           gateLadder: data.gateLadder || [],
-          basis: data.basis || null,
+          /* WHO FILED IT, carried to where renderEmployee looks for it. UC-06
+             publishes describeRequesterParties() at the TOP level as
+             `requester`; renderEmployee reads `basis.requester`, the key UC-04
+             uses. Until 2026-09-02 the block was parsed here and dropped, so
+             "filed by admin_jane" was the whole account of the requester on a
+             panel whose JSON carried the verified-identity finding and the
+             consent-is-elsewhere sentence. Same describer, same shape — the
+             server's own words, moved one key over. `basis.requester` wins if
+             the server ever publishes it there. */
+          basis: data.basis
+            ? Object.assign({}, data.basis, { requester: data.basis.requester || data.requester || null })
+            : data.requester
+              ? { requester: data.requester }
+              : null,
+          /* WHO OWNS IT WHEN IT IS NOT OPEN HERE — the routing table's answer,
+             read from the server (handoffFor). The panel's approvalRoles()
+             names this team on an escalation instead of listing two slots
+             nobody can fill. */
+          handoff: data.handoff || null,
           review: null,
           documents: [],
         };
@@ -3487,6 +4450,24 @@
              nowhere at all. Read straight off the row the API returned — the
              wording is the use case's and this file composes none of it. */
           framing: (row && row.dossier && row.dossier.framing) || null,
+          /* WHAT THIS DOSSIER COULD NOT SETTLE, AND WHAT IT CITES NOTHING
+             FOR (2026-08-30). Both are computed by describeDossier() on every
+             read and both were dropped one line short of a renderer — the same
+             failure as `basis` above, twice more. `openQuestions` is rendered
+             above the record by renderOpenQuestions(); `uncited` below it by
+             renderUncitedFindings(). Passed through untouched: this file
+             composes no part of either sentence. */
+          openQuestions: data.openQuestions || [],
+          uncited: data.uncited || [],
+          /* WHAT THE RETRIEVED MATERIAL IS AND IS NOT — and this one is a
+             defect committed by the fix that introduced its renderer, hours
+             earlier the same day. panels.js's UC-08 rows read
+             `view.citationCoverage.scope` and lead with it ("What this
+             material is"), and that row's test builds the view by hand, so it
+             was green in the suite and absent from every real sidebar: this
+             loader never set the field. Exactly the class of gap the comment
+             above describes, introduced while fixing it. */
+          citationCoverage: data.citationCoverage || null,
           // THE SETTLED DECISION, AS FACTS. Rendered as label/value rows by
           // renderActions when the case is closed; its string sibling joins the
           // same facts with newlines, which HTML collapses into a paragraph.
@@ -3666,8 +4647,32 @@
   }
 
   /**
-   * UC-04 — Work Authorization / Workation. Single-specialist approve/decline
-   * (not dual-role like UC-06) — POST body is {approver, note}, no `role`.
+   * UC-04 — Work Authorization / Workation. THE ONE DECISION THIS SCREEN MAKES
+   * IS STAGE 3, REMOTE'S OWN MOBILITY REVIEW — and it is recorded here, never
+   * sent to Remote (2026-08-31).
+   *
+   * WHAT THIS LOADER STILL REFUSES TO DO, unchanged from 2026-08-30. It used to
+   * attach a `post` that hit `POST /api/authorizations/:id/approve|decline`,
+   * which `submitWorkationApproval()` turns into
+   * `PATCH /v1/work-authorization-requests/{id}` with `approved_by_manager`.
+   * Remote defines that status as THE CUSTOMER'S MANAGER'S decision (see
+   * src/uc04/server.js's header for the verified lifecycle), so the sidebar was
+   * making the customer's decision for them and stamping a Remote CX agent's
+   * name on it. That endpoint is NOT reachable from this bundle and must never
+   * become reachable again: the `post` below is bound to ONE path,
+   * `/mobility-review`, and the verb it sends is `clear` or `decline` — never
+   * `approve`, which is the employer's word for the employer's decision.
+   *
+   * WHAT IT NOW DOES. Once the employer HAS approved, Remote's own mobility
+   * review is this screen's stage, and the server opens it
+   * (`actionable: true`, sidebarActionability()). Remote publishes no endpoint
+   * for that stage, so the decision is recorded in this system's own audit log
+   * under the reviewer's name and nowhere else — and the panel says exactly that
+   * before the click, using the SERVER'S sentence (`mobilityReview.notice`), not
+   * one composed here.
+   *
+   * `actionable` still comes from the server and is still the only question that
+   * gates a control (renderActions). This loader answers none of it.
    */
   function loadUc04(baseUrl, ticketId) {
     var base = String(baseUrl).replace(/\/$/, "");
@@ -3682,6 +4687,21 @@
           // publish it yet, and renderEmployee draws nothing for a null — so the
           // two halves deploy in either order, exactly as approvalRoles does.
           employee: data.employee || null,
+          /* THE VIEW IS A WHITELIST, and forgetting that is how a server field
+             reaches nobody. Both of these are published by src/uc04/server.js's
+             by-ticket route and both render their own card; a field parsed
+             nowhere is indistinguishable, from the panel, from one the server
+             never computed — which is how `gateLadder` reached zero of nine
+             panels. Null-safe on both sides so the two halves deploy in either
+             order.
+
+             `remoteRequest` — the work-authorization request the employee
+             raised, read live (src/uc04/linkedRequest.js). It carries the
+             travel document number this panel used to say did not exist.
+             `employerPresence` — where the CUSTOMER has legal entities, which
+             is the art. 15(2)(b) question (src/uc04/employerPresence.js). */
+          remoteRequest: data.remoteRequest || null,
+          employerPresence: data.employerPresence || null,
           case: Object.assign({}, authorization, { useCase: "UC-04" }),
           actionable: data.actionable,
           actionableReason: data.actionableReason,
@@ -3726,13 +4746,30 @@
           // store's own `executed`/`declined` status words, so the two can
           // never read the settlement differently.
           review: data.settled ? { status: /^Approved/.test(data.settled.headline) ? "approved" : "rejected" } : null,
+          // STAGE 3, WHOLE, FROM THE SERVER. State, whether it is open here,
+          // who recorded it, and the notice that says where the decision does
+          // and does not go. Passed through untouched — nothing in this bundle
+          // composes any of it, which is what keeps "this is not sent to
+          // Remote" one string in one place rather than a paraphrase per
+          // surface. `|| null` so a deployment whose API has not been updated
+          // renders exactly as it did before this existed.
+          mobilityReview: data.mobilityReview || null,
           documents: [],
         };
         Object.assign(view, riskPosture(data));
+        /* THE ONLY WRITE THIS BUNDLE PERFORMS FOR UC-04, AND IT IS BOUND TO ONE
+           PATH. Not `+ "/" + action` — the shape every other loader uses and the
+           shape that made the 2026-08-30 defect possible, because it lets any
+           verb the panel names become a route segment, including `approve`. Here
+           the URL is fixed and the verb travels in the BODY, where
+           `evaluateMobilityReview()` checks it against a two-member set. A panel
+           that asked for "approve" would get a 400, not the employer's
+           endpoint. */
         view.post = function (action, body) {
           return cxPost(
-            base + "/api/authorizations/" + encodeURIComponent(authorization.id) + "/" + action,
+            base + "/api/authorizations/" + encodeURIComponent(authorization.id) + "/mobility-review",
             {
+              action: action,
               approver: (body && body.approver) || "",
               note: (body && body.note) || "",
             },
@@ -3865,6 +4902,15 @@
              better one. The row is gone (panels.js) and the sentence now
              renders where it governs. */
           framing: (row && row.dossier && row.dossier.framing) || null,
+          /* WHAT THIS DOSSIER COULD NOT SETTLE, AND WHAT IT CITES NOTHING
+             FOR (2026-08-30). Both are computed by describeDossier() on every
+             read and both were dropped one line short of a renderer — the same
+             failure as `basis` above, twice more. `openQuestions` is rendered
+             above the record by renderOpenQuestions(); `uncited` below it by
+             renderUncitedFindings(). Passed through untouched: this file
+             composes no part of either sentence. */
+          openQuestions: data.openQuestions || [],
+          uncited: data.uncited || [],
           // THE SETTLED DECISION, AS FACTS. Rendered as label/value rows by
           // renderActions when the case is closed; its string sibling joins the
           // same facts with newlines, which HTML collapses into a paragraph.

@@ -151,7 +151,17 @@
      country at all. */
   var COUNTRY_VALUED_LABELS = {
     // src/uc04/decisionFacts.js — the treaty and presence dimensions
-    "Country pair": true,
+    /* "Country pair" WAS RENAMED "Nationality → destination" ON 2026-08-31,
+       because it is keyed on the NATIONALITY while the trip line at the top of
+       the page is keyed on the HOME COUNTRY — two different pairs under one
+       label, identical on any case where the two happen to agree and silently
+       different on any where they do not.
+
+       THE RETIRED KEY IS NOT KEPT. The first version of this edit left it in
+       "for stored payloads", and test/zafCountryNames.test.js failed it: this
+       registry must hold only labels a server actually emits, because a stale
+       entry is indistinguishable from a live one and hides the next rename. */
+    "Nationality → destination": true,
     Destination: true,
     // src/uc09/decisionFacts.js — the jurisdiction heuristic's provenance
     "Countries on the list": true,

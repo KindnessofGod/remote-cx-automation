@@ -49,6 +49,29 @@ export const SUBMIT_ACTION = "submit_amendment_request";
 export const CONSENT_ACTION = "consent_amendment";
 
 /**
+ * Deciding a work-authorization request — stage 2 of Remote's three-stage
+ * flow, and the CUSTOMER's decision rather than Remote's.
+ *
+ * It belongs to `company_admin` and to nobody else here, for reasons that come
+ * off Remote's own schema rather than out of this model:
+ *   - Remote names the decider `employer_approver`, and its example address is
+ *     `user0@company.com` — a COMPANY address. Stage 2 is the customer's.
+ *   - The employee cannot hold it: they are the party who SUBMITTED the
+ *     request ("submitted by an employee"), and an employee approving their
+ *     own travel is the same defect as an employee amending their own
+ *     contract, which is what the submit rule above already refuses.
+ *   - The `employer` role in this file is a CONSENT role — a signature on a
+ *     contract amendment (v1's `employer_signed_at`). Consenting to a change
+ *     of terms and deciding a travel request are different acts; giving one
+ *     role both because the words look alike is how a role model stops being
+ *     a model. The company's admin is who operates the console.
+ *
+ * Full policy, including the two verbs and what stage 3 is:
+ * ./workAuthPolicy.js.
+ */
+export const DECIDE_WORK_AUTHORIZATION_ACTION = "decide_work_authorization";
+
+/**
  * READING an amendment's current state. Deliberately not in ROLE_ACTIONS
  * below: that map answers "may this role ACT?", and every entry in it changes
  * something. Watching a request you are party to changes nothing, is available
@@ -58,7 +81,7 @@ export const CONSENT_ACTION = "consent_amendment";
 export const TRACK_ACTION = "track_amendment";
 
 const ROLE_ACTIONS = Object.freeze({
-  [ROLES.company_admin]: new Set([SUBMIT_ACTION]),
+  [ROLES.company_admin]: new Set([SUBMIT_ACTION, DECIDE_WORK_AUTHORIZATION_ACTION]),
   [ROLES.employer]: new Set([CONSENT_ACTION]),
   [ROLES.employee]: new Set([CONSENT_ACTION]),
 });
@@ -134,6 +157,24 @@ export function evaluateConsentAuthorization({ session, party, amendment, employ
       status: 403,
       code: "not_your_amendment",
       reason: "The employer may only consent to an amendment for one of its own employees.",
+    };
+  }
+  // A CONSENT ON A REQUEST THE GATES ALREADY REFUSED IS REFUSED TOO (2026-09-02).
+  // Consent is not a gate (UC-06.md §16): it never advances an amendment, so
+  // recording one against an escalated request changed nothing — and that is
+  // the defect. The employer consented to a terminated employee's amendment on
+  // the live stand-in and the page answered "Consent recorded", a green line on
+  // a request that can never proceed. Ownership is checked FIRST, above, so a
+  // stranger is still told "not yours" rather than learning the request's
+  // state; only a party to the amendment reaches this refusal.
+  if (amendment.decision === "escalate") {
+    return {
+      allowed: false,
+      status: 409,
+      code: "amendment_not_open_for_consent",
+      reason:
+        "This amendment was escalated at intake and is not open for approval, so there is nothing to consent to. " +
+        "A specialist works it on its ticket; if the change is still wanted, it has to be requested again.",
     };
   }
   return { allowed: true, status: 200, code: "consent_permitted", reason: `Consent recorded as the ${party}.` };

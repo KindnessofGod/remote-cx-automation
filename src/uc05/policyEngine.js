@@ -28,6 +28,16 @@
 //                       silently accepted.  Which desk that is comes from
 //                       src/shared/escalationRouting.js and is named on the
 //                       rung below, never typed here.
+//   5b. reconciliation — is the notice REMOTE's own resignation record requires
+//                       (`days_of_notice`, which Remote states blends the
+//                       contract terms with local labour law) at least as long
+//                       as the statutory minimum computed above?  Shorter is
+//                       the one case nothing else in this system would see: a
+//                       contractual notice sitting below the statutory floor.
+//                       Longer is lawful and passes, flagged.  Where either
+//                       figure is missing, or ours is stated in months and
+//                       theirs in days, NO comparison is made and the case says
+//                       which side was absent — an absence is not an agreement.
 //   6. PTO payout    — could the accrued-PTO payout actually be computed
 //                       from the supplied balances?  A balance carrying no
 //                       usable hourly rate or accrual is a figure we do not
@@ -76,6 +86,10 @@ import { escalationTeamFor } from "../shared/escalationRouting.js";
  * @param {object} args.timeOffBalances     array for reconcilePtoPayout()
  * @param {string} args.currency            single currency for the PTO payout
  * @param {string|number|Date} args.now     explicit now
+ * @param {number|null} [args.remoteDaysOfNotice]  Remote's own `days_of_notice`
+ *   off the resignation record, when a caller read one. Null everywhere that
+ *   does not — reported, never assumed to agree.
+ * @param {string|null} [args.remoteRecordRef]  the `offboarding_request_id` it came from
  * @returns {{
  *   decision: "prepared_for_signoff" | "escalate",
  *   reason: string,
@@ -89,8 +103,17 @@ export function evaluate({
   employment,
   proposedEndDate = null,
   timeOffBalances = [],
-  currency = "USD",
+  // NOT "USD". A caller that names no currency gets its payout lines refused
+  // (`missing: ["currency"]`), never a settlement quietly denominated in
+  // dollars — see payoutCurrencyFor() in ptoPayout.js for where one comes from.
+  currency = null,
   now,
+  // REMOTE'S OWN FIGURE, WHEN THE CALLER READ ONE. Defaulting to `null` is not a
+  // convenience: it is the state every caller is in today, and the reconciliation
+  // reports it as `not_compared / remote_figure_absent` rather than letting a
+  // one-sided answer look like an agreement. See noticeReconciliation.js.
+  remoteDaysOfNotice = null,
+  remoteRecordRef = null,
 }) {
   // Gate 1 — identity
   if (!identityVerified) {
@@ -143,6 +166,8 @@ export function evaluate({
     probationEndDate: employment.probation_end_date ?? employment.probation_period_end_date ?? null,
     proposedEndDate,
     now,
+    remoteDaysOfNotice,
+    remoteRecordRef,
   });
 
   // Gate 4 — no statutory end date could be produced. TWO different reasons
@@ -203,6 +228,48 @@ export function evaluate({
   // are both true of it in a trivial sense (there is no bracket, and there is no
   // computed end date), and whichever branch runs first owns the recorded reason.
   if (!notice.noticeEndDate) {
+    // A FOURTH REASON, 2026-09-02, AND IT IS THE MOST SPECIFIC OF THE FOUR — so
+    // it is checked first, on the same "whichever branch runs first owns the
+    // recorded reason" rule the three below already follow.
+    //
+    // `noStatutoryProbationNotice` is the calculator reporting that the statute
+    // POSITIVELY provides for no notice during probation: Código do Trabalho
+    // art. 114.º(1), *"qualquer das partes pode denunciar o contrato sem aviso
+    // prévio"*. It is not an absence of a rule, and the other three branches
+    // would each describe it wrongly — `no_matching_notice_bracket` says extend
+    // the table (there is nothing to extend), `no_statutory_notice_period` says
+    // the country sets none (Portugal sets 30 or 60 days the day probation
+    // ends), and `unsupported_country` says we do not cover Portugal at all.
+    //
+    // WHY IT ESCALATES RATHER THAN PASSING. The statutory floor really is zero,
+    // so nothing here is uncertain about the STATUTE. What is uncertain is the
+    // instrument art. 114.º(1) defers to in its own opening words — *"salvo
+    // acordo escrito em contrário"*, unless otherwise agreed in writing — and
+    // this system holds no contract. Signing off "you may leave today" on that
+    // basis is the same error as printing a zero: a claim about the contract
+    // from a source that only read the statute. Same treatment as the US and
+    // Canadian rows, for the same reason.
+    //
+    // FOR EIGHT DAYS THE FIELD EXISTED AND NOTHING READ IT, so a Portuguese
+    // probationer was answered with the ordinary 30-day bracket beside a
+    // citation, in the same object, saying they owed nothing.
+    if (notice.noStatutoryProbationNotice === true) {
+      return {
+        decision: "escalate",
+        reason: "no_statutory_notice_during_probation",
+        flags: [
+          "no_statutory_notice_during_probation",
+          `country_${notice.countryCode || "unknown"}`,
+          "on_probation",
+          // The same flag the two sourced-absence rows carry, and for the same
+          // reason: the document that would answer the question is a contract
+          // nobody here has read.
+          "contractual_notice_not_held",
+        ],
+        notice,
+        payout: null,
+      };
+    }
     if (notice.statutoryMinimumExists === false) {
       return {
         decision: "escalate",
@@ -214,6 +281,14 @@ export function evaluate({
           // the question, which no other escalation in this engine can do —
           // every other one names something missing from OUR side.
           "contractual_notice_not_held",
+          // CANADA CARRIES ONE MORE FLAG THAN THE UNITED STATES, and it is not a
+          // country-specific branch: `noticeStandardWithoutNumber` comes off the
+          // table row. It says the statute of at least one jurisdiction inside
+          // this country DOES bind the resigning employee and simply states no
+          // number — Québec, CCQ art. 2091, with art. 2092 making the remedy
+          // non-renounceable. Without it, "contractual_notice_not_held" is the
+          // only thing on the case, and it is false for that province.
+          ...(notice.noticeStandardWithoutNumber === true ? ["notice_standard_not_a_number"] : []),
         ],
         notice,
         payout: null,
@@ -266,6 +341,54 @@ export function evaluate({
   }
   if (notice.anchorAdjusted) flags.push("anchor_rule_applied");
   if (payout.hasDiscrepancy) flags.push("pto_discrepancy");
+
+  // Gate 5b — REMOTE'S OWN FIGURE AGAINST THE STATUTE'S (2026-09-02, `[N-5]`).
+  //
+  // Gate 5 above compares the statutory end date with the date the EMPLOYEE
+  // proposed. This one compares the statutory quantity with the notice REMOTE
+  // AND THE CONTRACT BETWEEN THEM require — `days_of_notice`, published on
+  // every resignation record and read by nothing in this repository until now.
+  // DRIFT-095 states the difference between the two comparisons exactly: *"the
+  // comparison performed today is statute vs. what the employee asked for; the
+  // one that carries the risk is statute vs. what the employer is about to
+  // accept."*
+  //
+  // IT DOES NOT REUSE `statutory_discrepancy`, and the acceptance contract's §6
+  // table names that slug for this row. Reusing it would make the gate ladder
+  // print a sentence that is FALSE of this case — rung 7 opens *"The end date
+  // proposed in the resignation is EARLIER than the statutory minimum notice
+  // allows"*, and here no employee proposal is involved at all. Two different
+  // findings sharing one reason string is the exact defect gate 4's own comment
+  // records costing a rewrite (`unsupported_country` for a UK employee three
+  // weeks in). Same desk, same severity, different name and its own rung.
+  //
+  // ONLY `statute_longer` DECIDES. `remote_longer` is the conservative
+  // direction and the ordinary one in EOR work — a contractual notice above the
+  // statutory floor, which is lawful — so it is flagged and passes, on the same
+  // reasoning as `later_than_statutory`. `agree` and `not_compared` add nothing
+  // to `flags`: flagging every case would put a row in the metrics exception
+  // ranking for every resignation this system ever sees, and the fact that no
+  // comparison happened is carried where a person reads it — the reconciliation
+  // block rides on `notice`, which is the column the row persists and the
+  // sign-off panel renders — rather than where a dashboard counts it.
+  const reconciliation = notice.reconciliation ?? null;
+  if (reconciliation && reconciliation.verdict === "remote_longer") {
+    flags.push("remote_notice_longer_than_statutory", `remote_notice_days_${reconciliation.remote.daysOfNotice}`);
+  }
+  if (reconciliation && reconciliation.verdict === "statute_longer") {
+    flags.push(
+      "remote_notice_below_statutory",
+      `notice_shortfall_days_${Math.abs(reconciliation.differenceDays)}`,
+      `remote_notice_days_${reconciliation.remote.daysOfNotice}`,
+    );
+    return {
+      decision: "escalate",
+      reason: "remote_notice_below_statutory",
+      flags,
+      notice,
+      payout,
+    };
+  }
 
   // Gate 6 — is the PTO payout actually computable?  (finding F-28)
   //
@@ -389,6 +512,15 @@ export const GATE_SEQUENCE = Object.freeze([
   },
   {
     position: 6,
+    reason: "no_statutory_notice_during_probation",
+    gate: "country_rule",
+    checks:
+      "the employee is either past their probationary period, or their country's statute requires notice during it",
+    means:
+      "This employee is still inside their probationary period, and their country's own statute says that during it either side may end the contract WITHOUT notice — so there is no statutory notice period to calculate and no last working day to compute from one. That is a finding about the law, not a gap. It is not the same as saying nothing is owed: the article that gives the exemption gives it \"unless otherwise agreed in writing\", and this system holds no contract and has read none. Somebody has to open the contract before telling this person they can leave.",
+  },
+  {
+    position: 7,
     reason: "no_matching_notice_bracket",
     gate: "notice_rule",
     checks: "the country's notice table reaches a bracket covering this employee's tenure",
@@ -396,7 +528,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "We DO hold statutory notice rules for this country — none of its brackets covers this employee's tenure. That is the opposite of \"unsupported country\", and the two used to be reported identically: a UK employee three weeks in was told the United Kingdom is unsupported, on a panel citing the UK statute one line above. Someone has to extend the table's low end, not add the country.",
   },
   {
-    position: 7,
+    position: 8,
     reason: "statutory_discrepancy",
     gate: "discrepancy",
     checks: "any end date proposed in the resignation falls on or after the statutory notice end date",
@@ -414,7 +546,16 @@ export const GATE_SEQUENCE = Object.freeze([
       `The end date proposed in the resignation is EARLIER than the statutory minimum notice allows. ${ESCALATION_TEAM} has to decide how the shortfall is handled — the flags on the case carry how many days short it is, and where a source for that country's own notice statute has been read into this system, the case also carries what the statute itself says about serving short notice. This is not an arithmetic error; it is a real conflict between what was proposed and what the law requires.`,
   },
   {
-    position: 8,
+    position: 9,
+    reason: "remote_notice_below_statutory",
+    gate: "notice_reconciliation",
+    checks:
+      "the notice Remote's own resignation record requires is at least as long as the statutory minimum this system computed",
+    means:
+      `Remote's own record for this resignation states a notice period SHORTER than the statutory minimum this system computed from the statute. Remote states that its figure is built from the employment contract and local labour law together, and it does not say which of the two produced it — so this is the case where a contractual notice period may be sitting below the floor the law sets, and nothing else in this system would notice it. Both figures and both sources are on the case, and neither is presented as the answer. ${ESCALATION_TEAM} decides which instrument governs: that is a question of law, and this system does not answer it.`,
+  },
+  {
+    position: 10,
     reason: "pto_balance_unusable",
     gate: "pto_computable",
     checks: "the PTO balance can actually be turned into a payout figure",
@@ -422,7 +563,7 @@ export const GATE_SEQUENCE = Object.freeze([
       "The PTO payout could not be worked out from the balance we were handed. It sits AFTER the statutory check deliberately: a legal discrepancy is a finding about the REQUEST, this is a problem with the DATA, and both escalate — so only the recorded reason differs, and mislabelling one as the other sends the case to the wrong desk. Signing off a report that simply left the figure blank would invite exactly the reading the money rules exist to prevent: \"nothing is owed\", when the truth is \"we could not work it out\".",
   },
   {
-    position: 9,
+    position: 11,
     reason: "all_gates_passed",
     gate: "outcome",
     checks: "every gate above passed",
@@ -455,3 +596,40 @@ export const describeDecidingGate = descriptions.describeDecidingGate;
  * @param {string} reason  the slug evaluate() returned
  */
 export const describeGateLadder = descriptions.describeGateLadder;
+
+
+/**
+ * A RUNG THE LADDER CALLS "passed" BUT WHICH EVALUATED NOTHING.
+ *
+ * describeGateLadder() marks status by POSITION alone: every rung above the
+ * deciding one is `passed`. That is right for a gate that ran and found nothing
+ * — and wrong for gate 9, notice_reconciliation, when Remote's own
+ * `days_of_notice` was never read: the comparison did not happen, and the
+ * sidebar printed "passed" directly beneath its own sentence saying the
+ * comparison "has NOT been checked". A specialist signing under that ladder
+ * would believe a check had cleared that never ran.
+ *
+ * Only the server holds the fact (`notice.reconciliation.verdict`), so the
+ * qualification is applied here, after the position-based ladder, and never in
+ * the browser. `not_evaluated` is the fourth status; the sidebar names it.
+ * Nothing else about the ladder changes: the rung's position, gate and
+ * `checks` text are the same, and a rung that DID compare stays `passed`.
+ *
+ * @param {Array<object>} ladder   describeGateLadder(reason)'s output
+ * @param {object|null} row        the stored resignation (needs `.notice`)
+ */
+export function qualifyGateLadder(ladder, row) {
+  if (!Array.isArray(ladder)) return ladder;
+  const verdict = row?.notice?.reconciliation?.verdict ?? null;
+  if (verdict !== "not_compared") return ladder;
+  return ladder.map((rung) =>
+    rung.gate === "notice_reconciliation" && rung.status === "passed"
+      ? {
+          ...rung,
+          status: "not_evaluated",
+          qualification:
+            "Remote's own days_of_notice was not read for this resignation, so the statute's figure was compared with nothing. This rung was reached and evaluated nothing — it did not pass.",
+        }
+      : rung
+  );
+}

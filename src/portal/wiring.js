@@ -22,7 +22,7 @@ import { DossierStore as RelocationDossierStore } from "../uc07/dossierStore.js"
 import { DossierStore as TaxDossierStore } from "../uc08/dossierStore.js";
 import { AdjustmentStore } from "../uc09/adjustmentStore.js";
 
-import { isLlmConfigured } from "../shared/llm.js";
+import { isLlmConfigured, askAboutDocument } from "../shared/llm.js";
 import { classifyExpenseRuleBased } from "../uc02/expenseClassifier.js";
 import { classifyTravelInquiryRuleBased } from "../uc03/classifier.js";
 import { parseRelocationRuleBased } from "../uc07/relocationParser.js";
@@ -118,4 +118,23 @@ export function portalLlmDefaults() {
         parseRelocation: parseRelocationRuleBased,
         parseInquiry: parseInquiryRuleBased,
       };
+}
+
+/**
+ * The receipt transport, or null.
+ *
+ * Its own function rather than a key in portalLlmDefaults() because that
+ * object's shape is "which of these seams should be STUBBED", and this seam's
+ * default is the opposite: absent unless a key exists. It is also the one seam
+ * that spends money on a document an unauthenticated-ish caller supplies, so
+ * it should be readable in one place.
+ *
+ * NULL UNDER TEST, ALWAYS. Same floor as portalLlmDefaults() — a test that
+ * forgets to stub must not reach api.openai.com because the developer happens
+ * to have a real .env. Gate 8b reads an absent reading as "nobody tried", so
+ * this returning null is behaviourally identical to the state before [E-1].
+ */
+export function portalReceiptReader() {
+  if (process.env.NODE_TEST_CONTEXT) return null;
+  return isLlmConfigured() ? askAboutDocument : null;
 }

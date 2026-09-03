@@ -49,6 +49,8 @@ import { matchKeywords } from "../shared/keywordMatch.js";
 // agree.
 // ---------------------------------------------------------------------------
 
+import { retrieveStatutoryCitations } from "../knowledge/statutoryRetrieval.js";
+
 export const TREATY_CORPUS = [
   {
     id: "oecd-model-art-4",
@@ -104,8 +106,24 @@ export function cosineSimilarity(a, b) {
 }
 
 /**
- * The original retrieval mechanism, kept as the safe unconfigured default.
- * Every citation states which literal keyword matched it.
+ * The ORIGINAL retrieval mechanism, over the three hand-written OECD Model
+ * paraphrases in TREATY_CORPUS.
+ *
+ * DEMOTED 2026-08-30 FROM DEFAULT TO LAST RESORT, and the reason is the output
+ * rather than the mechanism. Measured on the four demo country pairs, this leg
+ * answered a US–Portugal treaty question with NOTHING, and Netherlands–Portugal
+ * and US–Canada questions with the OECD MODEL — the template real conventions
+ * are drafted from, offered where the instrument belongs, which as CLAUDE.md §7
+ * item 17 puts it "reads exactly like an answer". All six conventions governing
+ * the demo pairs were in docs/knowledge/ the whole time and no ranking function
+ * could reach them, because a corpus of three cannot hold them.
+ *
+ * It is KEPT, not deleted: when the statutory index finds nothing, a labelled
+ * model paraphrase is better than silence, and the OECD entries are
+ * paraphrase-only BY LICENCE (L1-01-L1-11-oecd-citation-register.md exists so
+ * nobody "improves" them by pasting the source in). What changed is that they
+ * can no longer displace an instrument — see statutoryLeg() below.
+ *
  * @param {string} text
  * @param {Array<{id:string,title:string,summary:string,keywords:string[]}>} corpus
  */
@@ -122,6 +140,34 @@ function retrieveByKeywords(text, corpus) {
     }
   }
   return matches;
+}
+
+/**
+ * The unconfigured default: the retrieved statutory corpus, then the model
+ * paraphrases only if it found nothing.
+ *
+ * ORDER IS THE POINT. An instrument in force always precedes a model of one,
+ * and a model is only ever reached when no instrument matched — so the failure
+ * mode this replaces (a model returned ALONGSIDE, and indistinguishable from,
+ * an instrument) cannot recur. A caller that passes its own `corpus` is opting
+ * out of the statutory index entirely, which is what the tests that inject fake
+ * embedded corpora rely on.
+ */
+function statutoryLeg(text, corpus, { usingDefaultCorpus, countries = null }) {
+  if (!usingDefaultCorpus) return retrieveByKeywords(text, corpus);
+  const statutory = retrieveStatutoryCitations(text, { feed: "UC-08", countries });
+  if (statutory.length > 0) return statutory;
+  return retrieveByKeywords(text, corpus).map((c) => ({
+    ...c,
+    // SAID OUT LOUD, because the whole defect was a model that read like an
+    // instrument. A specialist seeing this knows no governing text matched.
+    authority: "model",
+    instrument: false,
+    matchedOn: [
+      ...c.matchedOn,
+      "no passage in the retrieved statutory corpus matched this inquiry — this is a MODEL convention, not the instrument governing this country pair",
+    ],
+  }));
 }
 
 /**
@@ -167,6 +213,10 @@ export class TreatyRetriever {
     this.embed = embed;
     this.pgPool = pgPool;
     this.corpus = corpus;
+    // A caller that supplied its own corpus wants THAT corpus searched — the
+    // hermetic tests inject fake embedded entries and would otherwise get the
+    // real statutory index back, which is a silent test-double bypass.
+    this.usingDefaultCorpus = corpus === TREATY_CORPUS;
     this.threshold = threshold;
   }
 
@@ -174,12 +224,13 @@ export class TreatyRetriever {
    * @param {string} text  the inquiry text (and/or a parsed inquiry-type label)
    * @returns {Promise<Array<{id: string, title: string, summary: string, matchedOn: string[]}>>}
    */
-  async retrieveCitations(text) {
-    if (!this.embed) return retrieveByKeywords(text, this.corpus);
+  async retrieveCitations(text, { countries = null } = {}) {
+    const opts = { usingDefaultCorpus: this.usingDefaultCorpus, countries };
+    if (!this.embed) return statutoryLeg(text, this.corpus, opts);
 
     const queryVector = await this.embed(text);
     const stored = await this.#storedVectors();
-    if (stored.length === 0) return retrieveByKeywords(text, this.corpus);
+    if (stored.length === 0) return statutoryLeg(text, this.corpus, opts);
 
     const ranked = stored
       .map((entry) => ({ entry, similarity: cosineSimilarity(queryVector, entry.embedding) }))
@@ -239,8 +290,16 @@ export class TreatyRetriever {
 export function describeRetrievalMode(citations) {
   const list = Array.isArray(citations) ? citations : [];
   if (list.length === 0) return "none";
-  const embedding = list.some((c) => (c?.matchedOn ?? []).some((m) => /^embedding similarity/.test(String(m))));
-  return embedding ? "embedding_similarity" : "keyword_fallback";
+  const says = (re) => list.some((c) => (c?.matchedOn ?? []).some((m) => re.test(String(m))));
+  if (says(/^embedding similarity/)) return "embedding_similarity";
+  // Added 2026-08-30 with the statutory corpus. It is a THIRD mode and not a
+  // relabelled keyword_fallback: the two answer from different bodies of text —
+  // 55 passages of retrieved statute versus three OECD Model paraphrases — and a
+  // specialist weighing a citation needs to know which. Collapsing them would
+  // reintroduce, in the mode label, exactly the ambiguity the corpus change
+  // removed from the citations themselves.
+  if (says(/^statutory corpus \(lexical\)/)) return "statutory_lexical";
+  return "keyword_fallback";
 }
 
 let defaultRetriever = new TreatyRetriever();
@@ -253,8 +312,8 @@ let defaultRetriever = new TreatyRetriever();
  * @param {string} text
  * @returns {Promise<Array<{id: string, title: string, summary: string, matchedOn: string[]}>>}
  */
-export async function retrieveCitations(text) {
-  return defaultRetriever.retrieveCitations(text);
+export async function retrieveCitations(text, opts) {
+  return defaultRetriever.retrieveCitations(text, opts);
 }
 
 /**

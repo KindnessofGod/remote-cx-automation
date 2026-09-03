@@ -239,3 +239,18 @@ every reason on the ladder.
 - `docs/CORRECTIONS-LOG.md` — C-22, C-27 (pattern P7) and C-31 (pattern P9), the
   three corrections §6 exists because of.
 - `CLAUDE.md` §3 — the prime directives the ordering enforces.
+
+
+## A fourth status — `not_evaluated` (2026-09-02)
+
+`describeGateLadder()` marks status by **position**: rungs above the deciding
+one are `passed`, below it `not_reached`. Position cannot tell *ran and found
+nothing* from *never had its inputs*. UC-05's gate 9 compares the statute's
+notice with Remote's own `days_of_notice`; when that figure was never read the
+ladder said `passed` directly beneath the panel's own sentence that the
+comparison "has NOT been checked". `qualifyGateLadder()` in
+`src/uc05/policyEngine.js` now marks that rung **`not_evaluated`**, with the
+reason on the rung, from the stored row — the one place that knows whether the
+check ran. The sidebar names it "not evaluated" and draws it dotted, never in
+the settled colour. Rule 2 above applies to it as it does to `not_reached`: it
+is not a pass.

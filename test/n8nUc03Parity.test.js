@@ -249,14 +249,45 @@ for (const scenario of SCENARIOS) {
       ? { ...scenario.classify }
       : classifyTravelInquiryRuleBased({ text: request.text });
 
+    // THE REFERENCE EMPLOYMENT IS BUILT FROM THE RAW FIXTURE, NOT FROM THE
+    // NODE'S OUTPUT — corrected 2026-08-31, and this was the single most
+    // expensive line in the file.
+    //
+    // It used to read `employment: fromN8n.employment`, feeding `evaluate()`
+    // THE NODE'S OWN NORMALISED OBJECT. That compares like with like BY
+    // CONSTRUCTION: any field the node fails to carry is equally absent on both
+    // sides, so the comparison agrees and the suite goes green. It is a parity
+    // test that launders the defect it exists to catch.
+    //
+    // What it hid: the node built `employment` as exactly
+    // `{id, status, country_code, email}`, while `assessLetterScope()` checks
+    // `full_name`, `job_title`, `status`, `contract_type`, `start_date`. Four
+    // were missing on every run, so every formal-letter request escalated
+    // `letter_scope_exceeded` with four findings about a COMPLETE record —
+    // while src reached `auto_resolve / standard_letter_issued`. A different
+    // decision, a different terminal Zendesk node, a different queue tag. 61/61
+    // passed throughout.
+    //
+    // `normalizeEmployment()` is the same function the real Node path uses on
+    // the same Remote response, so this asks both copies the question the
+    // production caller asks. `country_code` is the one field taken from the
+    // node: the fixture's country shape is the mock's, and src's own reference
+    // normalisation of it is what the node is already asserted against by the
+    // dedicated alpha-2 rows below — comparing it here would re-test that in a
+    // place whose failure message would not say so.
+    const referenceEmployment = {
+      ...normalizeEmployment(employment.data?.employment ?? employment.data ?? employment),
+      country_code: fromN8n.employment?.country_code ?? null,
+    };
+
     const expectedIdentity = verifyRequester({
       session: request.session ?? null,
-      employment: fromN8n.employment,
+      employment: referenceEmployment,
       requesterType: "self",
     });
 
     const expected = evaluate({
-      employment: fromN8n.employment,
+      employment: referenceEmployment,
       classification: expectedClassification,
       identity: expectedIdentity,
       supportedCountries: new Set(SUPPORTED_CODES),
@@ -765,7 +796,9 @@ test("employment country_code parity: an alpha-3-only record yields a NULL origi
       text: "I'd like to work remotely from Portugal for a month — can I do my normal job from there?",
       externalRef: "3940",
     },
-    employment: { id: "emp_active_001", status: "active", country: { code: "DEU" } },
+    // contract_type present so the run reaches the country logic this test is
+    // about — the engagement gate ahead of it fails closed without one.
+    employment: { id: "emp_active_001", status: "active", contract_type: "full_time", country: { code: "DEU" } },
     countriesEnvelope: LIVE_COUNTRIES_ENVELOPE,
     classification: NO_LLM_RESPONSE(),
   });

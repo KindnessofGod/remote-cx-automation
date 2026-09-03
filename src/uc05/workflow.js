@@ -35,6 +35,7 @@
 import { normalizeDecisionAction } from "../shared/declineVocabulary.js";
 import { verifyRequester } from "../shared/identity.js";
 import { evaluate as evaluatePolicy } from "./policyEngine.js";
+import { payoutCurrencyFor } from "./ptoPayout.js";
 import { describeSignoffBasis } from "./decisionFacts.js";
 import { extractFromLetter } from "./letterExtractor.js";
 import { evaluateSignoffAction } from "./signoffPolicy.js";
@@ -169,6 +170,13 @@ async function readTimeOffBalances({ remote, employmentId, supplied, hourlyRateI
  *   never went through the LLM extractor). Overrides any LLM extraction.
  * @param {string} [ticket.reason]              explicit, when the caller already knows
  *   the reason. Overrides any LLM extraction.
+ * @param {number} [ticket.remoteDaysOfNotice]  Remote's own `days_of_notice` off
+ *   the resignation record, when the caller read one. Held against the statutory
+ *   figure; absent, the case says so rather than presenting one figure as agreed.
+ * @param {object} [ticket.remoteResignation]  the whole resignation record, when the
+ *   caller has it — `days_of_notice` and `offboarding_request_id` are read off it
+ * @param {string} [ticket.offboardingRequestId]  the id the resignation family is
+ *   addressed by. NOT an employment id and NOT a resignation id
  * @param {string} [ticket.externalRef]
  * @param {string} [ticket.source]
  * @param {string|number|Date} [ticket.now]     override for tests; defaults to real now
@@ -198,6 +206,30 @@ export async function handleResignationRequest(
     now = new Date().toISOString(),
   } = ticket;
 
+  // REMOTE'S OWN `days_of_notice`, WHEN THE CALLER HAS ONE (2026-09-02, `[N-5]`).
+  //
+  // It lives on `GET /v1/resignations/{offboarding_request_id}` — Remote's own
+  // description: *"The number of calendar days of notice required based on the
+  // contract terms and local labor laws"* — and until this pass nothing in this
+  // repository read it. See noticeReconciliation.js for what is done with it.
+  //
+  // THIS FUNCTION DOES NOT FETCH IT, AND THAT IS A NAMED GAP RATHER THAN A
+  // DESIGN. Three things are missing and none of them is code in this file: the
+  // token holds no `resignation:read` scope; no `offboarding_request_id` exists
+  // anywhere in this system (the resignation family is addressed by that id, not
+  // by an employment id, and using the wrong one returns a 404 indistinguishable
+  // from an absent route — DRIFT-063 records that mistake being made once
+  // already); and `RemoteClient` has no method for the endpoint. So the value is
+  // ACCEPTED from a caller that has read it, and its absence is reported as
+  // `not_compared / remote_figure_absent` rather than quietly treated as
+  // agreement. Both spellings are taken because both shapes are what a caller
+  // holds: the bare figure, or the record it came off.
+  const remoteResignation = ticket.remoteResignation ?? null;
+  const remoteDaysOfNotice =
+    ticket.remoteDaysOfNotice ?? remoteResignation?.days_of_notice ?? null;
+  const remoteRecordRef =
+    ticket.offboardingRequestId ?? remoteResignation?.offboarding_request_id ?? remoteResignation?.id ?? null;
+
   const employment = await remote.getEmployment(employmentId);
 
   // THE CURRENCY IS REMOTE'S WHEN REMOTE STATES ONE. `contract_details.
@@ -207,8 +239,10 @@ export async function handleResignationRequest(
   // in euros. Naming a currency is not arithmetic, so preferring Remote's costs
   // nothing and asserts nothing — and an explicit `ticket.currency` still wins,
   // because a caller that named one is stating a fact about its own numbers.
-  const currency =
-    ticket.currency ?? employment?.contract_details?.compensation_currency_code ?? employment?.currency ?? "USD";
+  // No trailing "USD": an absent currency now REFUSES the payout line in
+  // reconcilePtoPayout() rather than denominating it in dollars. See
+  // payoutCurrencyFor() for why the rule lives in one place.
+  const currency = payoutCurrencyFor({ stated: ticket.currency, employment });
 
   // THE TIME OFF READ (UC-05.md §7). See readTimeOffBalances() above for the
   // precedence and for why a failed read produces a refused line rather than an
@@ -231,14 +265,23 @@ export async function handleResignationRequest(
   // form-submission path is faster, cheaper, and not subject to drift.
   // The result is still tagged with source: "structured_input" so the
   // audit row is honest about which path produced it.
-  const extraction = explicitProposedEndDate || explicitReason
-    ? {
-        proposedEndDate: explicitProposedEndDate,
-        reason: explicitReason,
-        confidence: 1.0,
-        source: "structured_input",
-      }
-    : await extract({ text: letterText }, { audit });
+  //
+  // A REASON ALONE DOES NOT SILENCE THE LETTER. This used to skip extraction
+  // whenever EITHER a date OR a reason was typed, so a resignation that typed a
+  // reason and stated its last day only in the letter — "My last working day
+  // will be 30 November 2026" — was recorded as proposing no date at all, and
+  // the screen said so. Found on the live deployment 2026-09-02 (ticket 227;
+  // control 238 with no reason extracted 2026-11-30 at 0.9). Filed with a short
+  // date in the letter plus a reason, a 62-day shortfall would have reached HR
+  // Ops as prepared_for_signoff. The typed DATE is what makes extraction
+  // unnecessary; a typed reason is merged with whatever the letter says.
+  let extraction;
+  if (explicitProposedEndDate) {
+    extraction = { proposedEndDate: explicitProposedEndDate, reason: explicitReason, confidence: 1.0, source: "structured_input" };
+  } else {
+    const extracted = await extract({ text: letterText }, { audit });
+    extraction = { ...extracted, reason: explicitReason ?? extracted?.reason ?? null };
+  }
 
   // Pass the LLM/structured date through into the policy engine. The
   // calculator is the single source of truth for the statutory end date;
@@ -260,6 +303,8 @@ export async function handleResignationRequest(
       timeOffBalances: resolvedBalances,
       currency,
       now,
+      remoteDaysOfNotice,
+      remoteRecordRef,
     });
   } catch (err) {
     if (!(err instanceof RangeError)) throw err; // never swallow a genuine bug

@@ -82,12 +82,14 @@ import {
   ACTIONS as REVIEW_ACTIONS,
 } from "./reviewPolicy.js";
 import { describeDecidingGate, describeGateLadder, describeDecisionFacts } from "./policyEngine.js";
+import { readReceiptFromTicket } from "./receiptFromTicket.js";
 import { classifyRisk, describeRiskPosture } from "../shared/riskEngine.js";
 import { validateAgainstSchema } from "../shared/schemaValidator.js";
 import { describeEmployee } from "../shared/employeeSubject.js";
 import { describeRequesterParties } from "../shared/requesterSubject.js";
 import { readJsonBody } from "../shared/httpBody.js";
 import { resolveApprover, resolveReader } from "../shared/approverAuth.js";
+import { byTicketAccountRefusal } from "../shared/byTicketAccountGuard.js";
 
 const SUBMISSION_SCHEMA = { required: ["expenseId", "employmentId"] };
 
@@ -122,6 +124,13 @@ export function createUc02Handler({
   expenseStore,
   audit,
   remote,
+  // [E-1] the Zendesk path. All three are absent by default, and the route
+  // answers 503 `receipt_reader_not_configured` rather than pretending — a
+  // deployment without them behaves exactly as it did before receipts existed.
+  zendesk = null,
+  receiptReader = null,
+  downloadAttachment = null,
+  receiptTicketToken = null,
   submit = handleExpenseSubmission,
   allowedOrigin = "*",
   // DELIBERATELY NOT `requireSignedIdentity` — that name is already taken here
@@ -185,6 +194,46 @@ export function createUc02Handler({
     }
 
     try {
+      // POST /api/receipts/read-from-ticket — [E-1], the Zendesk path.
+      //
+      // WHO CALLS THIS: the UC-02 n8n graph, once, between normalising the
+      // ticket and running the gates. It exists so the graph does NOT need four
+      // nodes and a third copy of the extraction schema in a Code node — the
+      // logic here is already tested, and n8n stays a router.
+      //
+      // AUTHENTICATED WITH THE WEBHOOK SECRET, deliberately reusing
+      // `X-YOUR-WEBHOOK-TOKEN` rather than minting another. n8n already holds
+      // that credential for all nine graphs, it is rotated by a documented
+      // procedure, and a second secret would be a second thing to rotate and
+      // forget. This route reads a ticket and spends a paid vision call, so it
+      // must not be open.
+      //
+      // IT DECIDES NOTHING. It returns the transcription; gate 8b compares.
+      if (req.method === "POST" && isPath(parts, ["api", "receipts", "read-from-ticket"]) && parts.length === 3) {
+        if (!receiptTicketToken) {
+          // Fail closed, and say which kind of "no": an unconfigured route must
+          // not look like a bad token to whoever is debugging it at 2am.
+          return send(res, 503, { ok: false, code: "receipt_reader_not_configured" });
+        }
+        const supplied = req.headers["X-YOUR-WEBHOOK-TOKEN"];
+        if (!supplied || String(supplied) !== String(receiptTicketToken)) {
+          return send(res, 401, { ok: false, code: "webhook_token_required" });
+        }
+
+        const body = await readJsonBody(req);
+        const reading = await readReceiptFromTicket(
+          { ticketId: body.ticketId },
+          { zendesk, download: downloadAttachment, readReceipt: receiptReader }
+        );
+        return send(res, 200, {
+          ok: true,
+          source: reading.source,
+          reason: reading.reason,
+          extracted: reading.extracted,
+          attachment: reading.attachment ? { fileName: reading.attachment.fileName, contentType: reading.attachment.contentType } : null,
+        });
+      }
+
       // POST /api/expenses — submit an expense for the real workflow to process.
       // body: {expenseId, employmentId, session?, receiptHash?, externalRef?, source?}
       if (req.method === "POST" && isPath(parts, ["api", "expenses"]) && parts.length === 2) {
@@ -227,6 +276,10 @@ export function createUc02Handler({
       // the generic /:id route since "by-ticket" would otherwise be read as an id.
       if (req.method === "GET" && isPath(parts, ["api", "expenses", "by-ticket"]) && parts[3] && parts.length === 4) {
         const row = await expenseStore.findByExternalRef(parts[3]);
+        // ACCOUNT COLLISION GUARD — a bare ticket number means nothing without the
+        // account it was issued by. See src/shared/byTicketAccountGuard.js.
+        const foreignAccount = byTicketAccountRefusal(row, parts[3]);
+        if (foreignAccount) return send(res, 404, foreignAccount);
         if (!row) return send(res, 404, { found: false });
         return send(res, 200, { ...view(row), ...(await employeeAndRequester(row, remote)) });
       }

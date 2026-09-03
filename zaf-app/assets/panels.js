@@ -30,6 +30,36 @@
     return String(value);
   }
 
+  /* A UUID, shortened for a person to read (2026-08-31).
+
+     A database key printed in the middle of a customer-facing row is noise:
+     nobody outside this system can look it up, it cannot be read over a phone,
+     and a page full of them looks like a debug dump — which is what the project
+     owner found when they opened this panel to show it to an audience.
+
+     THE SHORT FORM IS A PREFIX OF THE REAL ID, not a hash and not a new
+     identifier, so it still resolves by prefix search and can never name a
+     record that does not exist. The full id is untouched on the record and on
+     the append-only audit row, which is where an exact key belongs. Mirrors
+     src/shared/publicReference.js, which does the same for server-composed
+     prose; the two are held equal by test.
+
+     ANYTHING THAT IS NOT A UUID IS RETURNED UNCHANGED — an email address, a
+     session name or a ticket number is already readable, and truncating one
+     would destroy information rather than hide noise.
+
+     THE COPY IN main.js IS NOT A MISTAKE. These two files are separate <script>
+     tags with no module system between them, and a helper published on `window`
+     by one and read by the other degrades silently to a no-op if the load order
+     ever changes — which is exactly what happened when this was tried that way.
+     test/zafNoDeveloperArtifacts.test.js holds both copies and the server's
+     equal. */
+  var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  function shortRef(value) {
+    var v = value === null || value === undefined ? "" : String(value).trim();
+    return UUID_RE.test(v) ? v.slice(0, 8) : v;
+  }
+
   /* A country the reader reads, from the code the record stores. See
      country.js: `country()` names a bare alpha-2 code and leaves everything
      else — a name the server already sent, prose, an absence — exactly as it
@@ -86,6 +116,34 @@
     if (typeof remoteInteger !== "number" || Math.round(remoteInteger) !== remoteInteger) return "—";
     var human = remoteInteger / 100;
     return human.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + show(currency, "");
+  }
+
+  /**
+   * THE PTO PAYOUT ROW READS THE SERVER'S ACCOUNT OF THE FIGURE, NOT THE FIGURE.
+   *
+   * It used to read `payout.totalInRemoteInteger` off the record and format it.
+   * For a resignation filed with no time-off balances the record carries 0 —
+   * arithmetically honest, semantically unknown (`source: "no_time_off_records"`
+   * in src/uc05/ptoPayout.js) — so this row printed "0.00 EUR" on the screen
+   * HR Ops signs from, while the portal and the basis card beneath both said
+   * "not known". Money is the one thing this project never invents, and a zero
+   * nobody worked out is invented money with the digits left in.
+   *
+   * So the row prints `basis.payout.shortLabel` (src/uc05/decisionFacts.js) —
+   * the figure when one is stated, the NAME of the absence when not — and
+   * authors nothing itself. No basis, no figure: a number the server has not
+   * vouched for is not one this row may show. The `money()` fallback is only
+   * for an API that publishes `basis.payout.stated` but predates `shortLabel`,
+   * so the two halves can deploy in either order; it is never reached on a
+   * current API and never reached for an unstated figure.
+   */
+  function ptoPayoutValue(view) {
+    var basis = view.basis && view.basis.payout;
+    if (!basis) return "—";
+    if (typeof basis.shortLabel === "string" && basis.shortLabel) return basis.shortLabel;
+    if (basis.stated !== true) return "—";
+    var payout = (view.case || {}).payout || {};
+    return money(payout.totalInRemoteInteger, payout.currency);
   }
 
   /* =========================================================================
@@ -209,6 +267,104 @@
     rows.push({ label: label, value: value });
   }
 
+  /* -------------------------------------------------------------------------
+     ONE RETRIEVED PASSAGE, WITH ENOUGH OF ITS PROVENANCE TO BE WEIGHED
+     -------------------------------------------------------------------------
+     WHY THIS EXISTS (2026-08-30). Until today both dossier panels rendered a
+     retrieved citation as a TITLE and nothing else — UC-08 as a single row of
+     titles joined by semicolons, UC-07 as "Guidance · <title>" plus its
+     summary. That was defensible while the corpus was three hand-written
+     paraphrases of the OECD Model, because every passage had the same
+     provenance and the same weight: none.
+
+     It stopped being defensible when the retrieval leg moved onto the
+     retrieved statutory corpus (BUILD-LOG §3.95). These panels now receive
+     the IRS's own substantial presence test, Portugal's CIRS art. 16.º and
+     the text of the US-Portugal convention — each carrying its publisher, the
+     URL it was retrieved from, the date it was retrieved on and a SHA-256 of
+     the bytes — and rendered them as bare titles, indistinguishable from the
+     model paraphrases the retriever still falls back to when nothing
+     statutory matches. A specialist could not tell the governing instrument
+     from the template it was drafted from, which is the exact distinction the
+     corpus change was made to give them.
+
+     WHAT IS PRINTED AND WHY EACH PART EARNS ITS PLACE. The label says which
+     KIND of material this is, because that is the question a citation has to
+     answer before its content matters. The publisher is what makes it
+     checkable — "Internal Revenue Service" is a fact a reader can act on in a
+     way that "D-35" is not. The retrieval date is the one caveat that applies
+     to a correctly-retrieved instrument: this system holds the text as
+     published on that date and does not track later amendments.
+
+     STRINGS ONLY, NO POLICY. Everything here is read off fields the API
+     already computed; nothing is re-derived, nothing branches on a decision.
+     A dossier stored before today carries no `authority` and no `publisher`,
+     so it falls through to the old shape rather than growing empty
+     parentheses.
+     ---------------------------------------------------------------------- */
+  /* THE CORPUS DECLARES THREE AUTHORITIES AND THIS HANDLED TWO (fixed 2026-08-30,
+     hours after the two-armed version shipped). `documentCountries.js`'s
+     AUTHORITY_RANK is {instrument, administrative, model}; the `else` swallowed
+     `administrative`, so the U.S. Social Security Administration's published
+     detached-worker rule was labelled "Guidance" — the same label as
+     MOBILITY_CORPUS, which is this project's own hand-written internal notes
+     with no publisher and no retrieval date.
+
+     It is not a rare case. 14 of the 57 corpus passages are `administrative`,
+     and THREE OF UC-07'S SIX ARE — all of D-20 — so half of that use case's
+     statutory feed read as an internal note. This is the same shape as the
+     UC-08 defect this helper was written to fix, committed in the fix itself:
+     an if-chain that had never been given a limb for a value the data layer
+     already carried.
+
+     `model` is kept and is currently unreachable from the generated corpus (zero
+     passages carry it). Its live producer is TREATY_CORPUS in
+     src/uc08/treatyRetriever.js, the last-resort OECD paraphrases — the one
+     population the "must not be cited as the governing instrument" caution is
+     about. Deleting the arm because the corpus does not use it would silently
+     relabel those as "Guidance" the moment the fallback fires. */
+  function citationLabel(c) {
+    if (c.authority === "instrument") return "Source · instrument in force";
+    if (c.authority === "administrative") return "Source · agency guidance";
+    if (c.authority === "model") return "Source · general principle";
+    return "Guidance";
+  }
+
+  function citationValue(c) {
+    var parts = [];
+    if (c.summary) parts.push(c.summary);
+    var provenance = [];
+    if (c.publisher) provenance.push("published by " + c.publisher);
+    if (c.retrievedOn) provenance.push("retrieved " + c.retrievedOn);
+    /* `matchedOn` ARRIVES IN TWO SHAPES AND ONLY ONE OF THEM CARRIES ITS OWN
+       FRAMING. The statutory leg emits a whole sentence per entry —
+       "statutory corpus (lexical) — matched on \"residency\", \"united\"" —
+       while the older keyword legs emit bare stems: ["pto", "liquidat"]. A
+       single join renders the first correctly and turns the second into
+       "(pto; liquidat)", a parenthesis of word fragments with nothing saying
+       they are a retrieval signal rather than, say, a score or a tag. So the
+       prefix is added only where the entries do not already say it. */
+    var matched = c.matchedOn || [];
+    if (matched.length) {
+      provenance.push(
+        /matched on/i.test(matched[0]) ? matched.join("; ") : "matched on: " + matched.join(", ")
+      );
+    }
+    if (provenance.length) parts.push("(" + provenance.join(" · ") + ")");
+    return parts.join(" ");
+  }
+
+  /** Every retrieved passage as its own row, newest idiom first. */
+  function pushCitations(rows, citations, emptyMessage) {
+    if (!citations || !citations.length) {
+      push(rows, "Guidance", emptyMessage);
+      return;
+    }
+    citations.forEach(function (c) {
+      push(rows, citationLabel(c) + " · " + show(c.title), citationValue(c));
+    });
+  }
+
   /* =========================================================================
      `approvalRoles(view)` — WHAT CAPACITY THE AGENT IS BEING ASKED TO ACT IN
      =========================================================================
@@ -282,8 +438,8 @@
           return d.type === "employment_verification_letter";
         });
         var rows = [
-          { label: "Employee", value: show(c.employmentId) },
-          { label: "Requester", value: show(c.requester) },
+          { label: "Employee", value: show(shortRef(c.employmentId)) },
+          { label: "Requester", value: show(shortRef(c.requester)) },
           { label: "Request type", value: words(cls.intent) },
           { label: "Asked by", value: words(cls.requesterType) },
           /* NOT "AI confidence". Confidence in WHAT was the question a reader
@@ -481,8 +637,8 @@
         var filledAs = review.status === "approved" ? "Approved" : review.status === "rejected" ? "Declined" : null;
         return {
           summary:
-            "One HR Ops specialist decides this — the entitlement roster grants uc01:hr_ops, and a specialist " +
-            "who isn't rostered for it is refused rather than let click through.",
+            "One HR Ops specialist decides this — a specialist who isn't rostered for it is refused rather " +
+            "than let click through.",
           roles: [
             {
               roleId: "uc01:hr_ops",
@@ -512,12 +668,34 @@
       title: "Contract amendment",
       rows: function (view) {
         var a = view.case || {};
+        var subjectName = (view.employee && (view.employee.name || view.employee.fullName)) || null;
         return [
-          { label: "Employee", value: show(a.employmentId) },
-          { label: "Requester", value: show(a.requester) },
+          // THE NAME FIRST, THE REFERENCE AFTER IT. This row printed a bare
+          // employment UUID, which answers "which record" and not "who" — and
+          // "who" is the question a person reading a work-authorization asks.
+          { label: "Employee", value: subjectName ? subjectName + " · " + shortRef(a.employmentId) : show(shortRef(a.employmentId)) },
+          { label: "Requester (session id)", value: show(shortRef(a.requester)) },
           { label: "Amendment type", value: words(a.amendmentType) },
           { label: "Requested effective date", value: show(a.requestedEffectiveDate) },
           { label: "Summary", value: show(a.summary) },
+        ]
+          /* THE ×100 FIGURE THAT WILL ACTUALLY BE SENT, one row under the human
+             one (contract §14: "human units and ×100 units sit one field
+             apart, and printing either without saying which is a 100× error").
+             `writesAs` / `writesValue` are computed server-side by
+             changeBasis() from the payload the write will carry — they were on
+             every JSON and on no panel until 2026-09-02. Only rows that carry
+             a value; nothing is scaled here. */
+          .concat(
+            ((view.basis && view.basis.change && view.basis.change.fields) || [])
+              .filter(function (f) { return f.writesAs && f.writesValue !== null && f.writesValue !== undefined; })
+              .map(function (f) {
+                var unit = f.currency ? " — ×100 minor units of " + f.currency : " — the value as the form carries it";
+                return { label: "Will be sent as", value: f.writesAs + " = " + String(f.writesValue) + unit };
+              })
+          )
+          .concat([
+          /* THE TWO APPROVAL ROWS ARE GONE (2026-08-20), and this panel is
           /* THE TWO APPROVAL ROWS ARE GONE (2026-08-20), and this panel is
              where they were most obviously a duplicate: `approvalRoles()` below
              publishes the same two slots with the role's name, what that role
@@ -527,10 +705,10 @@
              richer ones already carry. Nothing is hidden: both approvals are
              read from the same row the capacity card reads. */
           { label: "Opened", value: date(a.createdAt) },
-        ];
+        ]);
       },
       approveHint: function () {
-        return "Both a Customer Admin and a Remote Payroll specialist must approve before this amendment is applied.";
+        return "Both the employer's signatory and a Remote payroll specialist must approve before this amendment is applied.";
       },
 
       /* WHAT CAPACITY THE PERSON READING THIS IS BEING ASKED TO ACT IN.
@@ -539,6 +717,21 @@
          whether a control exists. */
       approvalRoles: function (view) {
         var a = view.case || {};
+        /* AN ESCALATION HAS NO SLOTS TO HOLD. The two-slot descriptor below
+           rendered "Held by: Customer Admin, Payroll Specialist" on a case the
+           gates refused at intake — two people who can do nothing here, named
+           as its owners (2026-09-02, ticket 251). The owner is the routing
+           table's team, read from the server's `handoff`; when the server did
+           not send one the card says so rather than guessing. */
+        if (a.decision === "escalate") {
+          var team = view.handoff && view.handoff.group ? view.handoff.group : null;
+          return {
+            summary: team
+              ? "Escalated at intake — no signature slot is open. " + team + " owns it and works it on the ticket."
+              : "Escalated at intake — no signature slot is open. The owning team is not named on this record; the ticket's routing tags say who has it.",
+            roles: [],
+          };
+        }
         return {
           /* WHAT THE ROWS BELOW DO NOT SAY, AND NOTHING ELSE (2026-08-20).
              "Two different people must both sign, in two different roles" is
@@ -552,7 +745,10 @@
           roles: [
             {
               roleId: "uc06:customer_admin",
-              label: "Customer Admin",
+              /* The ROLE ID is unchanged — it is the entitlement key. The label
+                 names the person meant: the employer's signatory, who is never
+                 the admin who filed the request (contract [A-2]). */
+              label: "Employer's signatory",
               decides: "whether the contract change itself is right",
               filledBy: a.adminApproval ? a.adminApproval.approver : null,
               filledOn: a.adminApproval ? date(a.adminApproval.at) : null,
@@ -560,7 +756,7 @@
             },
             {
               roleId: "uc06:payroll_specialist",
-              label: "Payroll Specialist",
+              label: "Remote payroll specialist",
               decides: "whether payroll can carry the change on the requested date",
               filledBy: a.payrollApproval ? a.payrollApproval.approver : null,
               filledOn: a.payrollApproval ? date(a.payrollApproval.at) : null,
@@ -721,8 +917,8 @@
           return block;
         }
 
-        container.appendChild(roleBlock("customer_admin", "Customer Admin", a.adminApproval));
-        container.appendChild(roleBlock("payroll_specialist", "Payroll Specialist", a.payrollApproval));
+        container.appendChild(roleBlock("customer_admin", "Employer's signatory", a.adminApproval));
+        container.appendChild(roleBlock("payroll_specialist", "Remote payroll specialist", a.payrollApproval));
         return container;
       },
     },
@@ -755,8 +951,9 @@
         var d = view.case || {};
         var dossier = d.dossier || {};
         var presence = d.presenceDays;
-        return [
-          { label: "Employee", value: show(d.employmentId) },
+        var coverage = view.citationCoverage || {};
+        var rows = [
+          { label: "Employee", value: show(shortRef(d.employmentId)) },
           { label: "Inquiry type", value: words(d.inquiryType) },
           /* NAME AND CODE, and this is the one row on this panel where the code
              earns its place. A tax specialist reading a cross-border dossier
@@ -769,24 +966,38 @@
             value: countryList(d.jurisdictions, "—", "withCode"),
           },
           { label: "Presence days", value: presence ? presence.days + " day(s) across " + presence.periodsCounted + " period(s)" : "Not computed" },
-          /* NOT "Citations" ANY MORE, BECAUSE THERE ARE NOW TWO LISTS AND THEY
-             ARE NOT THE SAME LIST. `dossier.citations` is what the treaty
-             RETRIEVER matched out of the curated corpus for this inquiry —
-             titles, no locator, no quotation, no caveat. `basis.*.sources`,
-             which this panel's findings now render properly through main.js's
-             renderSources(), is the hand-curated map of which instrument each
-             statement rests on, with its article, what it is cited for and the
-             contradictions the corpus records against it. Labelling the weaker
-             one "Citations" while the stronger one sits beside it under "The
-             rules this is based on" would make a reader think they had seen the
-             citations when they had seen the retrieval hits. The row stays
-             because what the retriever matched is worth knowing — and it is no
-             longer the only place a citation appears, which is the condition
-             under which keeping it is defensible at all. */
-          { label: "Reference corpus matched", value: (dossier.citations && dossier.citations.length) ? dossier.citations.map(function (c) { return c.title; }).join("; ") : "None matched" },
-          { label: "Narrative", value: show(dossier.narrative) },
-          { label: "Opened", value: date(d.createdAt) },
         ];
+
+        /* THE ONE-LINE "Reference corpus matched" ROW IS GONE, and what
+           replaced it is the reason this panel changed at all (2026-08-30).
+
+           That row printed `dossier.citations.map(c => c.title).join("; ")` —
+           titles, no publisher, no retrieval date, no statement of what the
+           material WAS. Its comment argued the row should not be labelled
+           "Citations" because these were merely retrieval hits out of a
+           curated corpus of general principle, weaker than the hand-curated
+           `basis` map sitting beside them. That argument was correct on the
+           day it was written and is now false: the retrieval leg answers from
+           55 passages of statute and agency guidance retrieved from their own
+           publishers (BUILD-LOG §3.95), so on a US/PT inquiry this list holds
+           the IRS's substantial presence test, CIRS art. 16.º and the text of
+           the US–Portugal convention. Rendering those as a semicolon-joined
+           string of titles understated them exactly as badly as calling them
+           "Citations" would once have overstated them.
+
+           `citationCoverage.scope` LEADS, because it is the sentence that says
+           what the passages below are and what they are not — how many are the
+           publisher's own text versus general principle, what filtered them,
+           and the currency caveat that applies to a correctly-retrieved
+           instrument. The API has computed it for months and no surface has
+           ever rendered it; until today a specialist saw the material with no
+           statement of its weight at all. */
+        if (coverage.scope) push(rows, "What this material is", coverage.scope);
+        pushCitations(rows, dossier.citations, "Nothing in the reference corpus matched this request");
+
+        push(rows, "Narrative", show(dossier.narrative));
+        push(rows, "Opened", date(d.createdAt));
+        return rows;
       },
       approveHint: function () {
         return "UC-08 has no execution path — there is nothing to approve. This dossier is research support for a Tax Ops specialist's own review.";
@@ -834,8 +1045,8 @@
         // what it describes and whether anything read it.
         var gate = view.decidedBy || {};
         return [
-          { label: "Employee", value: show(e.employmentId) },
-          { label: "Expense", value: show(e.expenseId) },
+          { label: "Employee", value: show(shortRef(e.employmentId)) },
+          { label: "Expense", value: show(shortRef(e.expenseId)) },
           /* DECISION, REASON, DECIDED BY, FLAGS AND STATE ARE NOT ROWS ANY MORE
              (2026-08-20). 0f71708 made exactly this cut on UC-04 and did not
              finish the sweep; this is the rest of it. The outcome badge in the
@@ -970,8 +1181,8 @@
         var c = view.case || {};
         var cls = c.classification || {};
         return [
-          { label: "Employee", value: show(c.employmentId) },
-          { label: "Requester", value: show(c.requester) },
+          { label: "Employee", value: show(shortRef(c.employmentId)) },
+          { label: "Requester", value: show(shortRef(c.requester)) },
           { label: "Intent", value: words(cls.intent) },
           { label: "Destination", value: country(cls.destinationCountry) },
           // Decision / Reason / Flags removed 2026-08-20 — see the UC-02 note.
@@ -1057,20 +1268,48 @@
     },
 
     /**
-     * UC-04 — Work Authorization / Workation. Single-specialist approval
-     * (not dual, per UC-04.md's own naming of one Mobility specialist) —
-     * approve/decline recorded via src/uc04/server.js, POST body
-     * {approver, note}. The negative verb is `decline` because Remote's own
-     * work-authorization status enum reads `declined_by_manager`; the server
-     * still accepts the legacy `deny` an un-refreshed bundle posts.
+     * UC-04 — Work Authorization / Workation. PREPARE AND RECORD ONLY: this
+     * panel shows the prepared case and offers no decision at all (2026-08-30).
+     *
+     * IT USED TO OFFER APPROVE/DECLINE, AND THAT WAS THE DEFECT. Those buttons
+     * posted to `POST /api/authorizations/:id/approve|decline`, which
+     * `submitWorkationApproval()` turns into
+     * `PATCH /v1/work-authorization-requests/{id}` carrying
+     * `approved_by_manager`. Remote's schema names that party
+     * `employer_approver` and gives it `employer_special_instructions` — it is
+     * THE CUSTOMER'S OWN MANAGER. So a Remote CX specialist reading a Zendesk
+     * ticket was making the customer's decision and signing it with their own
+     * name. That approval now lives on the customer-facing surface.
+     *
+     * AND IT DID NOT GAIN A DIFFERENT BUTTON. The stage this screen really
+     * belongs to is Remote's own mobility review (`approved_by_remote` /
+     * `declined_by_remote`), and Remote publishes NO ENDPOINT for it: the whole
+     * work-authorization surface is two GETs and two PATCHes, and neither PATCH
+     * accepts either value. A control for it would report success having
+     * written nothing to Remote, which is the failure this repository has paid
+     * for more often than any other (CLAUDE.md §6).
+     *
+     * SO THERE IS NO `renderActions` HERE — the same structural shape as the 🔴
+     * UC-07/UC-08 panels, and for a related but NOT identical reason, which is
+     * why the copy below never borrows the 🔴 sentence "no execution path
+     * exists". UC-04 has an execution path; it is simply not on this screen and
+     * not Remote CX's to walk. `test/zafExecutionClaim.test.js` pins that the
+     * 🔴 guarantee is stated only where it is true.
+     *
+     * The absence is explained in three places that do not repeat each other:
+     * the server's `actionableReason` (CX_SIDEBAR_NO_DECISION in
+     * src/uc04/server.js) says what is not decided here and by whom; the
+     * "Who decides this" card below names the role and its state; and
+     * `approveHint` covers the impossible case where something asked this panel
+     * for controls anyway.
      */
     "UC-04": {
       title: "Work authorization / workation",
       rows: function (view) {
         var a = view.case || {};
         return [
-          { label: "Employee", value: show(a.employmentId) },
-          { label: "Requester", value: show(a.requester) },
+          { label: "Employee", value: show(shortRef(a.employmentId)) },
+          { label: "Requester", value: show(shortRef(a.requester)) },
           { label: "Trip days", value: show(a.tripDays) },
           // `cumulativeDays` IS AN OBJECT — {days, periodsCounted} — and this
           // row printed it through show(), so every UC-04 case in the sidebar
@@ -1102,8 +1341,17 @@
           { label: "Opened", value: date(a.createdAt) },
         ];
       },
+      /* THE FALLBACK SENTENCE. main.js prints this when a view claims to be
+         actionable while carrying nothing to submit through — a state that
+         should not occur now that loadUc04 attaches a `post`, and is therefore
+         exactly the state worth having a sentence for: a card that renders
+         blank is how "the API moved" becomes "the button is broken". */
       approveHint: function () {
-        return "A single Mobility specialist approves or declines this request — no dual control, unlike UC-06.";
+        return (
+          "This screen cannot record Remote's mobility review right now — it has nowhere to send it. " +
+          "Nothing has been lost: the employer's approval is the customer's own and is made in Remote's product, " +
+          "and Remote publishes no API for its own review stage, so nothing was ever going to reach Remote from here."
+        );
       },
 
       /* WHAT CAPACITY THE PERSON READING THIS IS BEING ASKED TO ACT IN.
@@ -1111,36 +1359,102 @@
          the shape. DATA ONLY — main.js draws it, and nothing here decides
          whether a control exists. */
       approvalRoles: function (view) {
-        var a = view.case || {};
+        var m = (view && view.mobilityReview) || null;
+        var recorded = (m && m.recorded) || null;
         return {
-          // "One named mobility specialist decides this" is the heading plus
-          // the row directly beneath it. The absence is the part no row states.
-          summary: "There is no second signature on this one.",
+          /* THE SUMMARY CARRIES THE HALF THE ROW CANNOT: WHO ELSE, AND WHERE
+             THE DECISION MADE HERE GOES. The row below names Remote's own
+             reviewer and the state of that slot. What no row states is that the
+             decision a reader is most likely looking for — "may this trip go
+             ahead" — belongs to somebody outside Remote entirely; and that what
+             IS recorded here reaches Remote's own systems not at all. */
+          summary:
+            "The employer's approval is the customer's own, made by their manager in Remote's product — it is not " +
+            "made here. Remote's own review of an approved request IS made on this screen, and it stays here: that " +
+            "stage has no API this system can call, so nothing about it ever reaches Remote.",
           roles: [
             {
+              // The roster entry is real and unchanged — USE_CASE_ROLES has
+              // granted `uc04:mobility_specialist` since it shipped, and it is
+              // checked server-side by the same entitlement mechanism as every
+              // other use case's. It fits stage 3 better than it fitted stage 2:
+              // a "mobility specialist" is Remote's own reviewer.
               roleId: "uc04:mobility_specialist",
               label: "Mobility specialist",
-              decides: "whether this trip may go ahead as planned",
-              filledBy: a.approver || a.declinedBy || null,
-              filledOn: a.approvedAt || a.declinedAt ? date(a.approvedAt || a.declinedAt) : null,
-              filledAs: a.approver ? "Approved" : a.declinedBy ? "Declined" : null,
+              /* NOT "whether this trip may go ahead as planned". That was
+                 stage 2 — the employer's — described as though it were this
+                 role's, which is the sentence the whole 2026-08-30 defect was
+                 made of. */
+              decides: "Remote's own review of a request the employer has already approved — recorded in this system, never sent to Remote",
+              /* FILLED FROM `mobilityReview.recorded` AND FROM NOTHING ELSE.
+                 It used to read `a.approver || a.declinedBy`, which are the
+                 store's record of the STAGE-2 decision; showing that name here
+                 said a Remote mobility specialist had reviewed the request when
+                 what happened is that the employer approved it. That settlement
+                 is rendered in full, with its own labels, by the DECISION card's
+                 `settled` rows. This slot is stage 3's and only stage 3's, so a
+                 view with no `mobilityReview` still reports it empty. */
+              filledBy: recorded ? recorded.reviewer : null,
+              filledOn: recorded && recorded.at ? date(recorded.at) : null,
+              filledAs: recorded ? (recorded.outcome === "cleared" ? "Cleared" : "Declined") : null,
             },
           ],
         };
       },
+
+      /* REMOTE'S MOBILITY REVIEW — the one decision taken on this screen, and
+         the only one that ever will be (2026-08-31).
+
+         WHY THERE IS A CONTROL HERE AT ALL, given that this panel was
+         deliberately given none on 2026-08-30. Two different stages were being
+         run together. Stage 2, the employer's approval, PATCHes Remote and
+         belongs to the customer's own manager — it is still not offered here and
+         the loader is not even bound to its endpoint. Stage 3, Remote's own
+         review of what the employer approved, has no Remote endpoint at all, and
+         the conclusion drawn from that was "so there can be no button". The
+         project owner's decision is the third option: record it HERE, durably,
+         under a named person, and say plainly that it goes nowhere else.
+
+         THE SENTENCE THAT MAKES IT HONEST IS THE SERVER'S, NOT THIS FILE'S.
+         `view.mobilityReview.notice` is composed in src/uc04/mobilityReview.js
+         and rendered verbatim above the buttons. This panel must never
+         paraphrase it: every paraphrase anybody writes of "this is not sent to
+         Remote" is shorter and more reassuring than the original, and the
+         reassuring direction is the one that gets believed. If the API sends no
+         notice, no control is drawn — an unlabelled version of this control is
+         precisely the defect it is designed not to be.
+
+         THE VERBS ARE `clear` AND `decline`, NEVER `approve`. `approve` is the
+         employer's word for the employer's decision on this same use case, and
+         two stages sharing one verb is how a reader comes to believe one
+         performed the other. The verb travels in the BODY (see loadUc04's
+         `post`), so it can never become a route segment.
+
+         A DECLINE NEEDS A REASON. `requiresNote` is a courtesy that saves a
+         round trip and is NOT the policy — this file holds none. It is here
+         because a recorded refusal with no stated reason is the one shape this
+         repository's own describers already call out as a finding. */
       renderActions: function (view, ctx) {
-        return renderSingleApproverActions(view, ctx, {
-          role: "mobility_specialist",
-          approveAction: "approve",
-          approveLabel: "Approve",
-          declineLabel: "Decline",
-          groupLabel: "Mobility specialist decision",
-          codeMessages: {
-            executed: "Approved — work authorization issued.",
-            approved: "Approved — work authorization issued.",
-            declined: "Declined and recorded. No work authorization was issued.",
-          },
-        });
+        var container = ctx.el("div", "uc04-mobility-review");
+        var notice = view.mobilityReview && view.mobilityReview.notice;
+        if (!notice) return container;
+        container.appendChild(ctx.el("p", "hint r-mobility-review-notice", notice));
+        container.appendChild(
+          renderSingleApproverActions(view, ctx, {
+            role: "mobility_specialist",
+            groupLabel: "Remote's mobility review",
+            noteLabel: "Note (required to decline — recorded in the audit log)",
+            actions: [
+              { action: "clear", label: "Record clearance", className: "approve" },
+              { action: "decline", label: "Record decline", className: "decline", requiresNote: true },
+            ],
+            codeMessages: {
+              workation_mobility_review_cleared: "Recorded here as cleared. Not sent to Remote.",
+              workation_mobility_review_declined: "Recorded here as declined. Not sent to Remote.",
+            },
+          })
+        );
+        return container;
       },
     },
 
@@ -1158,19 +1472,18 @@
       rows: function (view) {
         var r = view.case || {};
         var notice = r.notice || {};
-        var payout = r.payout || {};
         return [
-          { label: "Employee", value: show(r.employmentId) },
-          { label: "Requester", value: show(r.requester) },
+          { label: "Employee", value: show(shortRef(r.employmentId)) },
+          { label: "Requester", value: show(shortRef(r.requester)) },
           { label: "Statutory notice end", value: show(notice.noticeEndDate) },
           { label: "Discrepancy", value: show(notice.discrepancy) },
-          // `payout.amount` NEVER EXISTED. reconcilePtoPayout() returns
-          // `totalInRemoteInteger` (src/uc05/ptoPayout.js), so this row printed
-          // "—" on every case that had a payout — a computed figure rendered as
-          // an absence, on the screen where HR Ops signs the figure off. The
-          // same ×100 helper as UC-09's amount: the total is already in Remote's
-          // integer form and is only ever formatted here, never recomputed.
-          { label: "PTO payout", value: money(payout.totalInRemoteInteger, payout.currency) },
+          // Two defects on this one row, in opposite directions. First
+          // `payout.amount`, a field that never existed, so every computed
+          // payout rendered "—". Then `money(payout.totalInRemoteInteger)`,
+          // which rendered a record's arithmetic 0 as "0.00 EUR" on a
+          // resignation whose balances were never supplied — an invented
+          // figure on the screen that signs it. See ptoPayoutValue().
+          { label: "PTO payout", value: ptoPayoutValue(view) },
           // Decision / Reason removed 2026-08-20 — see the UC-02 note.
           { label: "Opened", value: date(r.createdAt) },
         ];
@@ -1371,13 +1684,28 @@
         }
 
         // -- entitlements carried across the transfer ------------------------
+        /* NOT `show(x, "0")`. This row defaulted both day counts to "0" and so
+           printed "opening balance 0 day(s), 0 liquidated" for a dossier whose
+           `pto.liquidatedDays` is NULL and whose own `pto.cashout` reports
+           `{computable: false, unusable: [{field: "liquidatedDays", reason:
+           "missing"}]}`. src/uc07/transitionGate.js states the rule this broke,
+           verbatim, at the default it defends: "null, NOT 0. 'Nobody told us
+           the balance' and 'the balance is zero' are different facts, and
+           defaulting the first to the second is how a dossier came to state a
+           confident 0.00 payout on a balance nobody had counted (F-29)."
+
+           The gate refused the unknown and the panel re-invented it one layer
+           up. It is the same rule the MONEY rows on this panel already get
+           right — a QUOTE_REQUIRED component renders as "Quote required", never
+           as a fee of zero — and days had simply never been held to it. A real
+           zero still prints as a real zero. */
         push(
           rows,
           "PTO",
           pto.decision
             ? words(pto.decision) +
-              " — opening balance " + show(pto.destinationOpeningBalance, "0") +
-              " day(s), " + show(pto.liquidatedDays, "0") + " liquidated"
+              " — opening balance " + show(pto.destinationOpeningBalance, "not recorded") +
+              " day(s), " + show(pto.liquidatedDays, "not recorded") + " liquidated"
             : "—"
         );
         push(rows, "Seniority", seniority.status ? words(seniority.status) + (seniority.seniorityDate ? " from " + seniority.seniorityDate : "") : "—");
@@ -1427,13 +1755,15 @@
         }
 
         // -- the research the dossier cites, each with what matched it -------
-        if (citations.length) {
-          citations.forEach(function (c) {
-            push(rows, "Guidance · " + show(c.title), show(c.summary) + " (matched on: " + (c.matchedOn || []).join(", ") + ")");
-          });
-        } else {
-          push(rows, "Guidance", "None matched in the local reference corpus");
-        }
+        //    THROUGH THE SHARED RENDERER SINCE 2026-08-30. This used to print
+        //    "Guidance · <title>" and the summary for every passage alike,
+        //    which was right while UC-07's retriever answered only from its own
+        //    hand-written process guidance. It now returns those FIRST and then
+        //    falls through to the retrieved statutory corpus, so the same list
+        //    can hold Remote's own process note and a national immigration
+        //    authority's published text — and the row gave a reader no way to
+        //    tell which was which. See citationLabel() for the whole argument.
+        pushCitations(rows, citations, "None matched in the local reference corpus");
 
         // -- the drafted prose, and how much to trust it --------------------
         push(rows, "Narrative", show(dossier.narrative));
@@ -1512,9 +1842,9 @@
              into Remote goes." These rows ARE that record. Replacing the id with
              the name would have taken it off the page altogether and quietly
              broken the reasoning of a file this one does not own. */
-          { label: "Employee", value: show(employee.displayName || a.employmentId) },
-          { label: "Employment ID", value: show(a.employmentId) },
-          { label: "Requester", value: show(a.requester) },
+          { label: "Employee", value: show(employee.displayName || shortRef(a.employmentId)) },
+          { label: "Employment ID", value: show(shortRef(a.employmentId)) },
+          { label: "Requester", value: show(shortRef(a.requester)) },
           /* The kind of payment as the basis panel below says it, not as the
              store keeps it — the card read "retroactive_pay" inches above a
              panel reading "retroactive pay". src/uc09/decisionFacts.js opens
@@ -1894,8 +2224,8 @@
       var c = view.case || {};
       return [
         { label: "Use case", value: show(c.useCase) },
-        { label: "Employee", value: show(c.employmentId) },
-        { label: "Requester", value: show(c.requester) },
+        { label: "Employee", value: show(shortRef(c.employmentId)) },
+        { label: "Requester", value: show(shortRef(c.requester)) },
         { label: "Opened", value: date(c.createdAt) },
         { label: "Panel", value: "No panel registered for " + show(c.useCase) + " yet" },
       ];

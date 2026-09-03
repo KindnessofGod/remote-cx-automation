@@ -57,54 +57,29 @@
 // second as a pass.
 // ---------------------------------------------------------------------------
 
-import "dotenv/config";   // credentials live in .env; without this this check
-                          // exits 2 on a machine that HAS them, and an exit 2 is
-                          // indistinguishable from genuinely being unable to reach
-                          // n8n — the confusion this file exists to prevent
+// credentials live in .env; without this, this check exits 2 on a machine that
+// HAS them, and an exit 2 is indistinguishable from genuinely being unable to
+// reach n8n — the confusion this file exists to prevent.
+import "dotenv/config";
+import { reaches } from "./lib/graphReachability.mjs";
+// THE FIELD VALUES AND THE NINE TARGETS COME FROM THE SPEC, NOT FROM HERE.
+// `workflows/nodes/claimNodeSpec.js` is what `npm run deploy-claim-nodes`
+// publishes, so this check and that deploy compare against ONE object. They
+// used to be two copies of the same strings, which is how a ledger key gets
+// changed in one place and verified against the other.
+import {
+  CLAIM_TARGETS,
+  EXTERNAL_REF_EXPR,
+  CLAIM_NODE_NAME,
+  CLAIM_TABLE as CLAIM_TABLE_NAME,
+} from "../workflows/nodes/claimNodeSpec.js";
 
-const CLAIM = "Claim Ticket (Idempotency)";
+const CLAIM = CLAIM_NODE_NAME;
 const CARRY = "Carry Context After Claim";
 const STOP = "Duplicate Delivery — Stop";
 
-const CLAIM_TABLE = "workflow_claims";
+const CLAIM_TABLE = CLAIM_TABLE_NAME;
 const SUPABASE_CRED_ID = "CRED_SUPABASE";
-const EXTERNAL_REF_EXPR = "={{ $json.externalRef || ('unreferenced:' + $execution.id) }}";
-
-/**
- * One row per workflow that must claim before it writes.
- *
- * `gates` is the last node whose output IS the decision context; `next` is the
- * first node that leaves a mark. `decision` is what the claim row records for
- * forensics — an expression where the gates produce a decision, a literal where
- * the tier forbids one (UC-07/UC-08 have no branch: every run escalates).
- *
- * UC-01 is here and NOT in scripts/add-claim-nodes.mjs, because its claim node
- * was hand-built first and the script was written to bring the other eight up
- * to it. test/claimNodeContract.test.js asserts the two tables still describe
- * the same eight graphs, so this list cannot quietly stop covering one.
- */
-const CLAIM_TARGETS = [
-  // UC-01's first durable write is no longer the audit row: `Persist Case`
-  // was inserted ahead of it so the ZAF sidebar has a `cases` row to read
-  // (the graph wrote audit_log, workflow_claims and audit_trace, and none
-  // of the three is what the sidebar queries). The claim still precedes
-  // the FIRST durable write, which is the whole guarantee — only the name
-  // of that write changed.
-  { uc: "UC-01", id: "WORKFLOW_UC01_ID", gates: "Identity + Policy Gates", next: "Persist Case", decision: "={{ $json.decision }}" },
-  // UC-02's first durable write became `Create Expense Record` when the graph
-  // gained one (it had none, alone among the six UCs with a record table — the
-  // reason its duplicate gate could never fire). The claim still precedes the
-  // FIRST durable write, which is the whole guarantee; only the name of that
-  // write changed, exactly as UC-01's note above describes.
-  { uc: "UC-02", id: "WORKFLOW_UC02_ID", gates: "Expense Gates", next: "Create Expense Record", decision: "={{ $json.decision }}" },
-  { uc: "UC-03", id: "WORKFLOW_UC03_ID", gates: "Travel Router Gates", next: "Append Audit Log", decision: "={{ $json.decision }}" },
-  { uc: "UC-04", id: "WORKFLOW_UC04_ID", gates: "Workation Gates", next: "Create Authorization Record", decision: "={{ $json.decision }}" },
-  { uc: "UC-05", id: "WORKFLOW_UC05_ID", gates: "Notice Period Gates", next: "Create Resignation Record", decision: "={{ $json.decision }}" },
-  { uc: "UC-06", id: "WORKFLOW_UC06_ID", gates: "Amendment Gates", next: "Create Amendment Record", decision: "={{ $json.decision }}" },
-  { uc: "UC-07", id: "WORKFLOW_UC07_ID", gates: "Relocation Gates", next: "Create Dossier Record", decision: "escalate" },
-  { uc: "UC-08", id: "WORKFLOW_UC08_ID", gates: "Build Dossier", next: "Create Dossier Record", decision: "escalate" },
-  { uc: "UC-09", id: "WORKFLOW_UC09_ID", gates: "Adjustment Gates", next: "Create Adjustment Record", decision: "={{ $json.decision }}" },
-];
 
 // Strip trailing slashes AND a trailing dot. A dot is a legal DNS root label,
 // so `host.example.org.` resolves — but it does not match the TLS certificate,
@@ -269,9 +244,20 @@ for (const t of CLAIM_TARGETS) {
   }
 
   if (carry) {
+    // PRECEDENCE, NOT ADJACENCY. The invariant is that the claim happens before
+    // the first durable write — not that it sits immediately next to it. UC-01
+    // legitimately routes through an "Out of Scope?" switch in between, and
+    // demanding a direct edge reported that healthy graph as defective on
+    // 2026-08-29. A single output that REACHES the write still satisfies the
+    // guarantee; anything that forks, or leads somewhere the write is not, does
+    // not, and is still reported.
     const outs = mainTargets(conns, CARRY);
-    if (outs.length !== 1 || outs[0] !== t.next) {
-      problems.push(`"${CARRY}" leads to [${outs.join(", ") || "nothing"}], expected "${t.next}"`);
+    if (outs.length !== 1 || !reaches(conns, outs[0], t.next)) {
+      problems.push(
+        `"${CARRY}" leads to [${outs.join(", ") || "nothing"}], which does not reach "${t.next}"`
+      );
+    } else if (outs[0] !== t.next) {
+      console.log(`    · note: ${CARRY} → ${outs[0]} → … → ${t.next} (claim still precedes the write)`);
     }
     // The Code body must hand the gates' decision context back. If it returned
     // the Supabase insert response, every downstream expression would read
@@ -297,11 +283,17 @@ for (const t of CLAIM_TARGETS) {
   // gates would let a redelivery write anyway, and every node would still be
   // green because both paths work.
   if (next) {
+    // The real question is whether ANY route to the first durable write avoids
+    // the claim — not whether the claim is its immediate parent. Walking
+    // backwards from the write, every source must itself be reachable from the
+    // claim; a feeder that is not is a genuine bypass, which is the defect this
+    // check exists for (a leftover direct edge from the gates would let a
+    // redelivery write anyway, with every node still green).
     const feeders = inboundTo(conns, t.next);
-    const bypass = feeders.filter((f) => f !== CARRY);
-    if (!feeders.includes(CARRY)) {
-      problems.push(`"${t.next}" is not fed by "${CARRY}" — the claim is not on the path to the first durable write`);
+    if (!reaches(conns, CARRY, t.next)) {
+      problems.push(`"${t.next}" is not reachable from "${CARRY}" — the claim is not on the path to the first durable write`);
     }
+    const bypass = feeders.filter((f) => f !== CARRY && !reaches(conns, CARRY, f));
     if (bypass.length) {
       problems.push(`"${t.next}" is ALSO reachable from [${bypass.join(", ")}] — that path skips the claim entirely`);
     }

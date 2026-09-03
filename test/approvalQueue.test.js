@@ -43,6 +43,13 @@ import { buildQueueDemoDataset, demoZendesk } from "../src/approvalqueue/demoSee
 import { createApprovalQueueHandler, withBaseHref } from "../src/approvalqueue/server.js";
 import { buildQueue } from "../src/approvalqueue/queue.js";
 import { TicketFacts, DEFAULT_BUDGET, MAX_BUDGET, TICKET_CACHE_TTL_MS, readBudget } from "../src/approvalqueue/ticketFacts.js";
+// The REAL id of the owning group, read from the registry rather than typed.
+// A literal here is what broke this file during the 2026-08-29 Zendesk account
+// migration: every group id changed, `npm run sync-groups` updated the
+// registry, and these two assertions kept asserting the retired number — so a
+// correct sync looked like a routing regression. The registry is the fact.
+import { ESCALATION_GROUP_IDS } from "../src/shared/escalationGroupIds.js";
+const FINANCE_OPS_GROUP_ID = ESCALATION_GROUP_IDS["Finance Ops"];
 import { awaitingState, approvalProgress, waited } from "../src/approvalqueue/awaiting.js";
 import { ticketVerdict, groupVerdict, looksLikeTicketId } from "../src/approvalqueue/ticketVerdict.js";
 import { stuckVerdict, summarise, CATEGORY_ORDER } from "../src/approvalqueue/stuck.js";
@@ -452,9 +459,16 @@ test("a ticket-shaped reference that Zendesk does not have is NOT_FOUND", () => 
 test("only a CONFIRMED ticket gets a link", () => {
   const verdict = ticketVerdict({
     reference: "51",
-    lookup: { checked: true, found: true, ticket: { id: 51, status: "open", group_id: 6168404929055 } },
+    lookup: { checked: true, found: true, ticket: { id: 51, status: "open", group_id: FINANCE_OPS_GROUP_ID } },
     subdomain: "your-subdomain",
     owningGroup: "Finance Ops",
+    // Since honest-gaps item 23, a link also requires knowing WHICH account the
+    // reference was stored against. #51 is a real your-subdomain ticket from
+    // 2026-08-19, so the timestamp is the true one rather than a convenience:
+    // without it the verdict is `foreign_account`, which is the correct answer
+    // to "is this number a ticket in the account I just read?" when nothing
+    // says when it was written.
+    recordWrittenAt: "2026-08-19T10:00:00Z",
   });
   assert.equal(verdict.state, "confirmed");
   assert.equal(verdict.url, "https://your-subdomain.zendesk.com/agent/tickets/51");
@@ -542,7 +556,7 @@ test("no routed team is unprovisioned today, and the check that says so is the s
 });
 
 test("a ticket in the owning team's group is the only 'owning_team' answer", () => {
-  assert.equal(groupVerdict({ ticket: { group_id: 6168404929055 }, owningGroup: "Finance Ops" }).state, "owning_team");
+  assert.equal(groupVerdict({ ticket: { group_id: FINANCE_OPS_GROUP_ID }, owningGroup: "Finance Ops" }).state, "owning_team");
   assert.equal(groupVerdict({ ticket: { group_id: 6151578998431 }, owningGroup: "Finance Ops" }).state, "elsewhere");
   assert.equal(groupVerdict({ ticket: { group_id: null }, owningGroup: "Finance Ops" }).state, "unknown");
 });
@@ -1147,4 +1161,32 @@ test("a seeded run does not claim to have read Zendesk", () => {
   assert.equal(demo.posture().state, "demo");
   assert.ok(!demo.posture().detail.includes("read back from Zendesk"));
   assert.equal(new TicketFacts({ zendesk: demoZendesk(seedData.tickets) }).posture().state, "verifying");
+});
+
+// ---------------------------------------------------------------------------
+// UC-04's three stages, in the queue's vocabulary (2026-08-31)
+// ---------------------------------------------------------------------------
+// The employer surface began writing Remote's own enum values
+// (`approved_by_manager` / `declined_by_manager`) before STATUS_MAP knew them,
+// so both fell through to `unknown` — the "a status added to a store later"
+// failure awaiting.js's own header warns about, arriving after the warning.
+// It failed honestly rather than lying, which is the only reason it was
+// findable at all; these pin it shut.
+
+test("UC-04: an employer-approved request is still AWAITING — Remote's mobility review is stage 3", () => {
+  const verdict = awaitingState({ useCase: "UC-04", status: "approved_by_manager" });
+  assert.equal(verdict.state, "awaiting", "the employee is not cleared to travel until Remote has answered");
+  assert.equal(verdict.waitingFor, "approval");
+});
+
+test("UC-04: an employer DECLINE is settled — there is no stage 3 to reach", () => {
+  assert.equal(awaitingState({ useCase: "UC-04", status: "declined_by_manager" }).state, "settled");
+});
+
+test("UC-04: neither employer status falls through to unknown", () => {
+  // The bug this replaces: both read `unknown`, so the one item genuinely
+  // waiting on a Remote human was dropped from the queue's headline.
+  for (const status of ["approved_by_manager", "declined_by_manager"]) {
+    assert.notEqual(awaitingState({ useCase: "UC-04", status }).state, "unknown", status);
+  }
 });

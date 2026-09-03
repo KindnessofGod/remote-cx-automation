@@ -154,13 +154,27 @@ function uc04Scenario(id) {
  * fields, same two always-present prior-stay rows. Nothing about the scenario
  * is restated here, so the test cannot agree with a scenario that has changed.
  */
-function submitScenario(handler, id, ref) {
-  const f = uc04Scenario(id).fields;
+/**
+ * @param {object} handler
+ * @param {string} id       a quick-fill scenario id
+ * @param {string} ref
+ * @param {object} [overrides]  fields a TESTER would change by hand in the form
+ */
+function submitScenario(handler, id, ref, overrides = {}) {
+  const scenario = uc04Scenario(id);
+  const f = scenario.fields;
   return callApi(handler, {
     method: "POST",
     path: "/api/requests/uc04",
     body: {
-      persona: "admin",
+      // THE SCENARIO'S OWN PERSONA, not a hard-coded "admin". It was hard-coded
+      // while an employee-filed workation was refused at the door, which meant
+      // the two rows that turn on the FILER could not be driven here at all —
+      // and the label check below had to skip them. An employee may now file
+      // their own trip (src/uc04/submissionIdentity.js), so the row that says
+      // "filed by the employee" has to be sent as the employee or it is not
+      // the scenario.
+      persona: scenario.persona,
       employmentId: f["uc04-employmentId"],
       homeCountry: f["uc04-homeCountry"],
       nationality: f["uc04-nationality"],
@@ -177,6 +191,7 @@ function submitScenario(handler, id, ref) {
       reasonText: f["uc04-reasonText"],
       externalRef: ref,
       now: f["uc04-now"],
+      ...overrides,
     },
   });
 }
@@ -197,7 +212,18 @@ after(async () => {
 // ---------------------------------------------------------------------------
 
 test("no prior stays: a real zero that says it is a floor and not a count", async () => {
-  const res = await submitScenario(buildPortal(), "uc04-low", "hist-none");
+  /* THE HISTORY IS CLEARED HERE RATHER THAN INHERITED FROM THE QUICK-FILL
+     (2026-08-31). It used to rely on `uc04-low` happening to carry no prior
+     stays. That scenario now carries one, because a demo's two GREEN rows were
+     the only place a specialist met "cumulative presence: Unknown" and the
+     owner's instruction was that the demo should not have one.
+
+     WHICH MAKES THIS TEST MORE IMPORTANT, NOT LESS, so it is repointed rather
+     than deleted: an empty history must still report a FLOOR. Clearing the
+     boxes is exactly what a tester does to see it, and driving that is a
+     stronger claim than a quick-fill's incidental emptiness — which could go
+     away again, silently, the next time somebody edits a demo row. */
+  const res = await submitScenario(buildPortal(), "uc04-low", "hist-none", { travelHistory: [] });
   assert.equal(res.body.decision, "ready_for_approval");
   assert.equal(res.body.reason, "all_gates_passed");
   // The distinction the whole set is built around: nobody looked anything up,
@@ -281,7 +307,9 @@ test("the label on every quick-fill matches the decision it actually produces", 
   const handler = buildPortal();
   let n = 0;
   for (const scenario of scenarios().uc04) {
-    if (scenario.persona !== "admin") continue; // the persona-refusal row is about WHO asks, not about days
+    // EVERY row, including the two that turn on the filer — they used to be
+    // skipped here because submitScenario() sent everything as the admin, so a
+    // scenario about who is asking was the one kind this check could not make.
     const res = await submitScenario(handler, scenario.id, `label-check-${n++}`);
     // "Clears" means the one decision that needs nothing further explained: the
     // request is ready for its single mobility approver. Everything else —
@@ -310,8 +338,19 @@ function formSandbox(fields) {
     checked: f.checked ?? false,
   }));
   const form = { querySelectorAll: () => nodes };
-  const document = { createElement: () => ({}) };
-  return { form, nodes, document };
+  // The quick-fill ROW, which lives outside the <form> and is why blankForm()
+  // has to reach for `document` at all: since 2026-08-30 it also withdraws the
+  // "Filled in from …" claim, because a blanked form was not filled in from
+  // anything. Modelled here rather than stubbed away — a double that omits what
+  // the code uses turns a real call into a TypeError and teaches nothing.
+  const chips = [
+    { pressed: "true", setAttribute(k, v) { if (k === "aria-pressed") this.pressed = v; } },
+    { pressed: "false", setAttribute(k, v) { if (k === "aria-pressed") this.pressed = v; } },
+  ];
+  const note = { hidden: false, textContent: "Filled in from “Low-risk Schengen trip”." };
+  const row = { querySelectorAll: () => chips, parentNode: { querySelector: () => note } };
+  const document = { createElement: () => ({}), querySelector: () => row };
+  return { form, nodes, document, chips, note };
 }
 
 function runBlankForm(fields) {
@@ -320,17 +359,23 @@ function runBlankForm(fields) {
   const end = app.indexOf("  function setFieldValue(", start);
   assert.ok(start !== -1 && end > start, "blankForm() has moved — re-point this test");
 
-  const { form, nodes, document } = formSandbox(fields);
+  const { form, nodes, document, chips, note } = formSandbox(fields);
   const synced = [];
-  const context = { document, byId: () => form, syncRefField: (t) => synced.push(t) };
+  const context = {
+    document,
+    byId: () => form,
+    syncRefField: (t) => synced.push(t),
+    // blankForm() now calls clearScenarioSelection(), which empties the note.
+    clear: (n) => { n.textContent = ""; },
+  };
   vm.createContext(context);
   vm.runInContext(app.slice(start, end), context);
   vm.runInContext('blankForm("uc04")', context);
-  return { nodes, synced };
+  return { nodes, synced, chips, note };
 }
 
 test("a prefill starts from an empty form, so no box can inherit a value nobody chose", () => {
-  const { nodes, synced } = runBlankForm([
+  const last = runBlankForm([
     { id: "uc04-h1-country", tag: "select", value: "ES" },
     { id: "uc04-h1-startDate", type: "date", value: "2026-07-01" },
     { id: "uc04-h1-endDate", type: "date", value: "2026-08-14" },
@@ -343,11 +388,21 @@ test("a prefill starts from an empty form, so no box can inherit a value nobody 
     { id: "refmode-uc04-new", type: "radio", checked: true },
     { id: "refmode-uc04-reuse", type: "radio", checked: false },
   ]);
+  const { nodes, synced } = last;
 
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
   for (const id of ["uc04-h1-country", "uc04-h1-startDate", "uc04-h1-endDate", "uc04-jobDuties", "uc04-reasonText"]) {
     assert.equal(byId[id].value, "", `${id} kept a value across the prefill`);
   }
+
+  // AND THE ROW STOPS SAYING IT FILLED THEM. Reported as "I am still so
+  // confused as to why this did not prefill": the continuation blanks the form
+  // (correctly — see the note above about the stale prior-stay row), and the
+  // chip outside it stayed pressed with "Filled in from …" over empty boxes.
+  const { chips, note } = last;
+  assert.deepEqual(chips.map((c) => c.pressed), ["false", "false"], "a chip stayed pressed over a blanked form");
+  assert.equal(note.hidden, true, 'the "Filled in from …" note survived the blanking');
+  assert.equal(note.textContent, "", "the note's text survived the blanking");
   assert.equal(byId["uc04-hasContractSigningAuthority"].checked, false);
   assert.equal(byId["refmode-uc04-new"].checked, true, "the reference mode must survive — a form in neither mode sends nothing");
   assert.deepEqual(synced, ["uc04"], "the reference field must be re-synced after the boxes are emptied");
@@ -408,4 +463,40 @@ test("a half-populated prior stay is refused BY NAME, which is why the form must
   // The absence in that message is the diagnosis: no "no country", so the rows
   // held a country and no dates.
   assert.ok(!res.body.reason.includes("no country"));
+});
+
+// ---------------------------------------------------------------------------
+// THE TWO ROWS A DEMO SHOWS SUCCEEDING (2026-08-31)
+// ---------------------------------------------------------------------------
+
+test("the green quick-fills carry a prior stay, so neither reports an absence where a number belongs", async () => {
+  // The owner opened a UC-04 case and found "Cumulative presence, rolling
+  // window: Unknown" on a request that had passed every check. The check was
+  // right — nothing was supplied, so 0 is a floor — but the two scenarios a
+  // demo drives to a GREEN decision were the only place a reader met it, and
+  // an absence sitting among four findings reads as a gap in the system rather
+  // than a gap in the request.
+  //
+  // Named per scenario rather than swept, because the refusal rows are
+  // deliberately NOT given a history: each of those refuses at a check that
+  // runs before the risk matrix, and handing them travel history risks moving
+  // which check decides — the thing those rows exist to demonstrate.
+  for (const id of ["uc04-low", "uc04-persona"]) {
+    const res = await submitScenario(buildPortal(), id, "green-hist-" + id);
+    assert.equal(res.body.decision, "ready_for_approval", `${id} no longer reaches its own decision`);
+    assert.equal(res.body.reason, "all_gates_passed");
+    const days = detail(res.body, "Cumulative days abroad");
+    assert.doesNotMatch(days, /floor, not a count/, `${id} still reports an absence where a measurement belongs`);
+    assert.match(days, /46 day\(s\) over 1 prior trip\(s\)/);
+    assert.match(detail(res.body, "183-in-365 tax-residency watch"), /60 of 183/);
+  }
+});
+
+test("clearing the boxes brings the floor back, on the same scenario", async () => {
+  // The counterpart, and the reason the row above is not simply "a number
+  // appears". A prefilled demo value must not be able to hide the honest
+  // answer: empty still means floor, on the very scenario that now ships full.
+  const res = await submitScenario(buildPortal(), "uc04-persona", "green-hist-cleared", { travelHistory: [] });
+  assert.equal(res.body.decision, "ready_for_approval");
+  assert.match(detail(res.body, "Cumulative days abroad"), /floor, not a count/);
 });

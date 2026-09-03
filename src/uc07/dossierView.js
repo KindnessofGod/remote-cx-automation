@@ -48,6 +48,7 @@ import {
   NATIONALITY_NOT_HELD,
   SOURCE_FRAMING,
   CAVEAT_FRAMING,
+  CONFIRMATION_FRAMING,
 } from "./decisionSources.js";
 
 /**
@@ -260,7 +261,7 @@ function describeStatutorySources({ flags, sourceCountry, destinationCountry }) 
     // browser. See docs/use-cases/UC-07.md §15 for the one line in main.js's
     // loadUc07() that has to pass `basis` through before it renders.
     basis: {
-      sources: { framing: SOURCE_FRAMING, caveatFraming: CAVEAT_FRAMING },
+      sources: { framing: SOURCE_FRAMING, caveatFraming: CAVEAT_FRAMING, confirmationFraming: CONFIRMATION_FRAMING },
       immigration: {
         sentence: immigrationCited
           ? `${countryLabel(destinationCountry)} publishes the route(s) below. THIS SYSTEM HOLDS NO NATIONALITY for this employee, so none of them can be identified as the route this person needs — they are what the destination requires of a third-country national, and nothing more.`

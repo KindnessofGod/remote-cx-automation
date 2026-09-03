@@ -27,6 +27,16 @@
 .r-nav-icon { font-size: 15px; line-height: 1; margin-right: 7px; }
 
 .role-tabs { margin-bottom: 22px; }
+/* At phone width the three tabs no longer fit on one line; the shared strip
+   scrolls sideways, which clipped "Employee" to "Emp" past the edge with no
+   affordance (2026-09-02, 375 px). Wrapping keeps every tab readable. */
+@media (max-width: 480px) {
+  .role-tabs { flex-wrap: wrap; gap: 10px 18px; overflow-x: visible; }
+}
+.decrease-block { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--r-border); border-radius: 8px; }
+.r-check { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-size: 14px; }
+.consent-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.consent-list li { margin: 2px 0; font-size: 13.5px; }
 
 /* --- sidebar -------------------------------------------------------------- */
 /* Static facts about the use case, not links — the only switchable thing on
@@ -248,4 +258,207 @@
   .sidebar-fact { display: none; }
   .value-pair { flex-wrap: wrap; }
   .value-pair .r-input { flex: 1 1 140px; }
+}
+
+/* ===========================================================================
+ * The work-authorization QUEUE (workauth.html) — every rule below is prefixed
+ * `wa-` and nothing above it is touched.
+ * ===========================================================================
+ * Scoped by prefix rather than by a page class on <body> because the amendment
+ * screen (index.html + app.js) shares this stylesheet and must render byte for
+ * byte as it did. `wa-` appears nowhere in that page's markup, so no rule here
+ * can reach it.
+ *
+ * The shape is a LIST, not a column of cards. A work-authorization queue is
+ * read to answer one question — what is waiting, and can I clear it — and the
+ * previous card-per-request layout answered it one request per screenful, with
+ * the approve/decline controls in a separate form far below the request they
+ * acted on. Row height is therefore the design constraint: name, destination,
+ * dates and both buttons on one line, everything else behind a disclosure.
+ * ------------------------------------------------------------------------- */
+
+.wa-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.wa-head-text { min-width: 0; }
+.wa-sub { margin-bottom: 14px; max-width: 68ch; }
+.wa-head-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.wa-live { margin: 0; text-align: right; }
+
+/* Stage 3 is Remote's own review, it has no endpoint, and an employer approval
+   reads like the end of the process. This banner is the one thing on the page
+   that never collapses. */
+.wa-stage-note { margin-bottom: 12px; }
+.wa-stage-note-detail {
+  display: block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--r-text-secondary);
+}
+
+/* --- the explainer, said once ---------------------------------------------
+   Closed by default so the queue is above the fold; nothing is removed by
+   closing it, and one click still shows the three stages, the stand-in
+   disclosure and the two verbs Remote accepts. */
+.wa-explainer { margin-bottom: 18px; }
+.wa-explainer > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex-wrap: wrap;
+  list-style: none;
+}
+.wa-explainer > summary::-webkit-details-marker { display: none; }
+.wa-explainer > summary::after {
+  content: "\25B8";
+  color: var(--r-text-muted);
+  transition: transform 120ms ease;
+}
+.wa-explainer[open] > summary::after { content: "\25BE"; }
+.wa-explainer-more { color: var(--r-text-secondary); font-size: 12.5px; }
+.wa-explainer-body { padding: 12px 0 2px 28px; max-width: 88ch; }
+.wa-explainer-body p { margin: 0 0 10px; }
+.wa-explainer-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--r-text-muted);
+  margin: 14px 0 8px;
+}
+.wa-stage-list { margin: 0; padding-left: 18px; }
+.wa-stage { margin-bottom: 9px; }
+.wa-stage p { margin: 2px 0 0; }
+.wa-stage-current { border-left: 3px solid var(--r-brand); padding-left: 9px; margin-left: -12px; }
+
+/* --- the queue ------------------------------------------------------------ */
+.wa-card-head { justify-content: space-between; }
+.wa-card-head-text { min-width: 0; }
+
+.wa-notice { padding: 14px 20px 0; }
+.wa-notice:empty { display: none; }
+
+.wa-queue { list-style: none; margin: 0; padding: 0; }
+
+/* ONE REQUEST = ONE ROW. The two grid columns are "everything about the
+   request" and "the two buttons"; the disclosure, the decline form and the
+   outcome each span both and are hidden until they have something to say, so a
+   row that nobody has touched is a single line. */
+.wa-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+  padding: 11px 20px;
+  border-top: 1px solid var(--r-border);
+}
+.wa-row:first-child { border-top: 0; }
+.wa-row:hover { background: var(--r-surface-hover); }
+.wa-row-main { grid-column: 1; min-width: 0; }
+.wa-row-actions { grid-column: 2; display: flex; gap: 8px; flex: none; }
+.wa-row-decline,
+.wa-row-detail,
+.wa-row-outcome { grid-column: 1 / -1; }
+
+.wa-row-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wa-row-name { font-size: 14.5px; font-weight: 650; }
+/* The server's own one-liner already carries who / where / when / why, so it is
+   set a shade lighter than a bare name would be — the whole line is the title,
+   not a name with an afterthought. */
+.wa-row-line { font-weight: 600; font-size: 14px; }
+.wa-origin { font-size: 12px; color: var(--r-text-secondary); }
+/* WHEN IT WAS FILED — the answer to "is this the one I just filed?". */
+/* WHY THIS IS INLINE AND NOT RIGHT-ALIGNED. It shipped as 12px secondary text
+   with `margin-left: auto`, which pinned it against the Approve button at the
+   far edge of a wide row. It was present, correct and REPORTED AS MISSING by
+   the first person who used the screen — at that size, that colour and that
+   distance from the name it reads as chrome rather than as a fact about the
+   request. A stamp nobody finds answers "when did I file this?" no better than
+   no stamp at all, so it now sits in the title line, beside the name, at the
+   same size as the rest of the line. */
+.wa-row-filed { font-size: 13px; color: var(--r-text-secondary); white-space: nowrap; }
+.wa-row-filed::before { content: "\00b7"; margin: 0 -4px 0 -3px; color: var(--r-border-strong, #c7cbd1); }
+/* An unrecorded filing time is stated, not hidden — italic so it reads as an
+   absence rather than as a value. It must never look like a date. */
+.wa-row-filed-unknown { font-style: italic; }
+.wa-row-sub { margin: 2px 0 0; font-size: 13px; color: var(--r-text-secondary); }
+
+/* Row-specific, and the reason this one is not boilerplate: the employee said
+   it about THIS trip. The mark is redundant with the sentence beside it, never
+   the only cue. */
+.wa-row-flag {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--r-warn);
+}
+.wa-row-flag-mark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--r-warn-subtle);
+  color: var(--r-warn);
+  font-weight: 700;
+  font-size: 11px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.wa-row-detail { margin-top: 4px; }
+.wa-row-detail-summary { cursor: pointer; font-size: 12.5px; color: var(--r-text-secondary); }
+.wa-row-detail-body { padding: 8px 0 2px; }
+.wa-dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.wa-dt { color: var(--r-text-muted); font-size: 12px; }
+.wa-dd { margin: 0; color: var(--r-text-secondary); overflow-wrap: anywhere; }
+
+/* The decision furniture: smaller than the shared form controls on purpose —
+   these sit inside a list row, not on a request form. */
+.wa-field { margin-bottom: 10px; }
+.wa-field-label { font-size: 12.5px; }
+.wa-textarea { font-size: 13.5px; padding: 8px 10px; border-radius: 8px; }
+.wa-row-decline { padding-top: 8px; }
+.wa-decline-actions { display: flex; gap: 8px; }
+
+/* The verdict, on the row it is about. Border weight and the status dot are
+   both redundant with the words the server sent, which are what actually say
+   what happened. */
+.wa-row-outcome {
+  margin-top: 8px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--r-border-strong);
+  border-radius: var(--r-radius);
+  background: var(--r-surface-subtle);
+}
+.wa-row-outcome.is-bad { border-left-color: var(--r-danger); }
+.wa-outcome-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0; }
+.wa-outcome-line { margin: 6px 0 0; font-size: 13px; }
+.wa-row.is-settled { background: var(--r-surface-subtle); }
+
+.wa-queue-foot { border-top: 1px solid var(--r-border); }
+.wa-announce { margin: 0 0 6px; font-size: 13px; }
+.wa-announce:empty { display: none; }
+.wa-exclusions { margin-top: 10px; font-size: 13px; }
+
+@media (max-width: 820px) {
+  /* The buttons drop under the request rather than shrinking it — a decline
+     button narrow enough to fit beside a long destination name is a decline
+     button pressed by accident. */
+  .wa-row { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
+  .wa-row-actions { grid-column: 1; }
+  .wa-head-actions { align-items: flex-start; }
+  .wa-live { text-align: left; }
 }

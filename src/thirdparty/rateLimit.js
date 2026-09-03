@@ -180,6 +180,48 @@ export function createMemoryRateLimitStore() {
  * a cost control into an outage. CREATE TABLE IF NOT EXISTS is idempotent and
  * the connection's role owns the schema.
  */
+// ---------------------------------------------------------------------------
+// HARDEN_SQL — why the table is closed at creation and not by a hand-run ALTER
+// ---------------------------------------------------------------------------
+// Supabase's linter flagged this table on 2026-09-01 as the ONE table in the
+// project with row-level security disabled (`rls_disabled_in_public`), and the
+// reason it was the only one is this file: every other table was created by a
+// migration, and this one is created above, on first use. So closing it by hand
+// on the live database would have fixed production and left a fresh environment
+// born open — the same "fixed here, reopens there" shape the deployed-vs-repo
+// gaps in CLAUDE.md §7 keep costing this project.
+//
+// TWO STATEMENTS, AND THE SECOND IS NOT BELT-AND-BRACES.
+// RLS governs SELECT/INSERT/UPDATE/DELETE. It does NOT govern TRUNCATE, which
+// is controlled by table privilege alone — and `anon` was granted every
+// privilege on this table, including TRUNCATE, by Supabase's default grants on
+// the public schema. So enabling RLS on its own stops the read of the address
+// list and still leaves anyone holding the (publicly distributable) anon key
+// able to WIPE THE COUNTERS — which is the one action that actually defeats the
+// ceiling. `anon` cannot be assumed harmless here: the whole point of this
+// table is that it bounds a door with no account behind it.
+//
+// WHY THE ADDRESSES MATTER. `bucket_key` is "addr:" + the caller's address, so
+// the rows are a record of who visited an unauthenticated door — thin, but
+// personal. The migration's own header argues this table is "a counter and not
+// a log" because it holds nothing about the SUBJECT of an enquiry; that is
+// still true, and it was never a claim about the CALLER.
+//
+// WHY IT CANNOT BREAK THE DOOR. Both statements run inside a DO block that
+// swallows exactly two conditions and nothing else: `insufficient_privilege`,
+// for a role that may create a table without owning it, and `undefined_object`,
+// because `anon` and `authenticated` are Supabase roles that do not exist on a
+// plain Postgres. A limiter that refused traffic because it could not tighten
+// its own permissions would convert a security improvement into the outage the
+// migration file's header was written to avoid. Any other error still throws,
+// and the limiter still fails closed on it.
+const HARDEN_SQL =
+  "DO $$ BEGIN " +
+  "EXECUTE 'ALTER TABLE third_party_rate_limit ENABLE ROW LEVEL SECURITY'; " +
+  "EXECUTE 'REVOKE ALL ON third_party_rate_limit FROM anon, authenticated'; " +
+  "EXCEPTION WHEN insufficient_privilege THEN NULL; " +
+  "WHEN undefined_object THEN NULL; END $$";
+
 const ensuredPools = new WeakMap();
 
 export function createPgRateLimitStore(pool) {
@@ -196,7 +238,7 @@ export function createPgRateLimitStore(pool) {
           "window_start timestamptz NOT NULL, " +
           "hits integer NOT NULL DEFAULT 0, " +
           "PRIMARY KEY (bucket_key, window_start))"
-      ));
+      ).then(() => pool.query(HARDEN_SQL)));
     }
     return ensuredPools.get(pool);
   };

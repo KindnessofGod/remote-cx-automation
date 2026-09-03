@@ -188,7 +188,7 @@ test("5. the node chain agrees with the deployed employment-id field", () => {
   // A custom-field id does not survive a Zendesk account change, and this file
   // held the RETIRED id while the deployed node held the live one. A ticket
   // carrying the live field must normalize, not throw.
-  assert.equal(FIELD_ID, 9990000000001, "field id must match the live your-subdomain account");
+  assert.equal(FIELD_ID, 9990000000001, "field id must match the live your-subdomainhelp account");
 
   assert.throws(
     () => runChain({

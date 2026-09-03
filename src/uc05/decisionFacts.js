@@ -78,7 +78,7 @@ import { sourcesForFinding, uncitedFinding, shortfallHandlings } from "./decisio
  */
 const ESCALATION_TEAM =
   escalationTeamFor("UC-05") ??
-  "The team that owns UC-05 escalations (none is defined in src/shared/escalationRouting.js, which is itself the finding)";
+  "The team that owns UC-05 escalations (none is defined in the routing table, which is itself the finding)";
 
 /** The one human this file is written for. */
 export const DECIDER = Object.freeze({
@@ -168,16 +168,52 @@ function noticeBasis(notice) {
     // The sentence has one job beyond accuracy: it must not read as "no notice
     // is owed". The statute being silent and the contract being silent are
     // different facts, and this system has only checked the first.
+    // THE PROBATION EXEMPTION, FIRST, for the same reason the sourced-absence
+    // case is checked before the two below it: every other branch here is
+    // trivially true of it and each would describe it wrongly. Portugal DOES
+    // have a statutory notice regime; art. 114.º(1) simply says it does not run
+    // during the probationary period.
+    if (notice.noStatutoryProbationNotice === true) {
+      return {
+        ...shared,
+        ...readingList(["notice_during_probation", "statutory_notice_rule"], country),
+        stated: false,
+        why:
+          `This employee is still inside their probationary period, and ${country || "their country"}'s statute provides that during it either party may end the contract WITHOUT notice — so no statutory notice period runs and there is no end date to calculate. ` +
+          "That is a finding about the law, not a gap in this system's table: the ordinary statutory period applies from the day probation ends.",
+        sentence:
+          "The statute requires NO notice during the probationary period. This is not a clearance to leave today: the article grants the exemption \"unless otherwise agreed in writing\", and no contract has been read here — so what is actually owed depends on a document this system does not hold.",
+      };
+    }
     if (notice.statutoryMinimumExists === false) {
+      // CANADA AND THE UNITED STATES REACH THIS BRANCH AND ARE NOT THE SAME
+      // FINDING (2026-09-02, D-44). The sentence below used to say, flatly, that
+      // what is owed "comes from the employee's contract". For the United States
+      // that is the whole truth. For Canada it is true of the common-law
+      // provinces and FALSE in Québec, where Code civil art. 2091 obliges either
+      // party to give a délai de congé as a matter of enacted law and art. 2092
+      // makes the employee's remedy for an insufficient one non-renounceable —
+      // so it is not even a term the contract may bargain away.
+      //
+      // `noticeStandardWithoutNumber` comes off the table row, so this is not a
+      // country-code branch and the next civil-law jurisdiction added needs no
+      // change here. The province is NOT read anywhere in this system, so both
+      // regimes are stated and the reader is told which fact decides between
+      // them — inferring a province from an address field would be the invented
+      // proxy this repo has paid for before.
+      const standard = notice.noticeStandardWithoutNumber === true;
       return {
         ...shared,
         ...readingList(["no_statutory_notice_period"], country),
         stated: false,
-        why:
-          `${country || "This employee's country"} sets no statutory minimum notice period on a resigning employee, so there is no statutory date to calculate — this is a finding about the law, not a gap in this system's table. ` +
-          `What notice is owed comes from ${tenureMonths === null ? "the employee's contract" : `the employee's contract (they have ${tenureMonths} months of service)`}, and this system does not hold contracts and has not read one.`,
-        sentence:
-          "No statutory notice period applies. This is NOT a finding that no notice is owed — the contract or policy may require notice, and nothing here has looked at it.",
+        why: standard
+          ? `${country || "This employee's country"} sets no statutory minimum notice PERIOD on a resigning employee — no number of days — so there is no statutory date to calculate. That is a finding about the law, not a gap in this system's table. ` +
+            `What is owed then depends on the province, which this system does not read: in the common-law provinces it comes from the employee's contract${tenureMonths === null ? "" : ` (they have ${tenureMonths} months of service)`}, and this system holds no contract; in Québec the Civil Code binds BOTH parties to give notice in reasonable time, judged on the nature of the employment, its circumstances and length of service, and the employee cannot renounce the remedy for insufficient notice. Neither regime states a number of days, which is why nothing is computed here.`
+          : `${country || "This employee's country"} sets no statutory minimum notice period on a resigning employee, so there is no statutory date to calculate — this is a finding about the law, not a gap in this system's table. ` +
+            `What notice is owed comes from ${tenureMonths === null ? "the employee's contract" : `the employee's contract (they have ${tenureMonths} months of service)`}, and this system does not hold contracts and has not read one.`,
+        sentence: standard
+          ? "No statutory notice period of a stated LENGTH applies. This is NOT a finding that no notice is owed — depending on the province the obligation is contractual, or it is statutory and expressed as a reasonableness standard rather than a number of days. A person has to decide which, and how much."
+          : "No statutory notice period applies. This is NOT a finding that no notice is owed — the contract or policy may require notice, and nothing here has looked at it.",
       };
     }
     // DELIBERATELY NO `noticeDays` HERE. See this file's header, rule 2.
@@ -220,6 +256,12 @@ function noticeBasis(notice) {
     noticeMonths: isRealNumber(notice.noticeMonths) ? notice.noticeMonths : null,
     noticeStartDate: notice.noticeStartDate ?? null,
     noticeEndDate: notice.noticeEndDate,
+    // WHAT THE TENURE WAS MEASURED BETWEEN. "86 months of service" beside a
+    // start date read live that says 38 is a screen nobody can sign; the
+    // employment-law reader who reviewed it named this as the one thing
+    // standing between the panel and a signature.
+    tenureMeasuredFrom: notice.tenureMeasuredFrom ?? null,
+    tenureMeasuredTo: notice.tenureMeasuredTo ?? null,
     // A date moved by a country's own termination-date rule is a date the reader
     // will otherwise try to reproduce by adding days and fail to. BGB §622 snaps
     // to the 15th or month end; the Polish rule to the 1st of the following
@@ -228,7 +270,12 @@ function noticeBasis(notice) {
     anchorAdjusted: notice.anchorAdjusted === true,
     sentence:
       `${notice.noticeQuantity ?? `${notice.noticeDays} days`}' notice under ${citation ?? "the country's rule"}, running ${notice.noticeStartDate ?? "from the day after submission"} to ${notice.noticeEndDate}` +
-      (tenureMonths === null ? "" : `, on ${tenureMonths} months of service`) +
+      (tenureMonths === null
+        ? ""
+        : `, on ${tenureMonths} months of service` +
+          (notice.tenureMeasuredFrom && notice.tenureMeasuredTo
+            ? ` (measured from ${notice.tenureMeasuredFrom} to ${notice.tenureMeasuredTo})`
+            : "")) +
       (notice.onProbation === true ? ", inside the probation period" : "") +
       (notice.anchorAdjusted === true
         ? ". The end date was moved by that country's own permitted-termination-date rule, so it is not simply the start date plus the notice days."
@@ -343,7 +390,63 @@ function discrepancyBasis(notice) {
  * the lines and the fields that made it uncomputable, which is what turns the
  * refusal into something somebody can fix.
  */
+/**
+ * THE ONE-CELL RENDERING OF THE PAYOUT BLOCK — a figure when there is one, the
+ * NAME of the absence when there is not.
+ *
+ * Why this is published by the server and not composed in the sidebar. The
+ * ZAF panel's "PTO payout" row read `payout.totalInRemoteInteger` straight off
+ * the record and formatted it — and for a resignation filed with no time-off
+ * balances the record carries `0`, arithmetically honest and semantically
+ * unknown (`source: "no_time_off_records"`, see ptoPayout.js). The portal and
+ * the basis card both said "not known"; the one surface that SIGNS the figure
+ * printed `0.00 EUR`. A row that re-derives what a number means is a second
+ * copy of that decision, free to drift, and it drifted in the direction money
+ * must never drift: an invented figure of nothing owed.
+ *
+ * Keyed on the same states `payoutBasis()` already distinguishes, stamped in a
+ * wrapper so no branch can ship without one — the branch that forgets renders
+ * as an empty cell, which on this row reads as "nothing". The wording is the
+ * portal's (src/portal/server.js ptoPayoutLine) so the two surfaces cannot say
+ * different things about one record.
+ */
+export const PAYOUT_SHORT_LABELS = Object.freeze({
+  not_run: "not calculated",
+  not_worked_out: "not worked out",
+  not_known: "not known",
+  not_stated: "not stated",
+});
+
+/**
+ * Which of the five things this block is. `stated` means a figure exists and
+ * `total` carries it; every other value names why there is no figure.
+ *
+ * PUBLISHED AS `figure`, NOT `state`. The sidebar's partitionBasis reads a
+ * block's `state` as a verdict tone (settled / open / weigh) and files it under
+ * a findings heading — so a payout block carrying `state: "not_known"` was
+ * listed as a finding to weigh. This is a fact about the figure, not a verdict.
+ * @returns {"stated"|"not_run"|"not_worked_out"|"not_known"|"not_stated"}
+ */
+export function payoutState(basis) {
+  if (!basis) return "not_run";
+  if (basis.stated === true) return "stated";
+  if (basis.computable === null) return "not_run";
+  if (basis.computable === false) return "not_worked_out";
+  if (basis.lines.length === 0) return "not_known";
+  return "not_stated";
+}
+
 function payoutBasis(payout) {
+  const described = describePayoutBasis(payout);
+  const state = payoutState(described);
+  return {
+    ...described,
+    figure: state,
+    shortLabel: state === "stated" ? described.total : PAYOUT_SHORT_LABELS[state],
+  };
+}
+
+function describePayoutBasis(payout) {
   if (!payout) {
     return {
       stated: false,
@@ -481,6 +584,60 @@ function unreadableSentence(unusable) {
 }
 
 /**
+ * Remote's own `days_of_notice` beside the statute-derived figure — TWO figures,
+ * never one, and never one presented as the answer.
+ *
+ * WHY THIS BLOCK EXISTS AT ALL. Remote publishes, on every resignation record,
+ * the number of calendar days of notice it requires — *"based on the contract
+ * terms and local labor laws"*, its words. Nothing in this repository read it
+ * until 2026-09-02. So the screen HR Ops signs showed one figure, derived from a
+ * statute, with no indication that Remote and the employment contract between
+ * them might require a different one. `qa/contracts/UC-05-acceptance.md` §2 is
+ * exact about the cost: the specialist is not being asked *"is this number
+ * right?"* but *"Remote says N and the statute says M — which governs?"*, and
+ * that is a materially different question needing both figures on the screen.
+ *
+ * NEITHER FIGURE IS PREFERRED HERE. `governing` says which of four situations
+ * the reader is in, and three of the four are not a choice: agreed; Remote's is
+ * longer so serving it serves both; or nothing was compared. Only the fourth —
+ * Remote's blended figure sitting BELOW the statutory floor — is a genuine
+ * conflict, and it is escalated rather than resolved.
+ *
+ * RETURNS A BLOCK EVEN WHEN NOTHING WAS COMPARED, and that is deliberate:
+ * rendering nothing would let a one-sided figure read as a checked one. Null
+ * only when no notice was computed at all, in which case the panel has no
+ * notice section either.
+ */
+function reconciliationBasis(notice) {
+  const r = notice?.reconciliation ?? null;
+  if (!r) return null;
+  return {
+    verdict: r.verdict,
+    compared: r.compared === true,
+    notComparedReason: r.notComparedReason ?? null,
+    missingSide: r.missingSide ?? null,
+    governing: r.governing ?? null,
+    differenceDays: isRealNumber(r.differenceDays) ? r.differenceDays : null,
+    // BOTH SIDES, EACH WITH ITS OWN PROVENANCE, and the provenances are the
+    // point rather than decoration: one figure is blended from a contract this
+    // system has never seen, the other is statute-only and names its statute.
+    // Printing two bare numbers beside each other would invite the reader to
+    // assume they measure the same thing.
+    remote: {
+      daysOfNotice: isRealNumber(r.remote?.daysOfNotice) ? r.remote.daysOfNotice : null,
+      provenance: r.remote?.provenance ?? null,
+      recordRef: r.remote?.recordRef ?? null,
+    },
+    statute: {
+      quantity: r.statute?.quantity ?? null,
+      days: isRealNumber(r.statute?.days) ? r.statute.days : null,
+      provenance: r.statute?.provenance ?? null,
+    },
+    sentence: r.sentence,
+  };
+}
+
+/**
  * Everything HR Ops's sign-off turns on, from the persisted row alone.
  *
  * @param {object} args
@@ -493,25 +650,47 @@ function unreadableSentence(unusable) {
  *   unknowns: Array<{what:string, why:string, whatItWouldTake:string|null}>
  * }|null}  null when there is no row to describe
  */
-export function describeSignoffBasis({ resignationRow } = {}) {
+export function describeSignoffBasis({ resignationRow, employeeNow = null } = {}) {
   const row = resignationRow;
   if (!row) return null;
 
   const notice = noticeBasis(row.notice ?? null);
+  // THE RECORD READ NOW VERSUS THE RECORD THE ARITHMETIC USED. The sidebar
+  // prints "Start date … read from Remote just now" and, one card down, the
+  // tenure the calculation ran on. When the two disagree the signer must be
+  // told, because sign-off re-reads the record before it acts and would be
+  // vouching for figures computed from a different one.
+  const readNow = startDateOf(employeeNow);
+  if (readNow && notice.tenureMeasuredFrom && readNow !== notice.tenureMeasuredFrom) {
+    notice.startDateDisagreement = {
+      calculationUsed: notice.tenureMeasuredFrom,
+      recordReadNow: readNow,
+      sentence: `The employment record read just now gives a start date of ${readNow}; the calculation measured tenure from ${notice.tenureMeasuredFrom}. Sign-off acts on the record as it is now, so this has to be resolved before the figures are relied on.`,
+    };
+    notice.sentence += ` ${notice.startDateDisagreement.sentence}`;
+  }
   const discrepancy = discrepancyBasis(row.notice ?? null);
+  const reconciliation = reconciliationBasis(row.notice ?? null);
   const payout = payoutBasis(row.payout ?? null);
 
   // WHAT IS MISSING, COLLECTED IN ONE PLACE rather than left for the reader to
   // notice by its absence. An unknown a person has to DEDUCE from a blank field
   // is the same defect as a fact withheld: they act on what they can see.
   const unknowns = [];
+  if (notice.startDateDisagreement) {
+    unknowns.push({
+      what: "Which start date is right",
+      why: notice.startDateDisagreement.sentence,
+      whatItWouldTake: "Confirming the employee's start date on the Remote record, then re-running the calculation from it.",
+    });
+  }
   if (!notice.stated) {
     unknowns.push({
       what: "The statutory notice end date",
       why: notice.why,
       whatItWouldTake: notice.ruleFound
         ? "Extending this country's notice table to cover this length of service — the country itself is already held."
-        : "Adding this country's statutory notice rule to src/uc05/noticePeriodTable.js, sourced from the statute rather than inferred.",
+        : "Adding this country's statutory notice rule to the notice-period table, sourced from the statute rather than inferred.",
     });
   }
   if (payout.computable === false) {
@@ -564,6 +743,29 @@ export function describeSignoffBasis({ resignationRow } = {}) {
     });
   }
 
+  // REMOTE'S FIGURE WAS NOT READ, AND THAT IS AN UNKNOWN RATHER THAN A SILENCE.
+  //
+  // This is the state of every case today: nothing in this system fetches
+  // `GET /v1/resignations/{offboarding_request_id}`. The statutory figure on the
+  // screen therefore stands alone, and a specialist who is not told so will read
+  // it as the notice period rather than as a floor that has been checked against
+  // nothing. It is named here, in the block that collects everything the case
+  // does not know, for the same reason the others are: an unknown a person has
+  // to DEDUCE from a blank field is a fact withheld.
+  //
+  // NOT RAISED when the comparison genuinely happened, and not raised when there
+  // was no statutory figure to compare against either — in that case the missing
+  // half is already the first unknown in this list, and saying it twice buries
+  // both.
+  if (reconciliation && !reconciliation.compared && reconciliation.missingSide === "remote") {
+    unknowns.push({
+      what: "The notice period Remote itself requires for this resignation",
+      why: reconciliation.sentence,
+      whatItWouldTake:
+        "Reading `days_of_notice` off Remote's own resignation record (`GET /v1/resignations/{offboarding_request_id}`) and passing it in with the request. Three things are missing today and none of them is arithmetic: this system holds no `resignation:read` scope, it holds no `offboarding_request_id` for any resignation, and its Remote client has no method for that endpoint.",
+    });
+  }
+
   const extraction = row.letterExtraction ?? null;
   if (extraction && extraction.proposedEndDate && extraction.source && extraction.source !== "structured_input") {
     unknowns.push({
@@ -573,5 +775,24 @@ export function describeSignoffBasis({ resignationRow } = {}) {
     });
   }
 
-  return { decider: DECIDER, notice, discrepancy, payout, unknowns };
+  return { decider: DECIDER, notice, discrepancy, reconciliation, payout, unknowns };
+}
+
+
+/**
+ * The start date on a live employee read, whatever shape the reader published
+ * it in. Tolerant on purpose: this is a cross-check, and an unreadable record
+ * must produce no comparison rather than a false disagreement.
+ */
+function startDateOf(employeeNow) {
+  if (!employeeNow || typeof employeeNow !== "object") return null;
+  const candidates = [
+    employeeNow.start_date,
+    employeeNow.startDate,
+    employeeNow.fields?.start_date?.value,
+    employeeNow.fields?.start_date,
+    employeeNow.facts?.start_date,
+  ];
+  const hit = candidates.find((v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v));
+  return hit ? hit.slice(0, 10) : null;
 }

@@ -158,6 +158,12 @@ export async function handleExpenseSubmission(
     employmentId,
     session = null,
     receiptHash = null,
+    // [E-1] what the uploaded/attached receipt was read to say, or null when no
+    // reading was attempted on this path. Passed straight through to gate 8b,
+    // which treats absent as "nobody tried" rather than "unreadable" — see
+    // policyEngine.js. Nothing here inspects it: the comparison belongs with
+    // the gates, where it is tested.
+    receiptReading = null,
     externalRef = null,
     source = null,
   } = submission;
@@ -331,6 +337,7 @@ export async function handleExpenseSubmission(
     categoryValid,
     classification,
     policyCap,
+    receiptReading,
     upstreamFailures,
   });
 

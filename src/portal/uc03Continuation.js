@@ -275,9 +275,44 @@ export function continuationRef(caseRow) {
  * from Portugal for a month?") states no dates at all on purpose.
  */
 const DEMO_TRIP = Object.freeze({
-  "uc04-startDate": "2026-09-01",
-  "uc04-endDate": "2026-09-21",
-  "uc04-now": "2026-08-15",
+  "uc04-startDate": "2026-10-01",
+  "uc04-endDate": "2026-10-21",
+  "uc04-now": "2026-09-14",
+});
+
+/**
+ * ONE PRIOR STAY, WITHOUT WHICH UC-04 HAS ALMOST NOTHING TO SHOW (2026-08-31).
+ *
+ * The completions filled every box except the travel history, so every request
+ * that arrived by continuation carried an EMPTY history — and an empty history
+ * is not a neutral starting point here, it is the state in which:
+ *   · the 183-in-365 tax-residency row is not rendered at all (decisionFacts.js
+ *     requires `periodsCounted > 0`),
+ *   · the Schengen count reads 21 of 90 and demonstrates no arithmetic,
+ *   · the cumulative-presence dimension answers `unknown` — "a FLOOR, not a
+ *     measurement" — which is honest and is also the whole page saying it
+ *     counted nothing,
+ * so the only substantive thing UC-04 computes was reachable from the portal's
+ * own quick-fills and not from the flow the demo actually walks.
+ *
+ * 46 days is chosen so that BOTH windows report a real figure and NEITHER
+ * decides: 67 of 90 Schengen (23 days of headroom) and 67 of 183 on the
+ * residency watch. A specialist can then see the two windows disagree in scale
+ * without the case being blocked, which is the distinction UC-04.md §7 forbids
+ * collapsing.
+ *
+ * IT IS A SUGGESTION IN AN EDITABLE BOX, exactly like DEMO_TRIP and the
+ * suggested visa above it — written into the three prior-stay fields the form
+ * already shows, where the traveller can see it and correct it. All three are
+ * written together and never one or two: test/portalUc04TravelScenarios.test.js
+ * pins that no prefill may leave a stay row half-populated, because
+ * computeCumulativeDays() refuses an unreadable row and a half-filled one would
+ * turn a demonstration into a refusal.
+ */
+const DEMO_PRIOR_STAY = Object.freeze({
+  "uc04-h1-country": null, // filled with the destination at build time
+  "uc04-h1-startDate": "2026-05-31",
+  "uc04-h1-endDate": "2026-07-15",
 });
 
 /**
@@ -304,6 +339,46 @@ function suggestedVisa(destination) {
   if (SCHENGEN.has(dest)) return VISA_TYPES.schengen_short_stay;
   return VISA_TYPES.business_visa;
 }
+
+/**
+ * WHAT THEY WILL BE DOING THERE, offered rather than written.
+ *
+ * These four are the questions Remote's own remote-work-authorization form
+ * asks (src/uc04/activityProfile.js). A travel request states none of them, so
+ * a continuation always leaves all four empty — but they are NOT in
+ * REQUIRED_INPUTS, so they never appear in `stillNeeded` and a completion's
+ * `fields` map may not name them: that map's guarantee is that it writes only
+ * boxes the server confirmed are empty, and it is the reason pressing a
+ * completion cannot destroy something the traveller typed.
+ *
+ * SO THEY TRAVEL ON A SEPARATE CHANNEL WITH A WEAKER PROMISE, not on that one
+ * with the promise loosened. `suggestIfEmpty` lands only in a box that is
+ * blank at the moment the button is pressed, checked in the browser against
+ * the box itself rather than against anything the server believed earlier — so
+ * a traveller who described their trip and then pressed "Fill the rest" keeps
+ * every word of it. The strict guarantee stays exactly as strict; this is a
+ * second, safer door beside it.
+ *
+ * IDENTICAL ON BOTH COMPLETIONS, ON PURPOSE. The pair differs only in the two
+ * structured boxes, so a reader watching the same sentences produce a clean
+ * approval and then a high-risk escalation is watching the thing this field's
+ * design turns on: the prose is read by a person and scored by nothing. A rule
+ * keyed on what somebody wrote here would be one anybody can pass by
+ * rephrasing.
+ *
+ * DESTINATION-NEUTRAL, because the destination is the routing's and not this
+ * file's. "The local team's office" is true of Amsterdam and Toronto alike;
+ * naming a city here would put a place in the traveller's mouth that their own
+ * travel request never mentioned.
+ *
+ * @type {Readonly<Record<string, string>>}
+ */
+const ACTIVITY_SUGGESTIONS = Object.freeze({
+  "uc04-activities": "Working with the local team, plus two partner meetings.",
+  "uc04-institutions": "the company's local entity, and one partner office",
+  "uc04-worksites": "none",
+  "uc04-workLocation": "The local team's office, and my accommodation.",
+});
 
 /**
  * Two ways to finish a continuation, for the traveller who was already routed.
@@ -349,7 +424,7 @@ function suggestedVisa(destination) {
  *
  * @param {object|null} handoffEvent
  * @param {ReadonlyArray<{input:string}>} stillNeeded
- * @returns {ReadonlyArray<{id:string,label:string,note:string,fields:Record<string,string|boolean>}>}
+ * @returns {ReadonlyArray<{id:string,label:string,note:string,fields:Record<string,string|boolean>,suggestIfEmpty:Readonly<Record<string,string>>}>}
  */
 export function buildCompletions(handoffEvent, stillNeeded) {
   const needed = new Set((stillNeeded || []).map((entry) => entry && entry.input));
@@ -366,6 +441,15 @@ export function buildCompletions(handoffEvent, stillNeeded) {
     /** @type {Record<string, string|boolean>} */
     const fields = {};
     if (needed.has("startDate / endDate")) Object.assign(fields, DEMO_TRIP);
+    /* THE PRIOR STAY IS OFFERED ONLY WHEN THE DATES ARE, and only when a
+       destination is known. It rides with DEMO_TRIP because the two are one
+       demonstration: a trip whose dates this file chose, against a history it
+       chose, so the arithmetic on the next screen is reproducible. A routing
+       that carried real dates is a real request, and inventing prior travel for
+       it would be putting words in the traveller's mouth. */
+    if (needed.has("startDate / endDate") && destination) {
+      Object.assign(fields, DEMO_PRIOR_STAY, { "uc04-h1-country": destination });
+    }
     // The home country, offered as the nationality — see the note above. Left
     // alone when the routing carried no home country either, because a blank
     // box asking a question is better than a box filled with nothing.
@@ -383,8 +467,10 @@ export function buildCompletions(handoffEvent, stillNeeded) {
       note:
         "An engineer who signs nothing on the company’s behalf. Nothing here creates a taxable presence, "
         + "so this is the version a mobility specialist can approve in one click. Check the nationality — "
-        + "your home country is offered as a starting point, not read from your record.",
+        + "your home country is offered as a starting point, not read from your record — and the earlier "
+        + "stay, which is filled in so the day counts have something to count. Both boxes are yours to correct.",
       fields: Object.freeze(fieldsFor_({ jobDuties: "engineering", signing: false })),
+      suggestIfEmpty: ACTIVITY_SUGGESTIONS,
     }),
     Object.freeze({
       id: "continuation-senior",
@@ -394,6 +480,7 @@ export function buildCompletions(handoffEvent, stillNeeded) {
         + "permanent-establishment exposure the assessment knows about, so this one is escalated to a "
         + "specialist team instead of being cleared.",
       fields: Object.freeze(fieldsFor_({ jobDuties: "executive", signing: true })),
+      suggestIfEmpty: ACTIVITY_SUGGESTIONS,
     }),
   ]);
 }

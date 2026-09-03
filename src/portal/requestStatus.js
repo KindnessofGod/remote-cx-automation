@@ -154,7 +154,18 @@ const REASON_LABELS = {
   unsupported_country: "this system has no rule on file for that country",
   no_statutory_notice_period: "that country sets no statutory minimum notice",
   no_matching_notice_bracket: "no matching notice bracket was found",
-  statutory_discrepancy: "the contract and the statute disagree on the notice owed",
+  // NOT "the contract and the statute disagree on the notice owed", which is
+  // what this said and which alleges an unlawful contract term nobody checked.
+  // NO CONTRACT IS READ ANYWHERE IN THIS SYSTEM and it says so itself in three
+  // places — src/uc05/decisionFacts.js ("this system does not hold contracts and
+  // has not read one"), src/uc05/policyEngine.js's gate 5 `means`, and the
+  // report this use case issues. What the gate actually compares is the
+  // employee's own PROPOSED last working day against the statutory end date
+  // (src/uc05/policyEngine.js: `notice.discrepancy === "earlier_than_statutory"`),
+  // and the shortfall in days is on the case as a flag. That is a fact about
+  // one date somebody typed; the old phrasing turned it into an accusation
+  // about the employer's paperwork, printed to the resigning employee.
+  statutory_discrepancy: "the leaving date proposed is earlier than the statutory notice period allows",
   missing_seniority_date: "the record has no seniority date to calculate from",
   pto_balance_unusable: "the recorded time-off balance cannot be used",
   no_remote_work_authorization_request: "no matching work-authorization request exists at Remote",
@@ -294,12 +305,83 @@ const DESCRIBERS = {
   // --- UC-04: one named mobility specialist (not dual — UC-04.md §1/§8).
   uc04(row) {
     switch (row.status) {
+      // THREE PARTIES DECIDE, AND THIS DESCRIBER CAN ONLY SEE TWO OF THEM
+      // (corrected 2026-08-31). `uc04_authorizations` records stage 1 (the
+      // employee files) and stage 2 (the customer's own manager approves or
+      // declines — the only work-authorization decision Remote's API accepts).
+      // Stage 3, Remote's own mobility review, has no column and lives in
+      // `audit_log`; src/portal/server.js's "My requests" route reads it and
+      // attaches it as `stages`. So every sentence here is scoped to the
+      // employer's decision and says so, rather than describing the request as
+      // finished when one stage is still outstanding.
+      //
+      // WHAT THESE SENTENCES USED TO SAY, and why both halves were wrong: "One
+      // named mobility specialist approves or denies it in the ZAF sidebar" —
+      // that was stage 2 attributed to stage 3's actor, the exact confusion the
+      // 2026-08-30 correction unpicked; and "the work authorisation was issued
+      // at Remote", which is true only when a Remote request was linked, and is
+      // false for every request filed through this portal (there is no
+      // `POST /v1/work-authorization-requests` to have created one).
       case "pending_specialist_approval":
-        return state(STATES.AWAITING_REVIEW, "With Mobility", "Risk-scored and prepared. One named mobility specialist approves or denies it in the ZAF sidebar; the AI never issues the authorisation itself.", { awaitingRole: "Mobility specialist", storeStatus: row.status });
+        return state(STATES.AWAITING_REVIEW, "With your manager", "Risk-scored and prepared. Your employer's own manager approves or declines the trip in Remote's product — that is the only work-authorisation decision Remote's API accepts, and the AI never makes it.", { awaitingRole: "The customer's approving manager", storeStatus: row.status });
       case "approved_pending_execution":
-        return state(STATES.APPROVED, "Approved", "The specialist approved it; the work-authorisation record is being issued.", { storeStatus: row.status, decidedBy: row.approver ?? null, decidedAt: row.approvedAt ?? null, note: row.approvalNote ?? null });
+        return state(STATES.APPROVED, "Approved by your manager", "Your employer's manager approved it; the decision is being recorded.", { storeStatus: row.status, decidedBy: row.approver ?? null, decidedAt: row.approvedAt ?? null, note: row.approvalNote ?? null });
       case "executed":
-        return state(STATES.EXECUTED, "Authorised", "The specialist approved it and the work authorisation was issued at Remote.", { storeStatus: row.status, decidedBy: row.approver ?? null, decidedAt: row.approvedAt ?? null, note: row.approvalNote ?? null });
+        return state(
+          STATES.EXECUTED,
+          "Approved by your manager",
+          // READ OFF THE ROW, NOT ASSUMED. `remoteResult.transmitted` is what
+          // src/uc04/workflow.js records, and it is false whenever no Remote
+          // work-authorization request was linked — which is every portal-filed
+          // request. Saying "issued at Remote" over that was a claim about a
+          // system this decision never touched.
+          row.remoteResult?.transmitted === true
+            ? "Your employer's manager approved it and the work-authorisation request was updated at Remote. Remote's own mobility review is a separate stage — see below."
+            : "Your employer's manager approved it, and the approval is recorded here. There was no Remote work-authorisation request behind this trip to update. Remote's own mobility review is a separate stage — see below.",
+          { storeStatus: row.status, decidedBy: row.approver ?? null, decidedAt: row.approvedAt ?? null, note: row.approvalNote ?? null }
+        );
+      // THE EMPLOYER'S OWN VERDICT, AS /remoteui's SCREEN WRITES IT (stage 2).
+      // `approved_by_manager` / `declined_by_manager` are Remote's own enum
+      // members, stored VERBATIM by AuthorizationStore.recordEmployerDecision()
+      // — EMPLOYER_DECISION_STATUSES' header argues why the strings are
+      // Remote's and not ours, and canonicalDecisionStatus() leaves them alone
+      // because only `denied` is an alias.
+      //
+      // THIS DESCRIBER KNEW `executed` AND NOT THESE, so every trip a manager
+      // approved on that screen rendered "Unknown" in the one column the
+      // requester reads — beside a `stages` block on the SAME ROW that named
+      // the approver and the minute. Observed live on the deployment
+      // 2026-09-01, on two real records: `state: "unknown"`, `decidedBy: null`,
+      // next to `employer: {approved: true, approver: "admin_jane", at: …}`.
+      // The decline half had the same hole and no row had reached it yet.
+      //
+      // WHY NOT FOLD THESE INTO `executed` AND `declined` BELOW. The `executed`
+      // branch says "There was no Remote work-authorisation request behind this
+      // trip to update" whenever `remoteResult.transmitted` is not true — a
+      // claim ABOUT REMOTE, and one it is entitled to make because the
+      // execution step ran and recorded what it found. recordEmployerDecision()
+      // writes no `remoteResult` at all, so the identical test would silently
+      // turn "this path never attempted an update" into "there was nothing to
+      // update". Different facts, and the second is not one these rows carry.
+      // Stage 3 is described by the `stages` block beside this, so the sentence
+      // stops where the row's own evidence stops.
+      case "approved_by_manager":
+        return state(
+          STATES.EXECUTED,
+          "Approved by your manager",
+          "Your employer's manager approved it, and the approval is recorded here. Remote's own mobility review is a separate stage — see below.",
+          { storeStatus: row.status, decidedBy: row.approver ?? null, decidedAt: row.approvedAt ?? null, note: row.approvalNote ?? null }
+        );
+      case "declined_by_manager":
+        // The decline slot, not the approval slot — recordEmployerDecision()
+        // writes `denied_by`/`denied_at` for a decline and leaves `approver`
+        // untouched, so reading the approval slot here would report nobody.
+        return state(
+          STATES.DECLINED,
+          "Declined by your manager",
+          "Your employer's manager declined this request.",
+          { storeStatus: row.status, ...fromSlot(row.declinedBy ?? row.deniedBy, row.declinedAt ?? row.deniedAt) }
+        );
       // BOTH SPELLINGS. The stored verb moved `denied` -> `declined` on
       // 2026-08-19 (src/shared/declineVocabulary.js). The stores canonicalise
       // on read, so `denied` should never reach here from Postgres — it is
@@ -309,7 +391,7 @@ const DESCRIBERS = {
       // the true one for a request that WAS decided.
       case "declined":
       case "denied":
-        return state(STATES.DECLINED, "Declined", "The mobility specialist declined this request.", { storeStatus: row.status, ...fromSlot(row.declinedBy ?? row.deniedBy, row.declinedAt ?? row.deniedAt) });
+        return state(STATES.DECLINED, "Declined", "Your employer's manager declined this request.", { storeStatus: row.status, ...fromSlot(row.declinedBy ?? row.deniedBy, row.declinedAt ?? row.deniedAt) });
       case "blocked":
         return state(STATES.BLOCKED, "Blocked", `Refused by a hard gate (${reasonLabel(row.reason) ?? "see the decision"}) — a sanctioned destination or a Schengen/US-CA block is never routed to a human.`, { storeStatus: row.status });
       case "escalated":
@@ -599,4 +681,64 @@ export function ticketHandoffCreationFailed() {
  */
 export function ticketHandoffNoRequestType() {
   return "No Zendesk ticket could be raised for this. Your letter decision is still recorded.";
+}
+
+// ---------------------------------------------------------------------------
+// THE BANNER ABOVE THE LIST — "has anything happened since I last looked?"
+// ---------------------------------------------------------------------------
+
+/**
+ * The one sentence that sits above "My requests", composed here rather than in
+ * the route or in the browser, for the same reason every other sentence on this
+ * surface is: one derivation, and it can be tested without a server.
+ *
+ * ONE ENTRY PER OUTCOME, NOT ONE PER REQUEST — and that is the whole change.
+ * This used to enumerate every settled request, so eighteen decisions rendered
+ * as `UC-04 — approved by your manager` eight times in a row, then `UC-02 —
+ * approved` five times, inside a banner that wrapped to four lines. Read live
+ * on the deployment 2026-09-01, where it was the longest thing on the page and
+ * said the least.
+ *
+ * A TALLY, NOT A TRUNCATION, and the difference is the point. Every distinct
+ * outcome still appears and the counts are exact, so this is shorter without
+ * being a smaller claim — `assertsEveryDecision` below is the invariant, and
+ * it is asserted by test rather than intended. Capping the list at the first N
+ * would have been the version that quietly stops mentioning outcomes, which on
+ * a page whose whole job is "what happened to mine" is a worse answer than a
+ * long one.
+ *
+ * ORDERED BY COUNT, THEN ALPHABETICALLY, so the same history renders the same
+ * way twice. Insertion order here is submission order, which would reshuffle
+ * the banner every time an old request was decided.
+ *
+ * @param {Array<object>} requests  every request the page is about to show
+ */
+export function describeDecided(requests) {
+  const settled = requests.filter((request) => request.settled);
+
+  const tally = new Map();
+  for (const request of settled) {
+    const label = String(request.status?.label ?? "decided").toLowerCase();
+    const key = `${request.useCase} — ${label}`;
+    tally.set(key, (tally.get(key) ?? 0) + 1);
+  }
+  const outcomes = [...tally.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([outcome, count]) => ({ outcome, count, text: count === 1 ? outcome : `${outcome} (×${count})` }));
+
+  const requestWord = requests.length === 1 ? "request" : "requests";
+  const haveWord = settled.length === 1 ? "has" : "have";
+
+  return {
+    count: settled.length,
+    total: requests.length,
+    useCases: settled.map((request) => request.useCase),
+    outcomes,
+    // Empty rather than a heading for nothing — a banner that renders "0 of 3"
+    // makes an absence look like a result.
+    summary: settled.length
+      ? `${settled.length} of your ${requests.length} ${requestWord} ${haveWord} been decided by a person: ` +
+        `${outcomes.map((entry) => entry.text).join("; ")}.`
+      : "",
+  };
 }

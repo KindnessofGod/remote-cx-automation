@@ -181,7 +181,7 @@ test('"no" is not Norway — a two-letter value is never named outside a country
   assert.equal(CXCountry.row("Recorded status", "known gap"), "known gap");
   // And the same value under a country label IS named.
   assert.equal(CXCountry.row("Destination", "PT"), "Portugal");
-  assert.equal(CXCountry.row("Country pair", "DE → ES"), "Germany → Spain");
+  assert.equal(CXCountry.row("Nationality → destination", "DE → ES"), "Germany → Spain");
 });
 
 test("every label the browser treats as a country is a label a server actually emits", () => {
@@ -395,7 +395,10 @@ test("UC-04's trip line reads as two countries, not two abbreviations", async ()
   assert.ok(text.includes("Germany → Spain"), "the trip route still prints codes");
   assert.ok(text.includes("Germany national"), "the nationality still prints a code");
   // The treaty dimension's own evidence row, named through the label registry.
-  assert.ok(text.includes("Country pair Germany → Spain"), "the country-pair evidence row still prints codes");
+  assert.ok(
+    text.includes("Nationality → destination Germany → Spain"),
+    "the nationality-pair evidence row still prints codes"
+  );
 });
 
 test("both 🔴 dossiers name their jurisdictions, and keep the disclaimer above the analysis", async () => {

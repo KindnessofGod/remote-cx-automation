@@ -183,45 +183,50 @@ function text(value) {
 }
 
 /**
- * The person this decision is about, read fresh from Remote.
+ * ONE READ, IN THE FIVE-STATE VOCABULARY — split out of `describeEmployee()`
+ * on 2026-08-31 so a caller that needs the RECORD as well as the display rows
+ * can have both for one GET.
+ *
+ * WHY IT IS EXPORTED RATHER THAN INLINE. UC-04's fourth dimension reports what
+ * documents Remote holds (`src/uc04/identityDocuments.js`), and its panel
+ * already re-reads the employment for the subject block one function over.
+ * Without this split the choice was a second GET per panel open or a second
+ * copy of the not_found / unavailable / not_looked_up distinction — and that
+ * distinction is the whole point of this file, so a second copy of it is the
+ * worse of the two.
+ *
+ * `employment` is the raw normalized record and is NOT part of what any panel
+ * renders: `describeEmployee()` still publishes only the closed `FIELDS`
+ * registry, so nothing here widens what reaches a screen. A caller wanting the
+ * record must ask for it by name and answer for what it does with it.
  *
  * @param {object} args
- * @param {{getEmployment: Function}|null} args.remote  the REST client, or null
- *   when this API was wired without one. Null is a STATE, not an error.
- * @param {string|null} args.employmentId  off the stored row.
- * @param {string[]} args.fields  ordered field keys from EMPLOYEE_FIELD_KEYS.
- *   Chosen per use case and argued at each call site.
- * @param {() => Date} [args.now]  injectable clock, so `readAt` is testable.
- * @returns {Promise<object>} always an object, never null, never a throw.
+ * @param {{getEmployment: Function}|null} args.remote
+ * @param {string|null} args.employmentId
+ * @returns {Promise<{state:string, employmentId:string|null, employment:object|null, httpStatus:number|null, finding:string}>}
  */
-export async function describeEmployee({ remote, employmentId, fields, now = () => new Date() }) {
-  const chosen = Array.isArray(fields) ? fields : [];
-  for (const key of chosen) {
-    // A typo'd key must not degrade to a silently missing row. This is the same
-    // rule `verify-traces` enforces on n8n's probe names: a name nothing
-    // recognises is indistinguishable from an absence, forever, without error.
-    if (!Object.prototype.hasOwnProperty.call(FIELDS, key)) {
-      throw new Error(`describeEmployee: unknown field '${key}'. Known: ${EMPLOYEE_FIELD_KEYS.join(", ")}`);
-    }
-  }
-
+export async function readEmploymentForSubject({ remote, employmentId }) {
   const id = text(employmentId);
   if (!id) {
-    return frame({
+    return {
       state: SUBJECT_NO_EMPLOYMENT_ID,
       employmentId: null,
+      employment: null,
+      httpStatus: null,
       finding:
         "This record names no employment, so there is no person to look up. It is a record with the field missing, not a record about nobody.",
-    });
+    };
   }
 
   if (!remote || typeof remote.getEmployment !== "function") {
-    return frame({
+    return {
       state: SUBJECT_NOT_LOOKED_UP,
       employmentId: id,
+      employment: null,
+      httpStatus: null,
       finding:
         `No Remote client is wired into this API, so nothing about employment ${id} was asked for. This says nothing about the employee — only that this deployment cannot read them.`,
-    });
+    };
   }
 
   let employment = null;
@@ -233,24 +238,68 @@ export async function describeEmployee({ remote, employmentId, fields, now = () 
     // gone" — it is "the request was not evaluated", which is the distinction
     // src/shared/upstreamFailure.js exists to keep.
     const status = Number.isInteger(err?.status) ? err.status : null;
-    return frame({
+    return {
       state: SUBJECT_UNAVAILABLE,
       employmentId: id,
+      employment: null,
       httpStatus: status,
       finding:
         `Remote could not be asked about employment ${id}${status ? ` (HTTP ${status})` : ""}. This is a failure to read, not a finding about the employee: nothing here says the record is missing, inactive or wrong.`,
-    });
+    };
   }
 
   if (!employment) {
-    return frame({
+    return {
       state: SUBJECT_NOT_FOUND,
       employmentId: id,
+      employment: null,
       httpStatus: 404,
       finding:
         `Remote answered that employment ${id} does not exist. That is an answer about the record: either the id on this case is wrong, or the employment has been removed since the decision was made.`,
+    };
+  }
+
+  return { state: SUBJECT_AVAILABLE, employmentId: id, employment, httpStatus: null, finding: "" };
+}
+
+/**
+ * The person this decision is about, read fresh from Remote.
+ *
+ * @param {object} args
+ * @param {{getEmployment: Function}|null} args.remote  the REST client, or null
+ *   when this API was wired without one. Null is a STATE, not an error.
+ * @param {string|null} args.employmentId  off the stored row.
+ * @param {string[]} args.fields  ordered field keys from EMPLOYEE_FIELD_KEYS.
+ *   Chosen per use case and argued at each call site.
+ * @param {() => Date} [args.now]  injectable clock, so `readAt` is testable.
+ * @param {object|null} [args.read]  a `readEmploymentForSubject()` result this
+ *   caller already has. Supplied ONLY to avoid a second GET for the same
+ *   record on the same panel open; when absent this function reads for itself
+ *   exactly as it always has, so the eight callers that pass nothing are
+ *   unchanged.
+ * @returns {Promise<object>} always an object, never null, never a throw.
+ */
+export async function describeEmployee({ remote, employmentId, fields, now = () => new Date(), read = null }) {
+  const chosen = Array.isArray(fields) ? fields : [];
+  for (const key of chosen) {
+    // A typo'd key must not degrade to a silently missing row. This is the same
+    // rule `verify-traces` enforces on n8n's probe names: a name nothing
+    // recognises is indistinguishable from an absence, forever, without error.
+    if (!Object.prototype.hasOwnProperty.call(FIELDS, key)) {
+      throw new Error(`describeEmployee: unknown field '${key}'. Known: ${EMPLOYEE_FIELD_KEYS.join(", ")}`);
+    }
+  }
+
+  const outcome = read ?? (await readEmploymentForSubject({ remote, employmentId }));
+  if (outcome.state !== SUBJECT_AVAILABLE) {
+    return frame({
+      state: outcome.state,
+      employmentId: outcome.employmentId,
+      httpStatus: outcome.httpStatus,
+      finding: outcome.finding,
     });
   }
+  const { employment, employmentId: id } = outcome;
 
   const rows = chosen.map((key) => {
     const spec = FIELDS[key];

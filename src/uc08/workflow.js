@@ -114,9 +114,26 @@ export async function handleTaxInquiry(
     ? buildPresenceEvidence({ presencePeriods, country: targetCountry, windowStart, windowEnd })
     : null;
 
+  // THE COUNTRIES COME FROM THE PARSE, NOT FROM THE PROSE. The retriever filters
+  // citations by jurisdiction, and re-reading the raw text for country names
+  // finds only what the requester happened to type — a person asking whether
+  // they owe tax in Toronto names Canada and never mentions that they are
+  // employed in Portugal, so the Canada–Portugal convention could not be
+  // reached. `parsed.jurisdictions` and the request's own `targetCountry` are
+  // both already established here.
+  //
+  // An EMPTY list is passed as null, deliberately: null means "read the text",
+  // and [] would mean "no country matched anything", which the filter reads as
+  // a hard restriction to nothing. Falling back to the text is the same
+  // fail-soft this whole path uses — a parse that found no jurisdiction must
+  // not silence the retriever.
+  const retrievalCountries = [
+    ...new Set([...(parsed.jurisdictions ?? []), ...(targetCountry ? [targetCountry] : [])]),
+  ];
+  const retrievalOpts = { countries: retrievalCountries.length > 0 ? retrievalCountries : null };
   const citations = await (treatyRetriever
-    ? treatyRetriever.retrieveCitations([text, parsed.inquiryType].join(" "))
-    : retrieveCitations([text, parsed.inquiryType].join(" ")));
+    ? treatyRetriever.retrieveCitations([text, parsed.inquiryType].join(" "), retrievalOpts)
+    : retrieveCitations([text, parsed.inquiryType].join(" "), retrievalOpts));
 
   const { narrative } = await draftNarrativeFn(
     {

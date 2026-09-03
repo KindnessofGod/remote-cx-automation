@@ -73,9 +73,65 @@
   var ACTIVE_SESSION = "admin";
   var SESSION_HEADER = "X-RemoteUi-Session";
 
+  // -- access code (deployment) -----------------------------------------------
+  //
+  // The deployment gates every /remoteui/api route behind the shared portal
+  // key (src/portal/access.js), the same rule /portal, /audit and /queue apply.
+  // NOTHING about that rule lives here: the page holds no key by default,
+  // decides nothing about whether one is needed, and renders only what the
+  // server said when it refused. sessionStorage, not localStorage — the key
+  // should not outlive the browser session on a shared machine. Same names as
+  // workauth.js so one unlock serves both stand-in screens.
+  var KEY_STORAGE = "portal.accessKey";
+  var KEY_HEADER = "X-Portal-Key";
+
+  function storedKey() {
+    try { return window.sessionStorage.getItem(KEY_STORAGE) || ""; } catch (err) { return ""; }
+  }
+  function rememberKey(value) {
+    try { window.sessionStorage.setItem(KEY_STORAGE, value); } catch (err) { /* the request still carries it */ }
+  }
+  function forgetKey() {
+    try { window.sessionStorage.removeItem(KEY_STORAGE); } catch (err) { /* ignore */ }
+  }
+  function isAccessRefusal(json) {
+    return Boolean(json && typeof json.code === "string" && json.code.indexOf("portal_access_key") === 0);
+  }
+
+  /** Show the code prompt in the server's own words; hide it once a read succeeds. */
+  function showAccessGate(payload) {
+    var gate = byId("access-gate");
+    var configured = payload.code !== "portal_access_key_not_configured";
+    byId("access-reason").textContent = payload.reason || "This page requires an access code.";
+    byId("access-why").textContent = payload.why || "";
+    var howto = byId("access-howto");
+    clear(howto);
+    (payload.howToFix || []).forEach(function (step) { howto.appendChild(el("li", {}, [String(step)])); });
+    byId("access-form").hidden = !configured;
+    gate.hidden = false;
+    if (configured) byId("access-key").focus();
+  }
+  function hideAccessGate() { byId("access-gate").hidden = true; }
+
+  /** Every API call goes through here, so no call can forget the session or the key. */
+  function api(path, options) {
+    var opts = options || {};
+    var headers = {};
+    if (opts.body) headers["Content-Type"] = "application/json";
+    headers[SESSION_HEADER] = ACTIVE_SESSION;
+    var key = storedKey();
+    if (key) headers[KEY_HEADER] = key;
+    return fetch(path, { method: opts.method || "GET", headers: headers, body: opts.body }).then(function (res) {
+      return res.json().then(function (json) {
+        if (isAccessRefusal(json)) { if (json.code === "portal_access_key_invalid") forgetKey(); showAccessGate(json); }
+        else if (res.ok) hideAccessGate();
+        return json;
+      });
+    });
+  }
+
   var employees = [];
   var employeeById = {};
-  var scenarioNow = null;
 
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
@@ -149,9 +205,14 @@
   // -- employees (admin path only) ---------------------------------------------
 
   function loadEmployees() {
-    fetch("/api/employees")
-      .then(function (res) { return res.json(); })
+    api("api/employees")
       .then(function (data) {
+        if (!data.employees) {
+          byId("current-employment").textContent = isAccessRefusal(data)
+            ? "The employee list needs the access code above."
+            : "Could not load employees: " + (data.reason || data.code || "unknown error");
+          return;
+        }
         employees = data.employees || [];
         var select = byId("employee-select");
         clear(select);
@@ -164,6 +225,24 @@
       .catch(function (err) {
         byId("current-employment").textContent = "Could not load employees: " + err.message;
       });
+  }
+
+  /** WHO the employee tab is signed in as — the server's answer, never a literal in the HTML. */
+  function loadSessionCaption() {
+    var box = byId("employee-session-caption");
+    var saved = ACTIVE_SESSION;
+    ACTIVE_SESSION = "employee";
+    var read = api("api/session");
+    ACTIVE_SESSION = saved;
+    read
+      .then(function (data) {
+        clear(box);
+        if (!data.ok) { box.textContent = "Could not read the employee session: " + (data.reason || data.code || ""); return; }
+        box.appendChild(document.createTextNode("The employee session is " + (data.name || "unnamed") + " ("));
+        box.appendChild(el("span", { class: "r-mono" }, [String(data.employmentId || data.id || "")]));
+        box.appendChild(document.createTextNode(")."));
+      })
+      .catch(function (err) { box.textContent = "Could not read the employee session: " + err.message; });
   }
 
   function currentFor() {
@@ -217,6 +296,16 @@
     renderCurrent(employeeById[byId("employee-select").value]);
     prefillOldValues();
     ["salary-new", "title-new", "hours-new"].forEach(function (id) { setField(id, ""); });
+    updateDecreaseBox();
+  }
+
+  /** The decrease attestations appear only when the new salary is below the current one. */
+  function updateDecreaseBox() {
+    var oldV = num(byId("salary-old").value);
+    var newV = num(byId("salary-new").value);
+    var type = byId("change-type").value;
+    var salaryShown = type === "salary" || type === "composite";
+    byId("salary-decrease").hidden = !(salaryShown && Number.isFinite(oldV) && Number.isFinite(newV) && newV < oldV);
   }
 
   // -- change-type field visibility ---------------------------------------------
@@ -229,6 +318,7 @@
       byId(CHANGE_FIELDS[key]).style.display = key === type || type === "composite" ? "" : "none";
     });
     prefillOldValues();
+    updateDecreaseBox();
   }
 
   // -- scenario quick-fills (fixed against the mock payroll calendar) --------------
@@ -245,8 +335,11 @@
       });
     }
     setField("effective-date", opts.effectiveDate);
-    scenarioNow = opts.now;
+    // The clock is a VISIBLE field now, not a hidden variable: the person
+    // submitting can see what date the checks will run as at, and clear it.
+    setField("evaluate-now", opts.now || "");
     byId("reason-text").value = opts.reason || "";
+    updateDecreaseBox();
   }
 
   // Every scenario below is pinned against the mock NL payroll calendar
@@ -327,13 +420,7 @@
     // Nothing about the authorization changes here: the role still travels as
     // a server-owned session name in a header, never a claim in the body, and
     // the server is still the only place authorization is decided.
-    var headers = { "Content-Type": "application/json" };
-    headers[SESSION_HEADER] = ACTIVE_SESSION;
-    return fetch(endpoint, {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify(body),
-    }).then(function (res) { return res.json(); });
+    return api(endpoint, { method: "POST", body: JSON.stringify(body) });
   }
 
   // The same session header on a READ. The role travels the same way it does
@@ -341,9 +428,7 @@
   // the server decides which amendments that session may see. Knowing an id is
   // not permission to read a contract change.
   function get(endpoint) {
-    var headers = {};
-    headers[SESSION_HEADER] = ACTIVE_SESSION;
-    return fetch(endpoint, { headers: headers }).then(function (res) { return res.json(); });
+    return api(endpoint);
   }
 
   // A refusal renders the same everywhere: the server's code + reason, verbatim.
@@ -377,6 +462,14 @@
         // refuse, rather than a plausible guess that they accept.
         currency: currentCurrency,
       };
+      // Only sent when stated. policyEngine.js reads `decreaseReason` and
+      // `employeeInformed` off the request and never defaults either, so a
+      // blank box here stays a refusal naming the field, not a fabricated
+      // attestation. `employeeInformed` is only ever `true` — an unticked box
+      // is "not stated", which is what a missing key means.
+      var reason = byId("salary-decrease-reason").value.trim();
+      if (reason) changes.salary.decreaseReason = reason;
+      if (byId("salary-employee-informed").checked) changes.salary.employeeInformed = true;
     }
     if (include("jobTitle")) {
       changes.jobTitle = { oldValue: byId("title-old").value, newValue: byId("title-new").value };
@@ -398,9 +491,10 @@
       requestedEffectiveDate: byId("effective-date").value,
       reasonText: byId("reason-text").value,
     };
-    if (scenarioNow) body.now = scenarioNow;
+    var asAt = byId("evaluate-now").value;
+    if (asAt) body.now = asAt;
 
-    post("/api/submit", body)
+    post("api/submit", body)
       .then(function (result) {
         button.disabled = false;
         renderResult(result);
@@ -428,14 +522,35 @@
     var wrap = el("div", { class: "result-box" }, [
       el("div", { class: "result-head" }, [
         el("span", { class: "badge decision-" + result.decision }, [DECISION_LABELS[result.decision] || result.decision]),
-        el("span", { class: "muted small" }, [" ticket #" + result.ticketId + " · amendment " + String(result.amendmentId).slice(0, 8)]),
+        el("span", { class: "muted small" }, [" ticket #" + result.ticketId]),
       ]),
+      // THE FULL ID, because the consent forms and the tracking card ask for
+      // it and a person acting as the employee on their own device has only
+      // what the admin was shown. It used to be cut to eight characters.
+      el("p", { class: "small" }, ["Amendment id: ", el("span", { class: "r-mono" }, [String(result.amendmentId)])]),
       result.summary
         ? el("p", { class: "muted small" }, [result.summary])
         // Remote prints an em dash in an empty cell rather than leaving it
         // blank, so "no summary was drafted" is visible rather than ambiguous.
         : el("p", { class: "r-none small" }, ["—"]),
     ]);
+
+    // WHEN the checks ran. The quick-fills pin this to June/July 2026; a
+    // result that did not say so read as "evaluated today".
+    if (result.evaluatedAt) {
+      wrap.appendChild(el("p", { class: "muted small" }, [
+        "Evaluated as at " + String(result.evaluatedAt).slice(0, 10) +
+          (result.clockPinned ? " — a date set on the form, not today's." : "."),
+      ]));
+    }
+
+    // Plain-English context for a refusal, composed SERVER-SIDE and rendered
+    // verbatim, ABOVE the slug chips — the sentence is what a person reads,
+    // the slug is what somebody greps, and both stay. Absent for anything the
+    // server had nothing extra to say about.
+    if (result.explanation) {
+      wrap.appendChild(el("p", { class: "small muted-note" }, [result.explanation]));
+    }
 
     if (result.flags && result.flags.length) {
       var flagList = el("ul", { class: "tag-list" });
@@ -445,26 +560,18 @@
       wrap.appendChild(flagList);
     }
 
-    if (result.tags && result.tags.length) {
-      var tagList = el("ul", { class: "tag-list" });
-      result.tags.forEach(function (tag) {
-        tagList.appendChild(el("li", { class: "tag-chip" }, [tag]));
-      });
-      wrap.appendChild(tagList);
-    }
-
+    // The ticket's routing tags are the automation's own bookkeeping and are
+    // no longer drawn for the admin; the owning TEAM is, which is the fact
+    // they wanted from them.
     wrap.appendChild(el("p", { class: "small" }, [
-      (result.actionable ? "Open to the two-role approval in the ZAF sidebar. " : "Not open to approval here. ") +
+      (result.actionable
+        ? "Open to the two signatures in Remote's support desk. "
+        : "Not open to approval here. ") +
+        (result.owner && result.owner.team
+          ? (result.owner.escalated ? "Escalated to " : "Queued for ") + result.owner.team + ". "
+          : "") +
         (result.actionableReason || ""),
     ]));
-
-    // Plain-English context for a refusal, composed SERVER-SIDE and rendered
-    // verbatim. The page does not decide when it appears and does not compose
-    // it — same rule as every other string here: the server decides, the page
-    // shows. Absent for anything the server had nothing extra to say about.
-    if (result.explanation) {
-      wrap.appendChild(el("p", { class: "small muted-note" }, [result.explanation]));
-    }
 
     box.appendChild(wrap);
   }
@@ -481,7 +588,7 @@
       note: byId(formKey + "-note").value,
     };
 
-    post("/api/consent", body)
+    post("api/consent", body)
       .then(function (result) {
         button.disabled = false;
         renderConsent(result, byId(formKey + "-result"));
@@ -501,7 +608,9 @@
     var wrap = el("div", { class: "result-box" }, [
       el("div", { class: "result-head" }, [statusEl(result.code)]),
       el("p", { class: "small" }, [
-        "As the " + result.party + ", for amendment " + String(result.amendmentId).slice(0, 8) + ".",
+        "As the " + result.party + ", for amendment ",
+        el("span", { class: "r-mono" }, [String(result.amendmentId)]),
+        ".",
       ]),
       result.reason
         ? el("p", { class: "muted small" }, [result.reason])
@@ -575,7 +684,7 @@
       box.appendChild(el("p", { class: "r-muted small" }, ["Reading the record..."]));
     }
 
-    get("/api/amendments/" + encodeURIComponent(id))
+    get("api/amendments/" + encodeURIComponent(id))
       .then(function (result) {
         renderTracked(result);
         byId("track-checked").textContent = "Last checked " + new Date().toLocaleTimeString();
@@ -610,10 +719,10 @@
     wrap.appendChild(el("div", { class: "result-head" }, [
       statusEl(status.state),
       el("span", { class: "muted small" }, [
-        " " + (status.label || "") + " \u00b7 amendment " + String(result.amendmentId).slice(0, 8) +
-          (result.externalRef ? " \u00b7 ticket #" + result.externalRef : ""),
+        " " + (status.label || "") + (result.externalRef ? " \u00b7 ticket #" + result.externalRef : ""),
       ]),
     ]));
+    wrap.appendChild(el("p", { class: "small" }, ["Amendment id: ", el("span", { class: "r-mono" }, [String(result.amendmentId)])]));
 
     // The sentence that answers the question, composed server-side.
     wrap.appendChild(el("p", { class: "small" }, [status.detail || ""]));
@@ -649,12 +758,37 @@
     if (status.awaitingRole) {
       wrap.appendChild(el("p", { class: "muted small" }, ["Waiting on: " + status.awaitingRole]));
     }
+    // WHOSE signatures those are, said to this reader — the server's sentence.
+    if (result.signatoriesNote) {
+      wrap.appendChild(el("p", { class: "muted small" }, [result.signatoriesNote]));
+    }
+
+    // THE CONSENTS, which this page claimed to show and did not. `null` means
+    // the read failed and is said; an empty list means none is recorded.
+    var consentHead = el("h4", { class: "decision-title" }, ["Consents recorded"]);
+    wrap.appendChild(consentHead);
+    if (result.consents === null || result.consents === undefined) {
+      wrap.appendChild(el("p", { class: "muted small" }, ["The consent records could not be read just now, so nothing is claimed about them."]));
+    } else if (!result.consents.length) {
+      wrap.appendChild(el("p", { class: "muted small" }, ["No consent is recorded yet — neither the employee nor the employer has consented on this page."]));
+    } else {
+      var consentList = el("ul", { class: "consent-list" });
+      result.consents.forEach(function (c) {
+        consentList.appendChild(el("li", {}, [
+          statusEl("consent_recorded"),
+          " " + (c.party === "employee" ? "The employee" : "The employer") + " consented" +
+            (c.by ? " (" + c.by + ")" : "") + (c.at ? " on " + String(c.at).replace("T", " ").slice(0, 16) + " UTC" : "") +
+            (c.note ? " — " + c.note : ""),
+        ]));
+      });
+      wrap.appendChild(consentList);
+    }
 
     // Reported, never offered: there is no control on this page that could act
     // on it, and the sentence naming where the decision happens is the
     // server's.
     wrap.appendChild(el("p", { class: "small" }, [
-      (result.openToApproval ? "Still open to the two-role approval in the ZAF sidebar. " : "Not open to approval. ") +
+      (result.openToApproval ? "Still open to the two signatures in Remote's support desk. " : "Not open to approval. ") +
         (result.openToApprovalReason || ""),
     ]));
     wrap.appendChild(el("p", { class: "muted-note small" }, [result.note || ""]));
@@ -665,8 +799,19 @@
   // -- boot -----------------------------------------------------------------------
 
   document.addEventListener("DOMContentLoaded", function () {
+    byId("access-form").addEventListener("submit", function (event) {
+      event.preventDefault();
+      var value = byId("access-key").value.trim();
+      if (!value) return;
+      rememberKey(value);
+      byId("access-key").value = "";
+      loadEmployees();
+      loadSessionCaption();
+    });
     loadEmployees();
+    loadSessionCaption();
     setField("effective-date", "2026-07-15");
+    ["salary-old", "salary-new"].forEach(function (id) { byId(id).addEventListener("input", updateDecreaseBox); });
     byId("employee-select").addEventListener("change", onEmployeeChange);
     byId("change-type").addEventListener("change", onChangeType);
     byId("submit-form").addEventListener("submit", submitRequest);

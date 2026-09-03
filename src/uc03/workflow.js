@@ -77,12 +77,22 @@ const INITIAL_STATUS_BY_DECISION = {
   human_review: "pending_review",
   escalate: "escalated",
   route_to_uc04: "routed",
+  // `blocked` is the engagement gate's terminal refusal and it is NOT a review.
+  // Same status word UC-01 uses for the same decision (src/uc01/workflow.js):
+  // nobody is waiting for it, because the fact it turns on is one Remote
+  // publishes and no specialist can overturn.
+  blocked: "closed_ineligible",
 };
 
 const ZENDESK_TAG_BY_DECISION = {
   human_review: ["uc03_formal_letter_review"],
   escalate: ["uc03_escalated"],
   route_to_uc04: ["uc03_routed_uc04"],
+  // Tagged, but see NO_TICKET_DECISIONS in src/portal/ticketing.js: a portal
+  // submission that is blocked raises no ticket at all. The tag exists for the
+  // Zendesk-originated path, where the ticket already exists and has to be
+  // closed with a reason on it.
+  blocked: ["uc03_blocked_ineligible"],
 };
 
 /**

@@ -48,6 +48,31 @@ CREATE TABLE IF NOT EXISTS third_party_rate_limit (
   PRIMARY KEY (bucket_key, window_start)
 );
 
+-- ---------------------------------------------------------------------------
+-- ADDED 2026-09-02. Supabase's linter flagged this table as the ONE table in
+-- the project with row-level security disabled (`rls_disabled_in_public`), and
+-- the reason it was the only one is the paragraph at the top of this file: the
+-- other tables came from migrations that were applied by hand, this one is
+-- created by the application. So the fix had to live in the CREATION PATH —
+-- src/thirdparty/rateLimit.js runs exactly these two statements after the
+-- CREATE — or production would be closed and a fresh environment born open.
+--
+-- THE REVOKE IS NOT BELT-AND-BRACES. Row-level security governs SELECT,
+-- INSERT, UPDATE and DELETE. It does NOT govern TRUNCATE, which is controlled
+-- by table privilege alone — and Supabase's default grants on the public
+-- schema gave `anon` every privilege on this table, TRUNCATE included. Enabling
+-- RLS on its own therefore stops the read of the address list and STILL leaves
+-- anyone holding the publicly-distributable anon key able to wipe the counters,
+-- which is the single action that defeats the ceiling outright.
+--
+-- Zero policies is the intended end state, exactly as for the other tables:
+-- RLS on with no policy denies `anon` and `authenticated` everything, while the
+-- owning `postgres` role the application connects as bypasses it.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE third_party_rate_limit ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON third_party_rate_limit FROM anon, authenticated;
+
 -- Old windows are dead weight the moment they roll; nothing reads them and no
 -- decision is ever revisited against them. Deliberately NOT a scheduled job:
 -- this project has no job runner, and a cleanup that silently stops running is

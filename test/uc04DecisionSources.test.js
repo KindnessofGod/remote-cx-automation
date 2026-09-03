@@ -291,7 +291,12 @@ test("the immigration-document dimension says the gap is this use case's own rul
   assert.equal(doc.state, "unavailable");
   const uncited = doc.uncited.find((u) => u.finding === "immigration_document_on_file");
   assert.ok(uncited);
-  assert.match(uncited.why, /UC-04\.md/);
+  assert.match(uncited.why, /this use case's own rule, not an authority's/);
+  assert.match(uncited.why, /Nothing is cited here because no authority speaks/);
+  // AND IT MUST NOT NAME A FILE. This sentence renders on the sidebar, which is
+  // customer-facing; the spec section number it used to carry was addressed to
+  // a maintainer. See test/zafNoDeveloperArtifacts.test.js.
+  assert.ok(!/UC-04\.md|src\//.test(uncited.why), "a repository reference is back in customer-facing prose");
 });
 
 // ===========================================================================
@@ -378,7 +383,7 @@ test("the countries on the request are labelled as STATED, because nothing ever 
   const who = describeRequester({ authorizationRow: row });
   assert.equal(who.subject.statedHomeCountry.value, "DE");
   assert.match(who.subject.statedHomeCountry.finding, /never compared to it/);
-  assert.match(who.subject.statedNationality.finding, /no document was read/i);
+  assert.match(who.subject.statedNationality.finding, /no document confirms it/i);
 });
 
 test("the employment record is reported as NOT RETAINED — never as facts the row does not hold", () => {
@@ -388,12 +393,22 @@ test("the employment record is reported as NOT RETAINED — never as facts the r
   const { row } = uc04Row({ factors: DE_TO_ES });
   const who = describeRequester({ authorizationRow: row });
   assert.equal(who.subject.employmentRecord.state, "not_retained");
-  assert.match(who.subject.employmentRecord.finding, /the status active/);
-  assert.match(who.subject.employmentRecord.finding, /employee or contractor/);
+  // The two halves that matter: the snapshot is NOT kept, and what it held
+  // cannot be recovered. The finding used to spell out "employee or contractor"
+  // and "AS THEY STOOD THEN" over four lines; the claim is the same and the
+  // words are the specialist's rather than the author's (W-5b).
+  assert.match(who.subject.employmentRecord.finding, /snapshot is not kept/);
+  assert.match(who.subject.employmentRecord.finding, /cannot be read back/);
   assert.ok(who.subject.employmentRecord.whatItWouldTake);
   // The requester's own words are the other thing the row cannot carry.
   assert.equal(who.statedReason.state, "not_retained");
-  assert.match(who.statedReason.whatItWouldTake, /audit_log|reason_text/);
+  // NAMED IN WORDS, NOT AS A COLUMN (2026-08-31). This asserted
+  // /audit_log|reason_text/ — a table and a column name, in a sentence that
+  // renders on the customer-facing sidebar. What the assertion is FOR is where
+  // the requester's words could be recovered from, and that is now said in
+  // English. See test/decisionProseIsCustomerFacing.test.js.
+  assert.match(who.statedReason.whatItWouldTake, /audit record/);
+  assert.match(who.statedReason.whatItWouldTake, /requester's own words/);
 });
 
 test("an unauthenticated filer is named as such, and is not confused with a missing field", () => {
@@ -456,7 +471,17 @@ test("STRUCTURAL: every finding key in the map is a state UC-04 can actually pro
   // is. The two non-flag keys are states, and are listed explicitly.
   const matrix = readFileSync(repoPath("src/uc04/riskMatrix.js"), "utf8");
   const describer = readFileSync(repoPath("src/uc04/decisionFacts.js"), "utf8");
-  const nonFlagStates = new Set(["treaty_coverage_unconfirmed", "schengen_90_180", "schengen_90_180_suppressed", "tax_residency_183"]);
+  const nonFlagStates = new Set([
+    "treaty_coverage_unconfirmed",
+    // Added 2026-08-31 with the covered branch. It is a STATE, not a flag: the
+    // pair is looked up in the two agreement registers and nothing about the
+    // decision moves, which is exactly why it belongs on this list rather than
+    // in the matrix.
+    "treaty_coverage_confirmed",
+    "schengen_90_180",
+    "schengen_90_180_suppressed",
+    "tax_residency_183",
+  ]);
   for (const key of Object.keys(FINDING_SOURCES)) {
     if (nonFlagStates.has(key)) {
       assert.ok(describer.includes(key), `${key} is claimed as a describer state and appears nowhere in decisionFacts.js`);

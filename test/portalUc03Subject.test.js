@@ -169,34 +169,50 @@ test("the trip carries too, and a value the request never stated arrives empty r
 });
 
 // ---------------------------------------------------------------------------
-// 2. THE SESSION CHANGE IS SAID BEFORE IT HAPPENS
+// 2. THERE IS NO SESSION CHANGE LEFT TO WARN ABOUT
 // ---------------------------------------------------------------------------
+// This section used to assert the OPPOSITE, and the reversal is the point.
+//
+// Continuing from UC-03 into UC-04 silently swapped the traveller for a company
+// admin, because UC-04's identity gate was `session.companyId ===
+// employment.company_id` — an admin-only shape. The project owner met it twice
+// ("i was chris lee in uc-03 and became admin instantly"), and the first repair
+// was a SENTENCE on the offer: "Your employer's admin completes this next part,
+// so the form opens signed in as them. It is still your trip, and your name is
+// on it." Every word of that was true, and this test guarded it in the
+// traveller's vocabulary.
+//
+// It was a good warning about a defect. Remote's own object has the employee
+// SUBMIT (`user`) and the customer's manager APPROVE (`employer_approver`) —
+// the gate had the employer's test applied to the employee's act.
+// `submissionIdentity.js` now accepts either party to the record, the traveller
+// stays themselves, and a warning about something that will not happen is its
+// own confusion. So the sentence went with the swap.
 
-test("the offer warns that the next form is signed in as somebody else, before it is pressed", () => {
+test("the offer does not warn about a session change, because there is not one", () => {
   const start = APP.indexOf("  function continuationOffer(payload) {");
   const end = APP.indexOf("\n  }", start);
   assert.ok(start !== -1 && end > start, "continuationOffer() has moved — re-point this test");
   const body = APP.slice(start, end).replace(/\/\/[^\n]*/g, "");
-
-  // The employee must not learn this from the persona picker after the fact.
-  assert.match(body, /signed in as them/, "the offer no longer says who fills in the next form");
-  assert.match(body, /still your trip/, "the offer no longer says the request stays theirs");
-
-  // AND IT SAYS IT IN THEIR WORDS. The check is over the STRING LITERALS in
-  // this function — the text a reader actually meets — and not over the code
-  // around them, which necessarily names sessions and personas because that is
-  // what it manipulates. The reasoning behind the switch belongs in
-  // applyContinuation()'s comment, not on a traveller's screen.
   const spoken = (body.match(/"[^"]*"/g) || []).join(" ");
-  assert.ok(spoken.includes("signed in as them"), "the sandbox lifted no copy — re-point this test");
-  // "admin" is deliberately NOT on this list. It is ordinary business English
-  // for the person at their company who handles this, and it is the word the
-  // reader is about to see in the picker — connecting the sentence to what they
-  // then meet is the whole job of the sentence. "Persona", "session" and
-  // "company id" are ours; "your employer's admin" is theirs.
+
+  assert.ok(!spoken.includes("signed in as them"), "the offer still warns of a swap that no longer happens");
+  assert.ok(!/\bsigned in as\b/i.test(spoken), "the offer still describes who the next form is signed in as");
+
+  // The vocabulary rule is UNCHANGED and still worth holding: whatever this
+  // offer says, it says in the reader's words, not ours.
   for (const internal of [/\bsession\b/i, /\bgate\b/i, /companyId/, /\bpersona\b/i, /UC-0\d/]) {
-    assert.ok(!internal.test(spoken), `the warning is written in our vocabulary (${internal}): ${spoken}`);
+    assert.ok(!internal.test(spoken), `the offer is written in our vocabulary (${internal}): ${spoken}`);
   }
+});
+
+test("the traveller who files in UC-03 is the one who files in UC-04", () => {
+  // The behavioural half of the same claim: nothing between the offer and the
+  // UC-04 form touches the persona picker.
+  const fn = APP.slice(APP.indexOf("function applyContinuation"), APP.indexOf("function renderContinuationBanner"));
+  assert.ok(fn.length > 0, "applyContinuation() has moved — re-point this test");
+  assert.ok(!/picker\.value\s*=/.test(fn), "the continuation writes to the persona picker");
+  assert.ok(!/company_admin/.test(fn), "the continuation still reaches for a company admin");
 });
 
 // ---------------------------------------------------------------------------

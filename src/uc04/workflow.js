@@ -58,10 +58,22 @@
 import { classifyRisk } from "../shared/riskEngine.js";
 import { normalizeDecisionAction } from "../shared/declineVocabulary.js";
 import { evaluate as evaluatePolicy } from "./policyEngine.js";
+import { verifySubmissionIdentity } from "./submissionIdentity.js";
 import { describeDecisionBasis } from "./decisionFacts.js";
 import { draftSummary } from "./requestParser.js";
 import { evaluateApprovalAction } from "./approvalPolicy.js";
 import { judgeNarrative } from "../shared/narrativeJudge.js";
+// STAGE 3 — Remote's own mobility review. Recorded here, never sent to Remote;
+// see ./mobilityReview.js's header and submitMobilityReview() at the foot of
+// this file.
+import {
+  evaluateMobilityReview,
+  describeMobilityReview,
+  MOBILITY_REVIEW_AUDIT_ACTIONS,
+  MOBILITY_REVIEW_REFUSED_ACTION,
+  MOBILITY_REVIEW_NOTICE,
+} from "./mobilityReview.js";
+import { readMobilityReview, MOBILITY_REVIEW_CLAIM_USE_CASE } from "./mobilityReviewLog.js";
 
 import { resolveWorkAuthorizationRequest, LINK_LINKED, LINK_UNRESOLVED } from "./requestLink.js";
 
@@ -83,9 +95,13 @@ import { remoteFor } from "../shared/remoteWorld.js";
  *   came from Remote (the portal), in which case the decision is recorded with
  *   no Remote counterpart rather than against an invented one.
  * @param {object|null} ticket.session
- *   { companyId, authenticatedAdminId } — the authenticated requester.
- *   Fails closed: no session, or a mismatched company, means unverified —
- *   same "identity from a signal, never a claim" rule as UC-01/UC-06.
+ *   the authenticated requester — EITHER `{authenticatedEmploymentId}` (the
+ *   employee this request is about, filing for themselves, which is Remote's
+ *   own primary actor for a work-authorization request) OR `{companyId,
+ *   authenticatedAdminId}` (a company admin filing on that employee's behalf).
+ *   Fails closed: no session, an employment id that is not the subject's, or a
+ *   mismatched company all mean unverified — same "identity from a signal,
+ *   never a claim" rule as UC-01/UC-06. See ./submissionIdentity.js.
  * @param {object} ticket.factors
  *   the 5 structured factors (see policyEngine.js). These are the ONLY
  *   source of truth for the workation's facts; never derived from free text.
@@ -143,20 +159,20 @@ export async function handleWorkationRequest(
   } = ticket;
 
   const employment = await remote.getEmployment(employmentId);
-  // BOTH SIDES MUST BE PRESENT, not merely equal. `company_id` is normalised to
-  // `null` for any record without one (restClient.js), and a session with no
-  // companyId is the shape UC-09's own Zendesk intake emits — so `null === null`
-  // verified an identity that had proved nothing, and `ready_for_approval` is
-  // the decision that PATCHes a real work-authorization record at Remote.
-  // UC-06 and UC-09 already guard this, and so does THIS use case's own n8n
-  // twin (nodes-uc04/workationGates.js) — the Node path was the odd one out.
-  const identityVerified = Boolean(
-    session &&
-      employment &&
-      session.companyId &&
-      employment.company_id &&
-      session.companyId === employment.company_id
-  );
+  // WHO MAY SUBMIT — a party to the record, which is EITHER the employee the
+  // request is about OR a company admin for that employee's company. See
+  // ./submissionIdentity.js for the whole argument; the two properties that
+  // matter here are that both sides of every comparison must be PRESENT before
+  // they are compared (`null === null` once passed UC-06's and UC-09's gates),
+  // and that this widens SUBMISSION only — the employer's part of UC-04 is the
+  // approval, enforced in approvalPolicy.js and untouched by this.
+  //
+  // Until 2026-08-30 this was the company comparison alone, so an employee
+  // filing about their own trip was refused `identity_not_verified` — a
+  // sentence about the traveller that was really about our plumbing, and the
+  // direct cause of the portal's admin-only rule.
+  const submissionIdentity = verifySubmissionIdentity({ session, employment });
+  const identityVerified = submissionIdentity.verified;
 
   const result = evaluatePolicy({
     identityVerified,
@@ -270,7 +286,17 @@ export async function handleWorkationRequest(
 
   const faithfulness = await judge({ narrative: summary, structuredInputs: { factors, riskLevel: result.risk?.riskLevel ?? "unknown", tripDays, approvalRoute } });
 
-  const requester = session?.authenticatedAdminId ?? "unauthenticated";
+  // WHO FILED IT — and it is no longer always an admin. An employee filing
+  // about their own trip carries `authenticatedEmploymentId` and no admin id,
+  // so this used to record the literal `"unauthenticated"` for a request that
+  // had just PASSED the identity gate: the append-only row would have said
+  // nobody filed it, `describeRequesterParties()` would have printed the
+  // "no authenticated actor" sentence over a verified decision, and every such
+  // row would have collapsed onto one unscopable owner value shared by every
+  // employee in the system. Read in the same order the gate accepts them, and
+  // still `"unauthenticated"` when neither signal is present — that literal is
+  // a recorded fact with its own meaning (src/shared/requesterSubject.js).
+  const requester = session?.authenticatedAdminId ?? session?.authenticatedEmploymentId ?? "unauthenticated";
 
   // DELIVERY-LEVEL IDEMPOTENCY. Duplicate delivery is normal — Zendesk retries
   // webhooks and a trigger can fire twice on rapid updates. UC-01's ticket #5
@@ -332,6 +358,15 @@ export async function handleWorkationRequest(
       decision,
       reason,
       flags,
+      // WHAT "VERIFIED" VERIFIED. Two different relationships now satisfy this
+      // gate — the employee who is the subject, and an admin for the subject's
+      // company — and `identity_not_verified`'s absence from `flags` says only
+      // that ONE of them held. Recorded in the append-only row rather than in a
+      // column, for the same reason `reasonText` below is: `uc04_authorizations`
+      // has no field for it and half-adding one the store would drop is worse
+      // than recording it where the audit viewer already reads. Null when the
+      // gate refused.
+      identityBasis: submissionIdentity.basis,
       riskLevel: result.risk?.riskLevel ?? null,
       tripDays,
       cumulativeDays: result.risk?.cumulativeDays ?? null,
@@ -392,7 +427,13 @@ export async function handleWorkationRequest(
     // one derivation, never a second copy that can drift. Never persisted: it is
     // a description of the row, and storing a description beside the thing it
     // describes is how the two come to disagree. See decisionFacts.js's header.
-    basis: describeDecisionBasis({ authorizationRow: authorization }),
+    // `employment` is the record THIS run already read a few hundred lines
+    // above — passed rather than re-fetched, so dimension 4 reports the
+    // documents Remote actually holds instead of the hard-coded "none" it
+    // asserted until 2026-08-31. It is null whenever the read failed or the id
+    // resolved to nothing, and `summariseIdentityDocuments()` reports that as
+    // its own state rather than as an absence of documents.
+    basis: describeDecisionBasis({ authorizationRow: authorization, employment }),
   };
 }
 
@@ -739,6 +780,196 @@ function recordRefusal({ audit, authorizationRow, action, approver, verdict }) {
       source: authorizationRow.source ?? null,
       refusalCode: verdict.code,
       refusalReason: verdict.reason,
+    },
+  });
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * STAGE 3 — Remote's own mobility review, recorded in THIS system
+ * ---------------------------------------------------------------------------
+ * READ ./mobilityReview.js's HEADER FIRST. In one line: Remote publishes no
+ * endpoint for `approved_by_remote` / `declined_by_remote`, so this records the
+ * decision here and says so — to the reviewer before they click, in the audit
+ * row, on the employee's status page and on the document the employee collects.
+ *
+ * THE STRUCTURAL GUARANTEE IS THIS FUNCTION'S SIGNATURE. It takes NO `remote`
+ * client. Not "does not call it" — does not have one. There is therefore no
+ * edit to the body of this function that can make it write to Remote, which is
+ * a stronger property than any comment, and it is what
+ * `test/uc04MobilityReview.test.js` asserts structurally alongside the
+ * behavioural check that `approved_by_remote` appears in no payload anywhere.
+ * `submitWorkationApproval()` above is the one function on this use case that
+ * may touch Remote, and it writes `approved_by_manager` — the employer's
+ * status, the only one Remote's API accepts.
+ *
+ * ORDERING, THE SAME AS EVERY OTHER HUMAN DECISION IN THIS REPOSITORY:
+ *
+ *     policy gate -> exactly-once claim -> AUDIT (durable)
+ *
+ * There is no outward act after the audit row, because there is nowhere to act
+ * — which makes the audit row not merely the record of the decision but the
+ * decision itself. That is exactly why it is `logDurable()` and not `log()`: a
+ * background write that silently failed would leave a reviewer told "recorded"
+ * and nothing recorded anywhere, and unlike every other use case here there
+ * would be no second artifact to notice the gap from.
+ *
+ * WHY A CLAIM. `audit_log` has no uniqueness constraint on
+ * `(use_case, action, details->>'authorizationId')`, so the "has this already
+ * been reviewed?" read below is a check-then-write and has the classic race —
+ * the same one that gave ticket #5 two audit rows 30µs apart (CLAUDE.md §4).
+ * `workflow_claims`' PRIMARY KEY closes it. With no pool the ledger reports
+ * itself unavailable and the read IS the check; that is the hermetic/offline
+ * case, and it is stated rather than dressed up.
+ *
+ * @param {object} args
+ * @param {string} args.authorizationId
+ * @param {"clear"|"decline"} args.action
+ * @param {string} args.reviewer  Remote's own mobility reviewer, from a signed
+ *   identity at the route — never a body claim (CLAUDE.md §3 directive 3)
+ * @param {string} [args.note]
+ * @param {object} deps
+ * @param {import("../shared/audit.js").AuditLogger} deps.audit
+ * @param {import("./authorizationStore.js").AuthorizationStore} deps.authorizationStore
+ * @param {{check: Function}|null} [deps.entitlement]  consulted LAST, can only refuse
+ */
+export async function submitMobilityReview(
+  { authorizationId, action, reviewer, note = "" },
+  { audit, authorizationStore, entitlement = null }
+) {
+  const authorizationRow = await authorizationStore.findById(authorizationId);
+  const existingReview = await readMobilityReview({ audit, authorizationId });
+
+  const verdict = evaluateMobilityReview({ authorizationRow, existingReview, reviewer, action, entitlement });
+  if (!verdict.allowed) {
+    recordMobilityRefusal({ audit, authorizationRow, action, reviewer, verdict });
+    return { ok: false, status: verdict.status, code: verdict.code, reason: verdict.reason };
+  }
+
+  const actor = reviewer.trim();
+  const { tier } = classifyRisk("UC-04", authorizationRow.flags ?? []);
+  const externalRef = authorizationRow.externalRef ?? null;
+  const source = authorizationRow.source ?? null;
+
+  // KEYED ON THE AUTHORIZATION, NOT THE TICKET. A ticket can carry more than
+  // one request over time and UC-04 already claims the ticket under its own use
+  // case for delivery; this claim is about "has this REQUEST been reviewed",
+  // which is the authorization's id. See mobilityReviewLog.js for why the use
+  // case string is separate too.
+  const claim = await claimExternalRef({
+    pgPool: audit?.pgPool ?? null,
+    useCase: MOBILITY_REVIEW_CLAIM_USE_CASE,
+    externalRef: authorizationId,
+    decision: action,
+  });
+  if (!claim.claimed) {
+    const refusal = {
+      ok: false,
+      status: 409,
+      code: "mobility_review_already_recorded",
+      reason:
+        "Remote's mobility review for this request was recorded by another reviewer moments ago. " +
+        "Reload the case to see it — a second review would be a second, unaudited answer to the same question.",
+    };
+    recordMobilityRefusal({
+      audit,
+      authorizationRow,
+      action,
+      reviewer: actor,
+      verdict: { code: refusal.code, reason: refusal.reason },
+    });
+    return refusal;
+  }
+
+  const entry = await audit.logDurable({
+    useCase: "UC-04",
+    action: MOBILITY_REVIEW_AUDIT_ACTIONS[action],
+    actor,
+    riskTier: tier,
+    details: {
+      // `authorizationId` is one of src/auditview/readStore.js's own
+      // CORRELATION_FIELDS, so this row groups with the decision it reviews in
+      // the audit viewer with no change needed there; `externalRef` is what
+      // `lookupRef()` searches by, and it is the one id a human holds.
+      authorizationId,
+      externalRef,
+      source,
+      employmentId: authorizationRow.employmentId ?? null,
+      stage: "remote_mobility_review",
+      note: note && note.trim() ? note.trim() : null,
+      // THE EMPLOYER'S DECISION THIS REVIEWS, copied onto the row rather than
+      // left to a join. The store row is mutable current state; this log is the
+      // history, and a history row that says "cleared" without saying what it
+      // cleared cannot be read on its own years later.
+      employerApprover: authorizationRow.approver ?? null,
+      employerApprovedAt: authorizationRow.approvedAt ?? null,
+      aiDecision: authorizationRow.decision ?? null,
+      // THE HONESTY FIELDS. Both are literals with no branch that can flip
+      // them, and `remoteResult` is deliberately ABSENT rather than set to null
+      // — src/auditview/readStore.js's summarize() reads
+      // `hasOwnProperty(details, "remoteResult")`, so writing the key at all,
+      // even empty, would make this row report a Remote write on the viewer.
+      sentToRemote: false,
+      remoteEndpointExists: false,
+      notice: MOBILITY_REVIEW_NOTICE,
+    },
+  });
+
+  const review = {
+    outcome: action === "clear" ? "cleared" : "declined",
+    reviewer: actor,
+    at: entry.at,
+    note: note && note.trim() ? note.trim() : null,
+    auditId: entry.id,
+    sentToRemote: false,
+  };
+
+  return {
+    ok: true,
+    status: 200,
+    code: MOBILITY_REVIEW_AUDIT_ACTIONS[action],
+    reason:
+      action === "clear"
+        ? `Remote's mobility review recorded as CLEARED. ${MOBILITY_REVIEW_NOTICE}`
+        : `Remote's mobility review recorded as DECLINED. ${MOBILITY_REVIEW_NOTICE}`,
+    authorizationId,
+    // NEVER TRUE. See this function's header — there is no Remote call on this
+    // path and no client to make one with.
+    sentToRemote: false,
+    review,
+    mobilityReview: describeMobilityReview({ authorizationRow, review }),
+    ledgerUnavailable: claim.ledgerUnavailable === true,
+  };
+}
+
+/**
+ * A refused stage-3 attempt, recorded under the one action name — with the
+ * refusal code in `details` rather than in the action, so the audit viewer's
+ * feed shows one recognisable event rather than six.
+ *
+ * SAME ATTRIBUTION RULE as recordRefusal() above: a refusal with no identified
+ * actor and no record to attach to is not written at all. An unattributed row
+ * in an append-only log is worse than no row.
+ */
+const UNATTRIBUTED_MOBILITY_REFUSALS = new Set(["reviewer_required", "unknown_action", "authorization_not_found"]);
+
+function recordMobilityRefusal({ audit, authorizationRow, action, reviewer, verdict }) {
+  if (!authorizationRow || UNATTRIBUTED_MOBILITY_REFUSALS.has(verdict.code)) return;
+  const { tier } = classifyRisk("UC-04", authorizationRow.flags ?? []);
+  audit.log({
+    useCase: "UC-04",
+    action: MOBILITY_REVIEW_REFUSED_ACTION,
+    actor: typeof reviewer === "string" && reviewer.trim() ? reviewer.trim() : "unknown",
+    riskTier: tier,
+    details: {
+      authorizationId: authorizationRow.id,
+      externalRef: authorizationRow.externalRef ?? null,
+      source: authorizationRow.source ?? null,
+      stage: "remote_mobility_review",
+      attemptedAction: action,
+      refusalCode: verdict.code,
+      refusalReason: verdict.reason,
+      sentToRemote: false,
     },
   });
 }

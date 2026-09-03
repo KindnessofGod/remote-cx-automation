@@ -81,6 +81,20 @@ union all select 'uc07_mobility_citation_vectors', count(*) from uc07_mobility_c
 > A retriever that returns nothing is recoverable; one that returns a model in
 > place of an instrument is not, because it reads exactly like an answer.
 >
+> **BUILT 2026-08-30 — this document's recommendation is now the running system;
+> `docs/BUILD-LOG.md` §3.95 has the write-up.** `src/knowledge/` holds a
+> generated corpus of **57 admitted passages from 14 documents** (55 at §3.95; §3.98b split the three bundled US conventions into a passage each) and a
+> country-filtered BM25 index, and UC-07 and UC-08 both search it. §1.1's table
+> below is therefore a record of what the mechanism USED to return, not of what
+> it returns today — its five queries were re-run after the change and three of
+> the five that retrieved **0** now retrieve real instruments. The tables stay
+> empty and `npm run seed-vectors` must still not be run; nothing in this
+> document's argument against embeddings was overturned, it was acted on. What
+> **Both n8n graphs were republished and proven the same day**: `Build Dossier`
+> (`WORKFLOW_UC08_ID`, execution `10708`) and `Relocation Gates`
+> (`WORKFLOW_UC07_ID`, execution `10710`), both `pinData: None`, both writing a
+> real dossier row carrying real instruments with their publishers.
+
 > **Still open: the timing** — before or after submission. `I3` in
 > `qa/HUMAN-DECISIONS-REQUIRED.md`. If only one of the two ships first, it should
 > be the status correction (`T-27`), because a reader who sees a model article

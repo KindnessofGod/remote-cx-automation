@@ -34,8 +34,9 @@ import { describeEmployee } from "../shared/employeeSubject.js";
 import { describeRequesterParties } from "../shared/requesterSubject.js";
 import { readJsonBody } from "../shared/httpBody.js";
 import { resolveApprover, resolveReader } from "../shared/approverAuth.js";
-import { describeDecidingGate, describeGateLadder } from "./policyEngine.js";
+import { describeDecidingGate, describeGateLadder, qualifyGateLadder } from "./policyEngine.js";
 import { describeSignoffBasis } from "./decisionFacts.js";
+import { byTicketAccountRefusal } from "../shared/byTicketAccountGuard.js";
 
 /**
  * @param {object} deps
@@ -98,12 +99,18 @@ export function createUc05Handler({ resignationStore, audit, remote, allowedOrig
       // as a resignation id.
       if (req.method === "GET" && isPath(parts, ["api", "resignations", "by-ticket"]) && parts[3] && parts.length === 4) {
         const row = await resignationStore.findByExternalRef(parts[3]);
+        // ACCOUNT COLLISION GUARD — a bare ticket number means nothing without the
+        // account it was issued by. See src/shared/byTicketAccountGuard.js.
+        const foreignAccount = byTicketAccountRefusal(row, parts[3]);
+        if (foreignAccount) return send(res, 404, foreignAccount);
         if (!row) return send(res, 404, { found: false });
         const actionability = evaluateResignationActionability({ resignationRow: row });
+        const parties = await employeeAndRequester(row, remote);
+        const employeeNow = parties.employee ?? null;
         return send(res, 200, {
           found: true,
           resignation: row,
-          ...(await employeeAndRequester(row, remote)),
+          ...parties,
           // THE USE CASE'S TIER AND THIS REQUEST'S RISK, NAMED APART. They used to
           // share the key `tier`, which is how the sidebar came to print the 🔴
           // "no execution path exists" guarantee over a working Approve button on a
@@ -114,7 +121,7 @@ export function createUc05Handler({ resignationStore, audit, remote, allowedOrig
           tier: classifyRisk("UC-05", row.flags ?? []).tier,
           actionable: actionability.allowed,
           actionableReason: actionability.reason,
-          ...describeDecision(row),
+          ...describeDecision(row, employeeNow),
         });
       }
 
@@ -190,17 +197,18 @@ export function createUc05Handler({ resignationStore, audit, remote, allowedOrig
  * Both are null/[] for a reason with no row rather than a guess — see
  * src/shared/gateLadder.js.
  */
-function describeDecision(row) {
+function describeDecision(row, employeeNow = null) {
   return {
     decidedBy: describeDecidingGate(row?.reason),
-    gateLadder: describeGateLadder(row?.reason),
+    // POSITION SAYS REACHED; ONLY THE ROW SAYS EVALUATED. See qualifyGateLadder().
+    gateLadder: qualifyGateLadder(describeGateLadder(row?.reason), row),
     // THE DERIVATION, not just the verdict. The ladder says which gate decided;
     // it cannot say which statute produced the date, over what tenure, how many
     // days short the proposal falls, or what the payout comes to in money a
     // person can read. Signing off IS this use case's execution, so the figures
     // being signed have to travel with it. See src/uc05/decisionFacts.js and
     // docs/CORRECTIONS-LOG.md C-27 / pattern P7.
-    basis: describeSignoffBasis({ resignationRow: row }),
+    basis: describeSignoffBasis({ resignationRow: row, employeeNow }),
   };
 }
 

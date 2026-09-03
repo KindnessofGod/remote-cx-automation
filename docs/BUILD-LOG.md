@@ -2136,3 +2136,2707 @@ Chromium end to end.
 `src/uc01/engagementEligibility.js` · `workflows/nodes/gates.js` ·
 `src/remote/restClient.js` · `test/{portalCopy,portalResultDialog,portalCountryPicker}.test.js` ·
 `CLAUDE.md` · this file.
+
+---
+
+### 3.94 UC-04 — the employer's approval belongs to the CUSTOMER, and two of the three stages had the wrong owner
+
+**2026-08-30.** UC-04 modelled one approval, made by a `mobility_specialist` in
+the ZAF sidebar and written to Remote as `approved_by_manager`. That status is
+the customer's manager's decision, and a Remote CX specialist was making it and
+signing it. Nothing about it looked wrong from inside: `APPROVER_ROLES` carried
+the entitlement, the sidebar had the button, `approvalPolicy.js` had the floor,
+the audit row had a name on it. **It was consistent about the wrong actor**,
+which is the failure mode a consistent system cannot detect about itself.
+
+Raised by the project owner, who knew Remote's product: *"Is it a customer's
+employer that approves? ... It will now be that remote own employee who approve.
+No. That's not how it's done."*
+
+#### What Remote's API actually says (rung 1, read live)
+
+Four endpoints exist on this resource — two `GET`, two `PATCH`. **No `POST`.**
+`PATCH` accepts exactly two transitions from `pending`, and the object carries
+an `employer_approver` field whose published example value is
+`user0@company.com` — a customer address, not a Remote one. `approved_by_remote`
+is a status the object can hold that **no endpoint can set**.
+
+| Stage | Decider | Surface | Written to Remote? |
+|---|---|---|---|
+| 1 · request | the employee | `/portal` | no — no `POST` exists |
+| 2 · employer approval | **the customer's manager** | `/remoteui` | ✅ the only write the API allows anyone |
+| 3 · Remote's mobility review | Remote's Mobility Team | ZAF sidebar | ❌ no endpoint at all |
+
+The ladder was checked before anything was built, rather than assumed:
+
+```
+GET  /v1/work-authorization-requests           -> 200, correct shape, 0 rows
+POST /v1/work-authorization-requests           -> 404
+POST /v1/employee/work-authorization-requests  -> 404
+GET  /v1/employee/work-authorization-requests  -> 404
+```
+
+Rung 2 answers the read and cannot create. So the request **object** is a rung-3
+stand-in and the stage-2 `PATCH` stays **real** wherever a record genuinely
+exists — a real record's approval must never travel through a fake. Recorded as
+the owner's product call in `qa/HUMAN-DECISIONS-REQUIRED.md` §K14.
+
+#### Stage 1 — the employee may file their own request
+
+`src/uc04/submissionIdentity.js` is now the one rule, imported by `workflow.js`
+and `textIntake.js`. The gate had been `session.companyId === employment.company_id`
+— an **admin-only** shape — so the employee who actually submits in Remote's
+product was refused by our own portal, with a reason describing our plumbing as
+though it were a finding about the traveller. The portal then grew a rule on top
+of that defect (*"a workation request is filed by the company admin"*), which was
+a consequence, not a decision, and contradicted `UC-04.md` §1/§2.
+
+A submitter must be a **party to the record**: the subject, or an admin of the
+employing company. Both sides must be present and non-empty **before** any
+comparison — `null === null`, `""` and whitespace all refuse, which is the exact
+shape that once passed UC-06's and UC-09's identity gates. Widening submission
+widens approval by nothing: the function's only truthy return is `verified`, and
+every other gate is untouched.
+
+Two things this uncovered:
+
+- **The n8n port compared against the wrong id.** Its `employment.id`
+  deliberately falls back to `request.employmentId` for display, so an identity
+  check against it would verify a session's claim against a body's claim with no
+  Remote record between them. It now takes `recordId` off the raw payload only.
+- **The audit row recorded `"unauthenticated"` for requests that had just
+  PASSED the gate**, which would have collapsed every employee's history onto one
+  unscopable owner.
+
+#### Stage 2 — the customer's manager gets a surface
+
+`/work-authorizations` in `src/remoteui/`, mounted on the deployment at
+`/remoteui` behind `PORTAL_ACCESS_KEY` and failing closed like `/portal`. Two
+verbs exist anywhere in it; `approved_by_remote`/`declined_by_remote` are
+exported **only** so a test can assert we never send one. A decline with no
+reason is refused rather than given an invented one. Company scope comes from
+the **server session** and is checked by reading each employment back from
+Remote; there is no argument, param, body field or header through which a caller
+can name a company. Which world a write reaches is keyed on the record's
+**origin**, never on the shape of its id.
+
+#### Stage 3 — the sidebar stops making the customer's decision
+
+UC-04's panel offers no approve/decline — no `renderActions`, no `view.post`,
+and the server reports `actionable: false` — and it **explains the absence on
+the panel** rather than leaving a blank, because a missing button is
+indistinguishable from a broken one. It deliberately does not borrow the 🔴
+tier's *"no execution path exists"*: UC-04 has one, it is simply not on that
+screen. The "Who decides this" card had been printing the **employer's**
+signature under a Remote mobility specialist's name; that slot is now null and
+the settlement still renders in full in the decision card.
+
+#### Three defects found by DRIVING the surfaces, none of which a test saw
+
+1. **The stand-in asserted a company the record contradicts.** It claimed
+   `co_amend_01` for an employee whose employment record says `a9d4ce72-…`, so
+   one response told the reader Chris Lee was **not** in this company (scope) and
+   that his request **was** this company's to decide (requests). Rung 3
+   overriding rung 2, which the ladder forbids outright. The stand-in index now
+   names only an employment and has no way to acquire a company id at all.
+2. **`remoteProbe` could not tell two claims apart.** It reported
+   `employmentsQueried: 0, rowsReturned: 0, failures: []`, which reads as
+   *"Remote holds nothing"* and meant *"we asked Remote nothing"*. It now carries
+   `asked` and a `verdict`, and the page renders the two differently.
+3. **`npm run uc04-api` had never once seeded a decidable case.** Its six demo
+   cases name `emp_active_001`, a **mock** fixture, and were built through
+   whichever Remote client the server uses — so on any machine with a real
+   `REMOTE_API_TOKEN` (every machine this is demonstrated on) the Sandbox 404'd
+   it, `getEmployment()` answered null, and the identity gate correctly refused.
+   **All six came up `escalate / identity_not_verified`**, so the UC-04 sidebar
+   demo has only ever shown six identity failures — no `ready_for_approval`, no
+   `blocked`, none of the risk spread its own labels describe.
+
+   **A test process has no token, so the mock answered and the seed passed: the
+   defect existed only where a credential existed.** That is §3.30's shape again
+   — "structurally cannot succeed" and "appropriately cautious" are
+   indistinguishable from outside, and the gate was working perfectly throughout.
+   The seed now reads the world its fixtures live in; the server keeps the
+   configured client for real traffic. `test/uc04SeedWorld.test.js` pins it, and
+   was negative-controlled against the pre-fix file rather than assumed to bite.
+
+#### Proven by driving, not by the suite
+
+Both directions at every stage, over HTTP: employee files own trip →
+`ready_for_approval`; about someone else → `403 not_your_employment`; sidebar →
+`actionable: false` with the explanation; employer route →
+`employerActionable: true`; approve → `PATCH` accepted **and the request leaves
+the pending list when read back**; decline with no reason → 400; a third verdict
+→ `400 unknown_action`; Lars van der Berg quoted by id → `403 not_your_company`,
+with the test flipping the console to his company so the admitted set
+**reverses** — a boundary that only ever refuses one person could be refusing him
+for any reason.
+
+Verified live after deploy: `/remoteui` and `/remoteui/work-authorizations` 200,
+`10 of 11` in scope, probe `asked: true / answered`, and `401
+portal_access_key_required` without the key.
+
+`npm test`: **4714 tests, 4711 pass, 0 fail, 3 skipped.**
+
+#### The n8n port was half-done, and publishing it is what revealed that
+
+`workationGates.js` was deployed to `WORKFLOW_UC04_ID` under §7b, read back
+byte-for-byte (`verify-deployed`: 58 checked, 0 drifted) with
+`activeVersionId === versionId`. **Reading the graph afterwards found the other
+half:** `normalizeWorkationRequest.js` — the node immediately upstream, and the
+only thing that constructs a session on the n8n path — built one out of
+`companyId` + `authenticatedAdminId` and nothing else. It **stripped
+`authenticatedEmploymentId` on the way in**, so the employee-subject leg was
+dead in production the moment it shipped: present in the deployed body,
+unreachable by any input.
+
+**Nothing could have caught it.** `n8nUc04Parity.test.js` hands the gates node a
+session directly — the right shape for comparing two decision engines, and it
+means the normalizer has never been in that loop. Two nodes each correct in
+isolation, wired into something that cannot work.
+`test/n8nUc04NormalizerSession.test.js` now covers the seam, and was
+negative-controlled against the pre-fix body (3 of its 6 fail there). The
+session is whitelisted field by field rather than passed through, because that
+object is the one thing downstream treats as authenticated.
+
+#### Proven live, both directions, nothing pinned
+
+Driven through the production webhook after republishing both nodes:
+
+| | execution | decision | `uc04_authorizations` | `audit_log` | `audit_trace` |
+|---|---|---|---|---|---|
+| employee files their own trip | `10663` | **`ready_for_approval / all_gates_passed`** | `39735ffb` | `e6f07084` | `7493dbce` |
+| employee names someone else | `10661` | `escalate / identity_not_verified` | `8c72919d` | `af8c176b` | `eaa8500f` |
+
+`pinData: null` on both, 13 nodes each, every node `success` except the final
+Zendesk write, which fails `400 — id must be an integer` on the descriptive
+proof ref (`uc04-idproof-self-b`). That failure sits **downstream of the audit
+write**, which is exactly the ordering the architecture exists to guarantee —
+the same shape as the UC-04/UC-05 proofs in §3.24. **Do not read the run status
+as the verdict in either direction.**
+
+The positive case is the load-bearing one: before this pass an employee filing
+about themselves could only ever reach `escalate / identity_not_verified`, and
+the first attempt (`10660`) landed on `blocked / factors_invalid` — a gate
+*after* identity, which is itself the proof that identity had passed. Gate order
+in the deployed body puts identity at line 632 and factors at line 652.
+
+### 3.95 The two 🔴 dossiers stop citing a model where the instrument belongs — UC-07 and UC-08 reach the retrieved corpus
+
+**What was wrong, measured rather than reasoned about.** UC-07 and UC-08 are the
+two use cases whose entire deliverable is a **dossier for a specialist**. Both
+searched a hand-written corpus in their own source file — three sentences in
+`src/uc08/treatyRetriever.js` (`TREATY_CORPUS`, paraphrases of the OECD **Model**
+Tax Convention) and six in `src/uc07/mobilityRetriever.js`. Nine sentences,
+quoting no retrieved document. Driven against the real functions on the four
+demo country pairs (`docs/DEMO-COUNTRIES.md`):
+
+| Question | What the specialist got |
+|---|---|
+| US→PT, naming the US–Portugal treaty | **nothing** |
+| NL→PT, naming the Netherlands–Portugal convention | **OECD Model, Article 4** |
+| US→CA, naming the US–Canada convention | **OECD Model, Article 15** |
+| CA→NL totalization | *"Totalization agreements — general principle"* |
+
+Meanwhile `docs/knowledge/layer-1-statutory/` held **28 documents / 112
+passages**, retrieved from their own publishing authorities with the source
+bytes' SHA-256 recorded — including a governing instrument for **every one of
+the six unordered demo pairs**: D-24 (NL–PT), D-25 (CA–NL), D-26 (CA–PT),
+D-27/D-28/D-29 (the three US conventions, full IRS PDFs), plus every domestic
+residence rule (D-31 NL, D-32 PT, D-33/D-34 CA, D-35 US).
+
+`docs/RETRIEVAL.md` had measured the same thing from the other side and named
+the remedy — *"replace the hand-written passages with a country-filtered lexical
+index over the 106 real statutory passages"* — adopted by UC-07's and UC-08's
+decision passes as `T-26`/`T-27`, and its own status line read **"nothing is
+built."** This is that build.
+
+**What was built.**
+
+- **`src/knowledge/citationCorpus.js`** — 55 passages / 14 documents, GENERATED
+  from the sidecars by `scripts/build-citation-corpus.mjs` (`npm run
+  build-citation-corpus`). Generated rather than walked at run time because the
+  retriever runs in three places that do not share a filesystem: this repo, a
+  Vercel function, and an n8n Code node. Every passage carries publisher, source
+  URL, retrieval date and the source SHA-256.
+- **`src/knowledge/documentCountries.js`** — which jurisdictions each document
+  speaks for, **hand-written**, because a filename heuristic under-tags the three
+  sidecars that carry more than one instrument and drops the EU regulations
+  entirely. A document with no entry is EXCLUDED and the test names it, rather
+  than defaulting to "no countries" — which is indistinguishable from "never
+  matched" at the point a specialist reads the dossier.
+- **`src/knowledge/lexicalIndex.js`** — BM25 with a country filter, a relevance
+  floor and document diversification.
+- **`src/knowledge/statutoryRetrieval.js`** — the one leg both use cases call.
+
+**Three properties, each pinned by test.**
+
+1. **An instrument always outranks a model.** `authority` sorts before score, and
+   the model paraphrases are only reachable when the statutory index returns
+   nothing — at which point the citation says so in `matchedOn`. `CLAUDE.md` §7
+   item 17 names the harm exactly: a model offered where an instrument belongs
+   *"reads exactly like an answer."*
+2. **A bilateral instrument needs BOTH its parties.** Tagging D-24 as {NL, PT}
+   and asking "does it serve any wanted country?" makes the Netherlands–Portugal
+   convention answer a **US**–Portugal question — a real treaty, not this pair's
+   treaty, and authoritative-looking while being wrong. `pairs` states the
+   parties explicitly because three sidecars carry several instruments each and
+   the parties cannot be read off a flat country list.
+3. **The country filter never manufactures silence.** A question naming no
+   recognised country searches everything; filtering to nothing on a parsing miss
+   would turn a bad parse into an empty dossier.
+
+**The relevance floor, and why a score threshold was not the answer.** BM25 always
+ranks something, so without a floor *"Please reset my password"* cited a tax
+convention — "please" occurs in statutory prose. A SCORE cut does not separate
+the cases: measured over five realistic inquiries and five plainly unrelated
+ones, the best irrelevant hit scored **5.20** while a genuine certificate-of-
+coverage question scored **6.20**. What does separate them is how many distinct
+query terms matched — relevant `5, 4, 3, 3, 5` against irrelevant `1, 2, 1, 1, 1`.
+So the floor is a term count, with one escape hatch for a short pointed query
+("totalization Canada") via two RARE terms, rarity measured against this corpus.
+The ten calibration queries are kept verbatim in
+`test/statutoryRetrieval.test.js`, so a corpus change that destroys the
+separation fails the suite.
+
+**What it produces now**, same four pairs:
+
+| Pair | Citations |
+|---|---|
+| US→PT | the three US income tax conventions · Portugal CIRS art. 16 · EU Reg. 987/2009 |
+| NL→PT | Portugal CIRS art. 16 · Netherlands AWR art. 4 · **the NL–PT convention** |
+| CA→NL | **Canada's social security agreements** · Netherlands AWR art. 4 · EU Reg. 883/2004 |
+| US→CA | the three US income tax conventions · US substantial presence test · Canada ITA s. 250 |
+
+**Four defects found while building it, three of them mine.**
+
+- **The country matcher broke on punctuation, twice.** Matching `" portugal "`
+  against *"…in Portugal, dual residency…"* fails on the comma; keeping `.` in
+  the strip set to preserve "u.s." then broke *"…to Portugal."* on the full stop.
+  It failed SOFT — an empty country list searches everything — so nothing errored
+  and the only symptom was a worse ranking.
+- **A comment claimed an ordering the code did not hold.** `search()` says
+  "authority first, score second", and `diversifyByDocument()` then reorders,
+  so an instrument from an already-seen document can land below a first-seen
+  administrative passage. The guarantee is narrower than the comment claimed;
+  both the comment and the test now state the narrow version, and the guarantee
+  that actually protects a specialist — no model beside an instrument — is
+  unaffected.
+- **A test named the wrong variable.** The hyphenation test compared two
+  sentences differing in five words *and* a hyphen, then blamed the difference on
+  punctuation. It now compares one sentence one character apart.
+- **The n8n port indexed only its own feed** — an obvious saving that silently
+  breaks parity, because BM25's IDF and average document length are computed over
+  whatever is in the index, so a 6-passage index and a 55-passage index cross the
+  relevance floor at different points. **UC-07's parity test caught it; UC-08's
+  would not have**, because UC-08's compares citation ids only and UC-07's
+  compares the whole dossier. The same test also caught the n8n copy dropping
+  publisher/URL/date/SHA-256 to save ~4KB — which would have meant the n8n path
+  showing a quote with none of the four signals a specialist uses to trust it.
+
+**One pre-existing guard needed a narrow exclusion.**
+`test/portalRequesterFacts.test.js` refuses a bare ISO country code on a
+requester-facing surface. *"Regulation **(EC)** No 883/2004"* is the formal
+citation form of an EU legal act and `EC` is Ecuador, so it reported four leaks
+in titles that name no country. Excused only in the form `(EC)`/`(EU)` followed
+by `" No "`, with its own negative control asserting `Ecuador (EC)`,
+`Spain (ES)` and a bare `(EC)` all still fail.
+
+**Both n8n ports are regenerated by the same script**, so the two copies cannot
+drift by hand, and `test/citationCorpusFreshness.test.js` regenerates in memory
+and compares — a stale corpus fails the suite rather than reaching a specialist
+carrying a publisher, a URL and a hash beside text the document no longer holds.
+`npm run verify-deployed` still byte-diffs against the live graphs; **neither
+graph has been republished** — see §7.
+
+**Not changed, and named rather than folded in.** `DOWNLOAD-MANIFEST.md` routes
+the bilateral conventions and the social-security agreements to **UC-04 and
+UC-08 only**, so UC-07's statutory feed is D-17 and D-20 — six passages. A
+permanent relocation arguably raises the same instruments, but that is a curated
+routing decision and rewriting it is its own work order.
+
+Suite: **4768 tests, 4765 pass, 0 fail, 3 skipped.** The 27 tests in
+`test/statutoryRetrieval.test.js` were negative-controlled against a stubbed
+pre-fix retriever: **10 of 27 fail** there.
+
+### 3.96 The country filter's own hole — and why "recognise" and "hold a document for" must be different questions
+
+**Found by updating the portal prefills, and introduced by §3.95 rather than by
+the code §3.95 replaced.** `countriesNamed()` knew four countries — the demo set
+— so *"Germany and Spain"* named nothing it recognised. This file's own property
+2 turns that into **search everything**, and a Germany–Spain dual-residency
+question came back with Canada's deemed-residence rule, Portugal's CIRS art. 16
+and the US substantial presence test: **three real instruments, correctly
+quoted, about three countries nobody asked about.**
+
+That is a **worse** failure than the OECD Model paraphrase §3.95 removed. A model
+is at least not wrong about a jurisdiction. This was authoritative, specific,
+carried an IRS URL and a SHA-256, and was about the wrong place.
+
+**The fix is a distinction, not a longer list.** The vocabulary must cover
+countries the corpus holds **nothing** for — that is precisely what lets the
+filter come back empty and fall through to the labelled model paraphrase.
+Recognising a country and holding a document about it are two different
+questions, and only the first belongs in the vocabulary. `countriesNamed()` is
+now derived from `src/shared/countryNames.js` (249 countries) plus an explicit
+demonym table. DE/ES now returns Regulations 883/2004 and 987/2009 — multilateral
+instruments that genuinely govern both.
+
+**Bare two-letter codes are matched only in UPPER CASE.** Lower-cased, the ISO
+list is a minefield of ordinary English: the hand-written table carried
+`us: "US"`, so *"please tell us about the policy"* named the United States.
+`it`, `in`, `no`, `is`, `at`, `be`, `or`, `me`, `so` and `am` are all words and
+all country codes. Written `US`, written `us` — the case is the signal.
+
+**The countries now come from the PARSE, not the prose.** A person asking whether
+they owe tax in Toronto names Canada and never mentions being employed in
+Portugal, so the Canada–Portugal convention could not be reached however good the
+ranking was. `parsed.jurisdictions` and the request's own `targetCountry` are
+both already established at the call site. An empty list is passed as **null**,
+deliberately: `null` means "read the text" and `[]` would mean "restrict to
+nothing" — a parse that found no jurisdiction must not silence the retriever.
+
+**The portal prefills moved onto the agreed demo set**, because the retriever is
+country-filtered and the old ones named Germany, Spain, the UK and France —
+countries with no bilateral instrument in the corpus, so they could only ever
+produce the weakest dossier this use case has:
+
+| Scenario | Was | Now | What it reaches |
+|---|---|---|---|
+| `uc08-dual` | DE / ES | **US / PT** | the US–Portugal convention (D-28, IRS) + PT CIRS art. 16 |
+| `uc08-183` | GB | **PT → CA** | Canada ITA s. 250 + the CA–PT convention |
+| `uc08-a1` | DE → FR | **NL → PT** | the EU regulations **and** the NL–PT convention |
+| `uc07-review` | GB → DE | **US → NL** | the SSA totalization table's US–NL row |
+
+`uc08-183`'s text also names both countries and the threshold: the shorter draft
+retrieved **one** citation where this retrieves three.
+
+**BOTH GRAPHS REPUBLISHED AND PROVEN, same day.** `Build Dossier`
+(`WORKFLOW_UC08_ID`) and `Relocation Gates` (`WORKFLOW_UC07_ID`), read back
+**byte-identical** to their files, `versionId === activeVersionId`,
+`verify-deployed` **58 checked · 0 drifted**, and each driven through its
+production webhook with **`pinData: None`**:
+
+- **UC-08 execution `10708`** — 11 of 12 nodes `success`; `uc08_dossiers` row
+  `1c39305b`, `audit_log ad32eff9`, a `workflow_claims` row, citing D-35, D-32
+  and D-27/28/29 with publishers *Internal Revenue Service* and *Autoridade
+  Tributária e Aduaneira*.
+- **UC-07 execution `10710`** — 10 of 11 nodes `success`; route parsed `US → NL`;
+  citations are Remote's process guidance FIRST (month-end alignment, immigration
+  guidance, PTO portability) and then D-17 and D-20, which is the order
+  `#unconfiguredLeg()` documents.
+
+**Both runs are marked `error` and both are proof.** The single failing node in
+each is the final Zendesk write — `Bad request` on a descriptive `externalRef`
+where Zendesk wants a numeric ticket id — and it sits **downstream of every
+durable write**, which is the ordering the architecture exists to guarantee.
+Read node status, never run status.
+
+Suite: **4771 tests, 4768 pass, 0 fail, 3 skipped.**
+
+### 3.97 Every portal quick-fill moved onto the demo countries — all 48, not the four §3.96 reached
+
+§3.96 moved four scenarios and left thirty-two. This is the sweep. **48
+scenarios audited; every country field is now NL, PT, CA or US**, with two
+deliberate keeps.
+
+| Use case | Was | Now |
+|---|---|---|
+| UC-03 | `trip`/`terminated` ES · `letter`/`letter-no-entity` DE | **NL** · **PT** |
+| UC-04 | fifteen rows on DE/DE → ES (and DE → DE) | **PT/PT → NL** (and **PT → PT**) |
+| UC-05 | `sandbox-gb` · `de` | **`sandbox-ca`** · **`nl`** |
+| UC-08 | `empty` GB | **CA** |
+
+**PT → NL is the analogue of DE → ES, and the choice is not cosmetic.** Both
+countries are EU, so the A1 consideration still fires; and NL is Schengen but
+**not** in `DNV_COUNTRIES`, so the 90/180 arithmetic is still **applied**.
+Routing these through **PT as the destination** — the obvious move, since PT is
+in the demo set — would have silently **suppressed** the Schengen check and
+taken every travel-history scenario with it. That is precisely the failure mode
+`DNV_COUNTRIES_PROVENANCE` exists to warn about: membership removes a control
+rather than adding one, and the result looks exactly like a trip that was
+assessed and cleared.
+
+**Verdicts were snapshotted before and after rather than reasoned about.**
+14 of the 15 UC-04 scenarios are identical in decision, reason, flags **and
+Schengen peak** — including *"Exactly on the Schengen line"* at **90** and
+*"Over the Schengen limit"* at **121**. Only `uc04-pe` changed, and additively:
+still `high` on `pe_risk_dape`, now also carrying an A1 consideration and a
+Schengen row at 10 of 90. Its visa moved from `business_visa` to
+`schengen_short_stay` because it had to — every non-Schengen country in the demo
+set hard-blocks a business visa on its own work-permit rule
+(`us_requires_work_permit`, `ca_requires_work_permit`), which would decide the
+case at the document gate and never reach the duties the scenario exists to
+isolate.
+
+**UC-05's two are genuine substitutions, not renames**, and both are stated as
+such in the file. No demo country has the UK's sliding scale (ERA 1996 §86), so
+that row now shows **Canada** — `basis: "customary"`, whose citation states
+*"no statutory employee minimum; varies by province"* instead of manufacturing a
+statute. That is the better thing to demonstrate: *the system did not invent a
+rule* is harder to show than arithmetic. Germany's month-anchor becomes the
+**Netherlands'**, which anchors on month **end** rather than the 15th — same
+shape, so the row still shows *"a leaving date has to LAND on something"* rather
+than *"clear a bracket"*.
+
+**Two deliberate keeps**, both because no demo country can stand in: **Iran**
+(`uc03-restricted`, `uc04-sanctioned`) exercises the real
+restricted-jurisdiction list, imported from UC-03 rather than copied; and
+**Brazil** (`uc05-sandbox-br`) is the only way to reach *"no rule in the
+table"*, because all four demo countries are in it.
+
+**Free text was swept too, and it had drifted from the fields above it.** Ten
+`uc04-reasonText` values still said *"the Amsterdam team"*'s predecessor —
+**Madrid** — while the destination had become the Netherlands, and one said
+*"the London office"*. A reason line that names a different city from the
+destination box is the same defect class as the persona picker that captioned
+eleven relationships "employee": nothing is computed wrongly and the screen
+contradicts itself.
+
+**Two tests restated a value they could have read, and both blamed the change
+rather than a regression.** `portalPlainAnswer.test.js`'s country check
+hard-coded `/Spain/` and failed with *"the answered trip does not name its
+destination"* while the answer under test said *"the Netherlands"* perfectly
+correctly. It now derives the expected name from the scenario's own field —
+`driveEveryScenario()` carries `fields` for that purpose, lifted from `app.js`
+rather than copied, which is the same reason `SCENARIOS` itself is lifted.
+`portalUc03StatedTrip.test.js`'s table is updated; the assertion beneath it —
+that the reader's own label for the code appears in the scenario's own text —
+is what actually enforces the agreement and needed no change.
+
+Live bundle verified after deploy: the only country codes in the deployed
+`SCENARIOS` are **CA, IR, NL, PT, US**.
+
+Suite: **4771 tests, 4768 pass, 0 fail, 3 skipped.**
+
+---
+
+## §3.98 — the sidebar was contradicting the corpus it was displaying (2026-08-30)
+
+**Found by rendering the ZAF sidebar for the flagship demo pair.** §3.95 moved
+UC-08's retrieval leg onto the 55 retrieved statutory passages. The **view**
+layer did not move with it, and nothing failed, because every sentence it
+produces is prose and no test read the prose.
+
+On a US/PT dossier the panel printed, directly above the IRS's own substantial
+presence test, Portugal's CIRS art. 16.º and the text of the US–Portugal
+convention:
+
+> The reference corpus is **3 passage(s) of GENERAL principle** — OECD Model Tax
+> Convention articles … **Nothing in the corpus matched this request at all.** …
+> they are **not the governing instrument** for this request and **must not be
+> cited to the requester** as if they were.
+
+Three false claims and one dangerous one. *"Nothing matched"* was the `else`
+arm of a ternary that had never been given a `statutory_lexical` limb. The count
+came from `TREATY_CORPUS`, which is no longer where these passages come from.
+And the last clause — a disclaimer written to stop a **paraphrase** being
+over-trusted — was telling a specialist to discount the instrument in force.
+
+**A stale caution is not the safe direction of a stale sentence.** It spends the
+credibility of every other caution on the page.
+
+### The discriminator is the citation, not the mode
+
+Each passage carries `authority: "instrument" | "model"`, so the caution is now
+attached to the model passages only — the population it was always about. A mode
+label alone cannot do this: a `statutory_lexical` result **falls back** to the
+OECD paraphrases when nothing statutory matched, and that result needs the
+original warning verbatim. `citations_model_only` raises it as a ranked open
+question, the same treatment `citations_keyword_matched` always had.
+
+The same sentence was also wrong in the other direction. *"The bilateral
+convention … is not one of the passages below, which are general principle
+only"* was true of every result while the corpus was three paraphrases, and told
+the specialist the instrument was absent from a list it was sitting in.
+
+### And the panels rendered a bare title
+
+Both dossier panels printed a citation as a title and nothing else — defensible
+while every passage carried the same weight (none), and indefensible once the
+IRS's own text and an OECD paraphrase appear in the **same list**. They now
+render the publisher, the retrieval date, and whether this is the instrument in
+force or the paraphrase it was drafted from. UC-08 leads with
+`citationCoverage.scope`, which the API had computed for months and **no surface
+had ever shown**.
+
+`matchedOn` arrives in two shapes and only one carries its own framing — the
+statutory leg emits a whole sentence, the older legs emit bare stems, which a
+plain join turns into `(pto; liquidat)`. The prefix is added only where the
+entries do not already say it. Caught by an existing test, which is the reason
+that test was written to read the sentence rather than count the rows.
+
+## §3.98b — a bundled bilateral document answering for a pair it does not govern
+
+The same render exposed a defect one layer down, and it is the more serious of
+the two.
+
+`D-27+D-28+D-29` is **three separate conventions in one file** — US–NL, US–PT,
+US–CA — and jurisdictions were mapped per **document**, so every passage in it
+was eligible on any of the three pairs. Two failures followed:
+
+1. the section holding all three quotations was split **by size**, so a US/PT
+   dossier displayed the **US–Netherlands** article, and the next chunk opened
+   with a bare `> …` because the `**US–Portugal**` label had landed on the chunk
+   boundary; and
+2. the operative clause of a treaty **never names its parties** (*"remuneration
+   derived by a resident of one of the States…"*), so no scoring change could
+   ever have told the three apart. The jurisdiction has to come from the
+   structure, not from the words.
+
+Each convention is now its own `###` in the source document — **markup only, not
+one word of quoted treaty text is altered**, and the SHA-256s in the provenance
+header are of the retrieved PDFs and are unaffected. The generator then narrows
+a passage to the single pair its own heading names.
+
+**That rule can only ever REMOVE reach.** A heading it cannot parse, or one that
+names a pair ambiguously, leaves the passage eligible for the whole document's
+set — so the cost of a miss is the status quo, while a rule that could **add** a
+jurisdiction would be inventing coverage. Pinned by its own test.
+
+Measured per demo pair on one query. Each now leads with **its own** convention
+article and neither of the other two:
+
+| pair | first hit | then |
+|---|---|---|
+| US/PT | US–Portugal, Article 16(2) | IRS substantial presence · CIRS art. 16.º |
+| US/NL | US–Netherlands, Article 16(2) | IRS substantial presence · AWR art. 4 |
+| US/CA | US–Canada, Article XV(2) | IRS substantial presence · ITA s. 250 |
+| NL/PT | NL–PT convention, Article 15(2) | CIRS art. 16.º · AWR art. 4 |
+
+Corpus **55 → 57 passages**, 14 documents.
+
+### Proven on the live graphs, not on the files
+
+Both node bodies regenerated, republished and read back — `verify-deployed`
+**58 checked · 0 drifted · 0 unpublished**. Then driven through the production
+webhooks, `pinData: null` on every run:
+
+- **UC-08 execution `10739`** — a US/PT residency question returned three
+  citations, all `authority: instrument`, led by **US–Portugal, Article 16(2)**.
+  Durable `audit_log` row `a03b8c0d`.
+- **UC-07 execution `10743`** — a US→NL relocation returned four: Remote's own
+  process guidance **first**, then D-17 (Regulation (EC) No 883/2004) and D-20
+  (SSA totalization status). Dossier row `76584fe7`, audit row `a6cbd3bc`.
+
+Both runs are marked `error` and both are proof: the single failing node in each
+is the final Zendesk write, on a descriptive `externalRef` where Zendesk wants a
+numeric ticket id, and it sits **downstream of every durable write**. Read node
+status, never run status.
+
+**One thing worth recording because it looked like a regression and was not.**
+An intermediate UC-07 drive returned **zero** citations. The same query returns
+zero against the local retriever too — so parity holds and nothing had broken.
+The probe sentence was simply too thin to clear the relevance floor, which is
+the floor doing its job: it is what stops *"please reset my password"* citing a
+tax convention. Realistic requests return what they returned before.
+
+Every new test is negative-controlled — the six coverage tests, the panel test
+and the two corpus tests all fail against the pre-fix tree.
+
+Suite: **4781 tests, 4778 pass, 0 fail, 3 skipped.**
+
+---
+
+## §3.99 — the UC-04 and UC-07 panel audit (2026-08-30)
+
+Two subagents audited the two panels for the §3.98 defect class — *a data layer
+changed and the view layer did not move with it, and nothing failed because the
+view's output is prose no test reads.* Every claim below was re-verified by
+driving the real code before it was acted on. **Five defects fixed, one of them
+introduced by §3.98 itself an hour earlier.**
+
+### Fixed
+
+**1. `citationLabel()` handled two of the three authorities the corpus
+declares.** Shipped in §3.98 with exactly the shape of the bug it fixed: an
+if-chain never given a limb for a value the data layer already carried.
+`AUTHORITY_RANK` is `{instrument, administrative, model}`; the `else` swallowed
+`administrative`, so the **U.S. Social Security Administration's published
+detached-worker rule was labelled "Guidance"** — the same label as
+`MOBILITY_CORPUS`, this project's own hand-written internal notes with no
+publisher and no retrieval date. **14 of the 57 passages are `administrative`,
+and three of UC-07's six are**, so half that use case's statutory feed read as
+an internal note. `model` is kept: unreachable from the generated corpus, but
+its live producer is `TREATY_CORPUS`'s last-resort OECD paraphrases — the one
+population the "must not be cited as the governing instrument" caution is about.
+
+**2. UC-07's PTO row fabricated a zero from a documented null.**
+`show(pto.destinationOpeningBalance, "0")` printed *"opening balance 0 day(s), 0
+liquidated"* for a dossier whose own `pto.cashout` reports `{computable: false,
+unusable: [{field: "liquidatedDays", reason: "missing"}]}`.
+`transitionGate.js` states the rule at the default it defends: *"null, NOT 0 …
+defaulting the first to the second is how a dossier came to state a confident
+0.00 payout on a balance nobody had counted (F-29)."* **The gate refused the
+unknown and the panel re-invented it one layer up** — the rule the money rows
+already get right, which days had never been held to.
+
+**3. UC-07 searched the statutory index on the prose while it knew the route.**
+A **wrong-jurisdiction** failure, not a missing-citation one. On a **US →
+Canada** relocation whose prose named no country, the top statutory hit was
+**Regulation (EC) No 883/2004** — the EU's internal social-security coordination
+instrument, which binds neither party. Threaded through
+`src/uc07/{workflow,mobilityRetriever}.js` and the n8n port.
+
+**4. The port then passed `[]` where src passes `null`** — introduced by fix 3
+and invisible to parity, whose fixtures name both countries in the prose either
+way. An empty **array** is an explicit "filter by this list", which `lxServes()`
+treats as serving everything, so it silently means *no filter*; `null` means
+"read the jurisdictions out of the text". Proven on the live graph: execution
+`10756` cited D-17 on US → CA, execution `10759` (after) cites **only** D-20.
+
+**5. The UC-04 sidebar said Germany over a Portugal → Netherlands trip.** Caused
+by §3.97's own demo-country sweep, which moved every quick-fill's FIELDS to
+PT/PT→NL and left the SUBJECT as Anna Müller, whose record is Germany.
+`src/uc04/server.js` publishes the record's country beside the stated one
+*"to put that comparison in front of the one party who can make it"*, so **the
+demo was exercising a discrepancy-detection feature with an unintentional
+discrepancy.** Eleven scenarios moved to João Silva (PT, active, same company).
+
+`uc04-executive` was the interesting one and **the first attempt was wrong**: it
+states a Dutch home country, and the only Dutch record in the mock is Lars, who
+is deliberately in `co_northwind_02` so `uc04-other-company` can fail identity
+with him — so pointing this scenario at him turned an executive-PE
+demonstration into an identity refusal. It moved to PT → NL on João instead,
+keeping both flags, and its `digital_nomad_visa` became `schengen_short_stay`
+because while the destination was PT **that field was never examined** (PT is in
+`DNV_COUNTRIES`, which suppresses the Schengen check outright).
+
+> **The check that nearly passed and proved nothing.** The first before/after
+> snapshot reported **IDENTICAL across all fifteen scenarios** — because every
+> single run had errored on a missing store, so both sides were fifteen
+> identical `ERROR` lines. A green diff over a uniformly broken harness. The
+> rewritten snapshot compares identity basis, record country, flag set and
+> Schengen peak, and it is the one that caught the Lars regression. Same lesson
+> as §4's receipt-path trio: **a success is not a success until you read what
+> was actually produced.**
+
+### Reported, not fixed — each is its own work order
+
+- **UC-04's citation map has no jurisdiction filter.** `sourcesForFinding()`
+  takes only a finding key, so `treaty_coverage_unconfirmed` cites the **US SSA
+  and the Canada CRA on a Portugal → Netherlands trip**, and on Portugal → Iran.
+  **UC-05, UC-07 and UC-08 all take a jurisdiction argument; UC-04 alone does
+  not.** The fix needs jurisdiction data for the 12 of its 24 documents that
+  `documentCountries.js` does not yet map — and a wrong entry there makes a
+  citation *disappear* from a finding it governs, which is worse than showing an
+  extra one, so it deserves the same care §3.98b got rather than a bolt-on.
+- **`openQuestions`, `uncited`, `confirmations` and `citationCoverage` reach
+  nobody.** Computed, serialised, sent over the wire and dropped by the loaders.
+  On one real UC-07 dossier that is seven ranked questions, including
+  `pe_risk_unsourced` — *"Permanent-establishment exposure is flagged and this
+  repository cites NOTHING for it"* — which has no other route to the screen,
+  while the flag it qualifies is rendered in full.
+- **Four UC-04 scenarios still state a home country their subject's record
+  contradicts.** All four PREDATE the sweep and are deliberate-person scenarios
+  (Amanda's missing permission, Lars's other company, Chris filing for himself,
+  Anna as not-the-session-person). Changing them changes what each
+  demonstrates — an owner's call, not a cleanup.
+- **No scenario now demonstrates `DNV_COUNTRIES` suppression.** It was only ever
+  incidental to `uc04-executive`, and that membership *removes* a control on a
+  `[PROPOSED]` list with `authority: null`, so it fails open. Worth a scenario
+  of its own.
+
+Suite: **4784 tests, 4781 pass, 0 fail, 3 skipped.** ZAF app **v1.10.12**,
+verified from `owned.json`.
+
+---
+
+## §3.100 — UC-04's citation map now answers for the route it is looking at
+
+The largest of the items §3.99 reported and did not fix.
+
+`sourcesForFinding()` took a finding key and **nothing else**, so a finding's
+citations were identical whatever countries the trip involved. Observed, on the
+flagship demo pair, under "Totalization / treaty coverage" for a Portugal →
+Netherlands workation:
+
+```
+treaty_coverage_unconfirmed
+  D-20   U.S. Social Security Administration
+  D-21   Canada Revenue Agency (CPP/EI Rulings)
+```
+
+Neither authority has anything to do with a Portuguese employee spending a
+fortnight in the Netherlands, and **the same two were the only sources shown for
+Portugal → Iran.** UC-05, UC-07 and UC-08 have each taken a jurisdiction
+argument for some time; UC-04 was the one that never did.
+
+### Each pair now gets its own convention
+
+The six bilateral conventions were **already on this shelf** and all six showed
+on every route. Measured, same finding, four routes:
+
+| route | cited |
+|---|---|
+| PT → NL | D-31 AWR art. 4 · D-32 CIRS art. 16 · **D-24 Netherlands–Portugal convention** |
+| US → PT | D-32 · D-35 substantial presence · **D-27 the three US conventions** |
+| PT → CA | D-32 · D-33 · D-34 · **D-26 Canada–Portugal convention** |
+| DE → MX | *(none — and it says so)* |
+
+That is §3.98b's outcome reached for the hand-curated map rather than the
+retrieved corpus.
+
+### The rule: it can only ever REMOVE, and only on positive evidence
+
+An unmapped document, an unrecognised scope and a routeless request are all
+**kept**. The asymmetry is the whole safety argument: one document too many
+costs a specialist a moment, while hiding the instrument that governs their case
+costs them the decision. Same rule `byTicketAccountGuard.js` states for its own
+refusal. Nationality counts as part of the route, which also only ever widens. A
+bilateral instrument needs **both** its parties — an `.includes` on a flat
+country list would have kept every US convention on a PT → NL trip, because
+D-27's `countries` names all four.
+
+`D-36`/`D-39`, the sanctions registers, are `global` and survive every route
+including PT → Iran. Scoping those would be the one filtering mistake here with
+a real safety cost.
+
+### Two things the existing tests were right about and I was not
+
+**`decisionSources.js` is asserted to import NOTHING** — *"it is frozen data and
+must stay that way"* — with the sibling assertion that policyEngine, riskMatrix,
+approvalPolicy and workflow must never import **it**, because *"a citation must
+never be able to change an outcome"*. My first version imported `SCHENGEN` out
+of `riskMatrix.js`, coupling the source map to the gate engine in exactly the
+direction that guard keeps clear. The map now takes an **injected predicate**;
+the knowledge lives in the new `src/uc04/sourceJurisdiction.js`.
+
+**A group whose every citation is filtered out must not be dropped.** On Germany
+→ Mexico this repository holds no residence test for either country, so every
+citation goes — and **C-12**, which records that one 183-in-365 line stands in
+for four different domestic tests, applies to that trip *more* than to a sourced
+one. Returning null would have taken the warning out with the citations. The
+group survives with its caveats and a sentence saying why it is empty, and that
+sentence is rendered.
+
+### Two things this change made visible, fixed with it
+
+- The treaty-coverage dimension said *"this system holds no register of pairs
+  that ARE covered"* **unconditionally**, which on an intra-EU pair was false
+  while the same page cited Regulation (EC) No 883/2004 with its three operative
+  articles inches above. It now names what IS settled (social security, by
+  883/2004) and what is not (the tax side, a separate instrument). **The STATE is
+  deliberately unchanged** — whether an EU pair should still read `unknown` is a
+  policy question and is the owner's call.
+- *"The rules this is based on — 0 documents"* reads as a bug rather than as the
+  finding it is. It is now *"No document here governs this route — why, and what
+  still applies"*.
+
+Twelve jurisdiction entries were added to `src/knowledge/documentCountries.js`
+for the UC-04 documents the corpus never fed. **`CITATION_PASSAGES` is
+unchanged** — 57 passages, 14 documents — because the generator only looks up
+documents that are in a feed. Two scopes are resolved by the consumer rather
+than restated in the map: `schengen` against UC-04's own `SCHENGEN` set, so
+there is never a second answer to which countries are Schengen, and `global`,
+which is not a list at all.
+
+Negative-controlled by reverting `decisionSources.js` alone: the four
+behavioural tests fail while the six unit tests of the predicate correctly still
+pass.
+
+Suite: **4794 tests, 4791 pass, 0 fail, 3 skipped.** ZAF app **v1.10.13**.
+
+**Still open from §3.99, unchanged:** `openQuestions`, `uncited` and
+`confirmations` are computed and rendered by nothing; four UC-04 scenarios state
+a home country their subject's record contradicts (all deliberate-person, all
+predating the sweep); and no scenario now demonstrates `DNV_COUNTRIES`
+suppression.
+
+---
+
+## §3.101 — `openQuestions` and `uncited` reach the sidebar
+
+Two of the three items §3.100 closed with *"computed and rendered by nothing"*.
+
+Five use cases compute an **`uncited`** list — the findings this repository
+deliberately records as resting on no citation, each with the reason — and the
+two 🔴 dossiers compute **`openQuestions`**, the things the dossier could not
+answer. Every one was computed on every read, serialised, sent over the wire,
+and drawn by no renderer. `src/uc04/decisionFacts.js` said otherwise, in a
+comment above the line that produces it:
+
+> `sources` is the reading list; `uncited` is the same statement in the other
+> direction, **and it is rendered too**: a citation block that only ever appears
+> where a citation exists teaches a reader that everything unmarked is fine.
+
+That sentence described a renderer that did not exist. It is now true.
+
+### Where each one goes, and why they go to different places
+
+**An absence belongs beside the finding it is about.** UC-04's dimensions and
+UC-05's blocks publish `{sources, uncited}` together, so `renderSources()` now
+takes both and draws the absences inside the same collapsed disclosure as the
+citations. The reader who has opened *"the rule this is based on"* is asking
+exactly the question an absence answers; a section further down the page would
+be a bibliography of silences — true, and read by nobody at the moment it
+mattered.
+
+**The summary counts both populations**, because a disclosure that counts only
+the documents leaves the absences invisible until it is opened, and the whole
+point of stating an absence is that a reader who never opens the box would
+otherwise take silence for a clean bill. A group holding only absences now says
+*"This finding rests on no source — the reason for each"* rather than a
+document count of zero.
+
+**An absence is not a caveat and is not drawn as one.** A caveat is a
+contradiction the corpus records *against* a source it holds; `.r-caveat`
+carries the warning colour to say so. Borrowing it would claim the corpus found
+something wrong here when what it found was nothing. `.r-uncited` is dotted and
+in the secondary colour, so the three kinds of entry inside one disclosure —
+citation, caveat, absence — are told apart by shape as well as by wording.
+
+**UC-07 and UC-08 publish a FLAT list instead**, because most of their absences
+belong to no finding on the page at all: three of UC-08's are stated
+unconditionally on every dossier ever compiled — citizenship-based taxation, the
+treaty residence tie-breaker, permanent-establishment exposure. Those get their
+own collapsed section, below the record and above the controls.
+`basis.sources.uncited` is deliberately **not** read there: UC-04 publishes the
+same absences twice, once per dimension and once deduped for an API reader, and
+rendering both would print every one of them again.
+
+### The open questions sit above the record they qualify
+
+`openQuestions` is UC-07's and UC-08's only — the two use cases with no
+execution path, so nothing on their page is a decision and everything on it is
+research. That makes *"what this dossier could not settle"* the most
+decision-relevant thing it holds. A priority-1 question is a sentence like *"a
+day count is present and this system holds no residence test for any
+jurisdiction it concerns"*, which a reader needs **before** the count, not
+after — the same argument the mandatory framing statement wins on, one rung
+down.
+
+**The top band is open and the rest is counted.** A real UC-07 relocation raises
+eight questions, 1,780 characters, a fifth of the page — rendering all eight
+open puts that above the record they qualify, which is the *"multiple reports in
+one"* complaint this page's design exists to answer. Collapsing all of them
+would be worse: a section that is only a summary line states nothing at the
+moment it is read. The split is **the server's own ordering**, not a judgement
+the panel makes, and it is *"the highest band present"* rather than *"priority
+1"* — nothing in the contract promises band 1 is ever populated, and a view that
+emitted none would otherwise collapse entirely. `priority` is rendered as an
+order and never as a severity word: the server publishes 1 and 2 and no
+vocabulary for them, so inventing *critical* / *minor* would be a claim it never
+made.
+
+### The bug this found on the way, committed by yesterday's own fix
+
+`panels.js` has read `view.citationCoverage.scope` since the hour it shipped and
+leads UC-08's rows with it (*"What this material is"*) — and **`loadUc08` never
+set the field**, so the sentence saying what the retrieved statutory material is
+and is not reached no real sidebar at all. It was green in the suite throughout:
+`test/zafApp.test.js` calls `panels.rows()` with a view built by hand, which
+cannot see a loader that drops a field. The §3.98 defect class, introduced
+inside the commit that fixed it.
+
+`test/zafUnsettled.test.js` (8 tests) therefore runs the **real** sidebar
+against the **real** API handlers over the fake DOM and reads the words that
+came out, rather than asserting on a constructed view. Reverting
+`zaf-app/assets/` alone fails all eight.
+
+**One limb is deliberately unreachable and says so in place.** Only UC-04's
+`immigration_document` can raise a cited and an uncited finding at once, and its
+two populations are mutually exclusive today. UC-05's `readingList()` already
+takes an array of keys, so one added key makes it reachable with no change to
+the renderer; dropping the limb would mean that group then names one population
+and hides the other. No fixture exercises it, because a fixture written to reach
+it would have to be written to agree with the panel.
+
+Suite: **4802 tests, 4799 pass, 0 fail, 3 skipped.** ZAF app **v1.10.14**.
+
+**Still open from §3.99:** `confirmations` is computed and rendered by nothing;
+four UC-04 scenarios state a home country their subject's record contradicts;
+and no scenario demonstrates `DNV_COUNTRIES` suppression.
+
+---
+
+## §3.102 — `confirmations` reach the sidebar, and so do the three framings
+
+The last of the three items §3.99 reported and did not fix.
+
+A **confirmation** is the corpus agreeing with the code: one named thing — a
+number, a list, a date — tested against the authority it was taken from and
+found to match. Three use cases publish them on every source group, and nothing
+drew them. Both libraries state the argument for rendering in their own headers:
+
+> *(UC-04)* The one confirmation worth carrying: **a list of faults teaches
+> distrust of everything equally.**
+>
+> *(UC-08)* … recorded because the neighbouring Canada–Netherlands pairing did
+> **not** check out, and **a reader needs to know that this pair was checked
+> rather than assumed to fail together.**
+
+### What the reader was actually seeing
+
+Measured on the seeded UC-04 workation, on the Schengen allowance:
+
+| entry kind | count | rendered before |
+|---|---|---|
+| citations | 2 | yes |
+| caveats | 2 | yes |
+| **confirmations** | **2** (K-2, K-1) | **no** |
+
+So the page said the 90/180 rule as applied here is disputed, and never said
+that **the 90 and the 180 are Article 6(1)'s own numbers** and that the 29-code
+Schengen set matches the Council's own enumeration. Only the application is in
+dispute; the page reported the dispute and suppressed its bound.
+
+### The order is the corpus's, not a layout preference
+
+K-2's own detail ends *"How they are applied is **the caveat above**."* The
+confirmation is written as a bound on the dispute that precedes it, so
+confirmations render **after** caveats — printing them first would leave that
+sentence pointing at nothing. It is the safer order independently: a reader
+scanning a finding meets what changes their action before what does not.
+`test/zafUnsettled.test.js` asserts the corpus still states that ordering before
+asserting the DOM follows it, so the test cannot outlive its own premise.
+
+Drawn as its own kind, never as a caveat. A caveat is a contradiction recorded
+*against* a source we hold and carries the warning colour; `.r-confirmation`
+takes the settled rail and the marker **"Checked and matched — "**, which names
+what was done and claims nothing about the request.
+
+### The framings, rendered for the first time
+
+`SOURCE_FRAMING` and `CAVEAT_FRAMING` are each commented *"Rendered once above
+the citation block. **Not decoration** — see rule 2."* Neither had ever been
+rendered anywhere. So citations were drawn with no statement that a citation
+decides nothing, and caveats with no statement that a contradicted finding is
+not evidence for the opposite conclusion.
+
+A confirmation is the one of the three that can be *misread as an endorsement*,
+so it could not ship without its bound. `CONFIRMATION_FRAMING` is new, verbatim
+in UC-04/UC-07/UC-08 exactly as `CAVEAT_FRAMING` already is — the SOURCE_FRAMING
+sentences are tailored per use case because each names its own decision; this
+one names none, so one wording is one wording rather than three that drift.
+
+**Once for the page, not once per disclosure.** "Rendered once above the citation
+block" was written when a citation block was a single list; they are now a
+collapsed disclosure per finding and a UC-04 case has five. Three sentences ×
+five would be most of the panel, and repetition is the specific complaint this
+page's design answers. They sit once, above the findings, under *"How to read
+the sources under each finding"*.
+
+Every word is the server's. The panel chose placement and the marker word and
+nothing else — a second copy of a safety sentence is how the first one goes
+stale.
+
+### One defensive widening, named
+
+The group filter in `renderSources()` kept a group only if it had citations or
+caveats, so a group whose sole content was a confirmation was dropped — the
+failure confirmations exist to prevent, arriving through the filter that decides
+whether they are drawn. Now widened. No seeded case reaches it; it is not
+fixture-tested, for the reason §3.101 gives about the other unreachable limb.
+
+`test/zafUnsettled.test.js` is now 13 tests. Reverting `zaf-app/assets/` alone
+fails all 13; reverting it after the server change fails the five added here.
+
+Suite: **4807 tests, 4804 pass, 0 fail, 3 skipped.** ZAF app **v1.10.15**.
+
+**This closes §3.99's list.** `openQuestions`, `uncited` and `confirmations` are
+all rendered. Still open and unrelated: four UC-04 scenarios state a home
+country their subject's record contradicts, and no scenario demonstrates
+`DNV_COUNTRIES` suppression.
+
+---
+
+## §3.103 — four UC-04 quick-fills stopped calling four people Portuguese
+
+The last of §3.99's list. Found by the sweep that fixed the other half of it:
+eleven UC-04 scenarios were moved onto João Silva (PT), and **four rows that
+name somebody else kept the `PT` the sweep wrote.**
+
+| quick-fill | subject | record says | form said |
+|---|---|---|---|
+| `uc04-persona` | Chris Lee | **US** | PT |
+| `uc04-no-permission` | Amanda J Walker | **US** | PT |
+| `uc04-other-company` | Lars van der Berg | **NL** | PT |
+| `uc04-persona-other` | Anna Müller | **DE** | PT |
+
+### Why it is not cosmetic, and why the fix belongs on the demo data
+
+Nothing in UC-04 compares the stated home country to the record — **on purpose**,
+and the sidebar discloses it beside the value:
+
+> Stated on the request as the employee's work country. **It is not read from
+> the Remote employment record and is never compared to it, so a wrong country
+> here is not caught anywhere.**
+
+So the panel rendered *"Stated home country: Portugal"* over a United States
+employment and was telling the truth twice. A demo whose rows exercise exactly
+the hole the product discloses teaches the wrong lesson twice over, and the
+stated country is not inert: it is the risk matrix's origin. Chris Lee's own
+request was being assessed as an intra-EU Portugal → Netherlands trip when the
+real route is US → NL.
+
+**This is the second time, in the opposite direction.** The first was a Nigerian
+subject under a form saying DE, and the header comment recording that fix was
+still in this file — describing a rule the file had since broken.
+
+### What changed, and what it cost
+
+Each row now states its subject's own country. Driven before and after, all
+fifteen: **every decision and every reason identical.** One flag correctly
+disappears — `uc04-persona` raised `a1_certificate_recommended` as Portuguese,
+and a US worker travelling to the Netherlands is outside the EU coordination
+regulation entirely. That flag was an artefact of the wrong country; `uc04-low`
+still demonstrates the A1 recommendation on a route where it applies.
+
+**Lars needed a second correction that followed from the first.** Setting his
+origin to NL made his destination — also NL — a same-country request: nonsense
+on its face, and *not* what the row refuses on, since identity is checked first.
+The screen would have shown a self-contradictory trip turned away for an
+unrelated reason. His trip is now João's mirrored, NL → PT, and the refusal is
+`escalate / identity_not_verified` either way because nothing about the route is
+ever reached.
+
+**The cost, paid deliberately: the three "who" rows are no longer the identical
+trip.** They cannot be — a workation's origin is where the person works, and
+this fixture set holds exactly one Portuguese employment, one person without
+workation permission (US) and one person at another company (NL). Inventing
+Portuguese doubles would be fabricating people to make a demo tidier with real
+data available a rung up (CLAUDE.md §3's ladder). Identical now means the
+destination, the dates, the visa type, the duties and the prior stays; each
+refusal names its own gate, so the comparison survives and the false statement
+does not.
+
+`schengen_short_stay` is **kept** for Chris Lee and is not an oversight: Art.
+6(1) applies the same 90-in-180 allowance to visa-exempt third-country nationals
+as to visa holders, so the field is the stay category and not a claim that a
+visa was issued.
+
+### The guard that was pinning the defect in place
+
+`test/portalCopy.test.js` required every field but the subject to match across
+the trio — *"the claim the page makes when it says the same trip"*. That
+requirement is what kept Amanda and Lars Portuguese: **the guard was enforcing
+the defect.** It now exempts the subject's own country, and two new tests do the
+work it could not:
+
+- every UC-04 quick-fill's stated home country equals its subject's country
+  **read out of the mock through the same client the portal uses** — a table
+  restated in the test would be a second copy of the fixtures and would agree
+  with a scenario that had drifted, which is how both instances survived review;
+- no quick-fill sends its subject to the country they already work in, except
+  `uc04-same`, which is the gate it demonstrates.
+
+Reverting `app.js` alone fails both — including the second on Lars, catching the
+latent contradiction that had been sitting under the first one.
+
+**Nationality is deliberately not asserted.** The employment record carries no
+nationality field (`INTAKE-RESEARCH.md` §6.4 — one of the five UC-04 gate inputs
+with no source in any Remote object), so there is nothing to compare against and
+a test that asserted one would be inventing the fact whose absence it documents.
+
+Suite: **4809 tests, 4806 pass, 0 fail, 3 skipped.**
+
+**§3.99's list is now closed in full.** `openQuestions` (§3.101), `uncited`
+(§3.101), `confirmations` (§3.102) and the four home countries (here). Still
+open and unrelated: no scenario demonstrates `DNV_COUNTRIES` suppression.
+
+---
+
+## §3.104 — the UC-04 page a specialist actually opens
+
+The project owner walked the demo — UC-03 workation → continue → UC-04 in the
+Zendesk sidebar — and said *"I saw so many things here I was not happy with. e.g.
+how can the relevant doc be absent"*, and asked whether US → Portugal is the
+right demonstration. Three subagents audited it in parallel. Sixteen defects,
+every one a **string**, and not one had a test: `npm test` never imports a
+browser asset, and server prose is only ever compared to itself.
+
+### The page contradicted itself, and the citation underneath proved it
+
+The treaty dimension read:
+
+> US → PT … **this system holds no register of pairs that ARE covered**, so
+> nothing here confirms one.
+
+…printed inches above a citation to **D-20, the SSA's own status table, which
+carries the US–Portugal row** (in force 1989-08-01, TIAS 12121). False three
+ways: UC-08's `SOCIAL_SECURITY_COVERAGE` is a five-column register naming six
+pairs, `EU_EEA_FOR_A1` is a coverage register too, and **caveat C-9 — rendered
+under this very finding — names five covered pairs with their authorities,
+effective dates, certificate forms and detachment maxima.** §3.100 fixed exactly
+this shape in the EU branch of the same function and left the other branch
+standing.
+
+Fixed to the true, narrow claim: UC-04's own matrix holds a known-gap list and no
+register of covered pairs, so nothing *in the check* confirms coverage. **The
+state stays `unknown`** — flipping it would stop C-9 itself from rendering, and
+dimension 1 asks about tax as well as social security while the register answers
+only the second. Written up for the owner as `HUMAN-DECISIONS-REQUIRED.md`
+§D2(a), reopened with the evidence that the table partially exists.
+
+### The loudest sentence on the page was false
+
+Gate 18's `means` — rendered as the panel's lead — said *"a dossier was prepared
+for a mobility specialist to approve. The workation is NOT approved yet — a
+named human still has to approve it"*, four inches above the capacity card
+saying **"Nobody approves this here."** The 2026-08-30 three-stage rework (§3.94,
+§K14) established that no stage this system can reach approves a work
+authorization, rewrote the panel and the server, and never touched this string.
+
+It now names the party that really decides — the customer's own manager, in
+Remote's product. **Note the vocabulary:** the first rewrite used "API" and
+"endpoint" and `test/portalRequesterFacts.test.js` rejected it, because this
+string is requester-facing and those words are banned from anything an employee
+reads. The guard doing its job.
+
+### The demo route, and why PT could not be rescued
+
+`suggestedVisa("PT")` answers `digital_nomad_visa` **because PT is in
+`DNV_COUNTRIES`** — so the continuation filled in a residence visa for a 21-day
+holiday a US national needs no visa for. Then `classifyRisk()` guards its
+Schengen block with `!DNV_COUNTRIES.has(dest)`, and **the same five-entry list
+cancelled the count.** One uncited list — `[PROPOSED]`, no authority, no
+version, never reviewed — both picked the document and suppressed UC-04's single
+most substantive computation, which rendered as *"Excused, not measured"*.
+
+Changing the visa does not help: measured, `schengen_short_stay` to PT is still
+suppressed, because the suppression keys on the destination. **NL is the only one
+of the four demo countries that can produce the number** — PT is suppressed, CA
+and US are not in the Schengen area at all. The route is now **US → Netherlands**,
+which keeps the persona and where the allowance genuinely binds a US passport
+holder (art. 6(1) applies to visa-exempt third-country nationals).
+
+**PT → NL was the richer alternative and was rejected**: three instruments
+instead of one and an A1 flag, but it applies the 90/180 allowance to an EU
+citizen exercising free movement, with no nationality caveat on the row. That is
+the same defect as the DNV suppression pointing the other way.
+
+**The continuation now offers one prior stay**, because it offered none and an
+empty history is not neutral: the 183-in-365 row is not rendered at all without
+one, the Schengen count demonstrates no arithmetic, and cumulative presence
+answers `unknown`. 46 days is chosen so both windows report and neither decides
+— **67 of 90 Schengen, 67 of 183 residency**. Driven end to end: `ready_for_approval
+/ all_gates_passed`, both windows measured, where before the page showed one
+excused measurement and two unknowns.
+
+### The rest, by class
+
+**Machine vocabulary where a human one already existed.** "Filed by
+8ab12460-…" sat six inches under a card resolving that id to *Chris Lee* —
+and `renderSubject` 190 lines up already refuses to print the same UUID twice
+(*"the same UUID twice is not two facts"*). Three prose sites interpolated a raw
+code or enum beside a row rendering the same value in words: *"NL is inside the
+Schengen area"* over *"Destination Netherlands"*, *"Duties are 'engineering'"*
+over *"Job duties Engineering"*. And a **composed** label, *"Days in NL across a
+rolling 365 days"*, which the browser's country registry cannot reach at all
+because it maps whole labels.
+
+**Counts that did not describe the screen.** *"All 18 gates"* was a row count
+wearing the wrong word — UC-04 has 18 positions across **8** gate names, ten of
+them `risk_matrix` — now *"All 18 checks … grouped into 8 gates"*. Findings were
+numbered **1, 3, 4** because a cleared dimension is filed into a collapsed
+section and takes its number with it; they now number by where they render.
+*"The rule this is based on — 1 document"* hid **three** recorded
+contradictions; caveats are counted now.
+
+**An em dash that walked through its own guard.** Gate 15 carried `checks: "—"`
+and rendered as *"15. risk_matrix passed · Checks: —"* — a bug canary shown as a
+check that ran and cleared. `test/gateLadder.test.js` required `length > 0`;
+`"—"` is length 1, while `means` on the next line was floored at 20. Both are 20
+now, **and the tightened guard immediately found the identical placeholder in
+UC-09.**
+
+**Two risk numbers that looked like a disagreement.** *"This request: medium
+risk"* is, with zero flags, the static **use-case** baseline; *"Risk rollup:
+low"* at the bottom is the only per-request assessment made. The subject now
+switches with the fact.
+
+**A false absence.** *"The requester's own words — Not stated"* asserted the
+requester explained nothing, while the note attached to that row says the words
+exist in the audit record and this table has no column for them.
+
+**My own bug from §3.102**: the framing note sat between the heading *"What was
+not established"* and the findings it names, effectively retitling it. Moved
+below them.
+
+### Two things reported and deliberately not done
+
+**The role slug** (`uc04:mobility_specialist`) was gated on `openHere` and the
+change was **reverted within the hour**: `test/zafApprovalRole.test.js` refused
+it, and the test is right — the rendered string is an identifier, not an
+invitation, and the sentence above it already says the absence is structural.
+The invitation lived in a code comment, which is what to fix if it ever misleads.
+
+**The `unknown` state on six documented pairs** — the owner's call, §D2(a).
+
+`test/uc04SidebarCopy.test.js` (12 tests) drives the real workflow, the real read
+handler and the real bundle over the fake DOM and reads the words that came out.
+Reverting `src/uc04/`, `src/uc09/` and `zaf-app/` fails all twelve.
+
+Suite: **4821 tests, 4818 pass, 0 fail, 3 skipped.** ZAF app **v1.10.16**.
+
+---
+
+## §3.105 — the treaty dimension stopped saying "Unknown" over its own citation, and Chris Lee stopped being two people
+
+The owner read the UC-04 page again and asked two things: *"i thought Chris lee
+is an engineer, or is he a data scientist now?"* and *"so much feels wrong here,
+e.g. 'totalization / treaty coverage Unknown' — our demo is not meant to have
+unknown."* Both were about the same page. Neither was a rendering bug.
+
+### The register existed. It was one use case over, twice.
+
+`Totalization / treaty coverage: Unknown` was printed for United States →
+Netherlands directly above a citation to **D-20** — the SSA's own status table,
+which carries the US–Netherlands row — and above caveat **C-9**, which names the
+pair as covered with its authority and effective date. §3.100 fixed the EU half
+of that sentence and left this one; the 2026-08-31 pass fixed the remaining false
+clause and left the STATE, twice recording that flipping it was the owner's call.
+It has now been called.
+
+What the fix needed was already in the repository:
+
+| Register | File | Holds |
+|---|---|---|
+| `SOCIAL_SECURITY_COVERAGE` | `src/uc08/decisionSources.js` | six pairs · network · certificate · maximum initial detachment |
+| `TAX_CONVENTION_BY_PAIR` | `src/uc07/decisionSources.js` | the bilateral tax convention for the same six |
+
+**The same six, checked rather than assumed** — both key sets are `CA|NL, CA|PT,
+CA|US, NL|PT, NL|US, PT|US`, which is every pair of the four demo countries
+(`DEMO-COUNTRIES.md`: NL · PT · CA · US). So **no pair in the demo matrix reads
+`unknown` any more**, and the six that changed did so from documents already
+retrieved, hashed and provenance-headed. Nothing was fabricated and no figure was
+computed: the pair is looked up and the columns are printed.
+
+Both are **imported, not copied** — the rule `src/uc04/policyEngine.js` already
+follows for UC-03's `SANCTIONED_OR_RESTRICTED`. Whether an instrument is in force
+between two states is a property of the pair, not of the use case asking, and two
+copies of a jurisdiction fact drift silently. Exporting a frozen citation map
+breaks neither of `decisionSources.js`'s two structural properties: it still
+imports nothing, and no gate still reads it.
+
+### Both limbs, or neither — and the absences had to survive
+
+The dimension asks about a social-security **or tax** agreement, and those are
+different instruments settling different things. `cleared` therefore requires an
+entry in **both** registers; a pair only one holds falls through to `unknown`
+unchanged. That is the split `qa/HUMAN-DECISIONS-REQUIRED.md` §D2(a) recommended,
+enforced by the condition rather than by two rows — and its third objection
+("coverage is settled would be true of half the question") dissolved on
+measurement, because the tax half turned out to be answerable for the same six.
+
+**Answering a question by making "I do not know" unreachable is not an answer.**
+Both gap branches are driven in the tests on pairs the registers genuinely do not
+hold — DE → MX for the plain one, DE → ES for the intra-EU one that still says
+the tax side is unsettled — and IN → US still reports a **known gap** rather than
+an absence. If those ever go green, the register has stopped being a register.
+
+### The caveats moved, and only one of them retired
+
+The citation group is keyed on the dimension's state, so the covered case got its
+own key (`treaty_coverage_confirmed`) rather than reusing the unknown one — which
+is where §D2(a)'s second objection would otherwise have bitten, silently.
+
+- **C-9 retires.** It says "four country pairs this system reports as unknown are
+  in fact covered". UC-04 no longer makes that claim. Marked acted-on in
+  `CONTRADICTIONS.md`, not deleted.
+- **C-8 and C-24 stay.** Both dispute the *maximum initial detachment* column the
+  finding now **prints**, and neither was discharged by anything: there is still
+  no single detachment maximum, and the CRA's Canada–Netherlands row still pairs
+  one agreement's date with another agreement's limit. **A caveat retires when
+  the claim it disputes stops being made, never when the finding it sits under
+  turns green.**
+- **K-4 joins them** — Canada–Portugal checked against the agreement text and
+  held. A page that prints only the failure teaches a reader that nothing on it
+  was verified.
+
+The finding states its own bound out loud: an instrument in force is **not** a
+certificate obtained for this trip, and this system checks for neither.
+
+### A fourth document would have been cited on a pair it does not govern
+
+Listing the instruments surfaced a latent defect in the route filter.
+Regulation 883/2004 is tagged with all thirty EU/EEA codes and was matched with
+`.some()`, so **D-17 and D-18 survived a United States → Netherlands route**
+because the Netherlands is on the list. Under the old `unknown` finding they were
+never cited; under the new one they would have been — the page would have named
+the EU regulation as an instrument in force for a pair the United States is one
+half of. That is the "OECD Model on a DE/ES question" defect one level down: the
+right family of document, the wrong jurisdiction, printed with a real publisher
+and a real retrieval date.
+
+`scope: "eu"` now requires **both work-side endpoints** inside the Union. Work
+side and not nationality, deliberately: 883/2004 keys on where a person works and
+is posted, and a third-country national legally resident in a Member State is
+inside the coordination — testing nationality would drop the regulation from an
+intra-EU posting made by a US national, which is the opposite error. The filter's
+rule is unchanged: it only ever removes, and only on positive evidence, so a
+route missing either end falls through untouched.
+
+### Nothing about the decision moved
+
+No flag, no risk level, no gate, no routing. `NON_TREATY_PAIRS` remains the only
+country-pair rule with any effect on the outcome, and it was not touched — which
+is why this needed **no n8n republish**: `workflows/nodes-uc04/workationGates.js`
+has no treaty dimension to drift from. Asserted two ways rather than argued:
+neither `riskMatrix.js` nor `policyEngine.js` can even name the registers or the
+new key, and a covered route raises no flag.
+
+### Chris Lee is a Data Scientist, and ten of eleven fixtures said otherwise
+
+"Job title: Data Scientist" and "Duties are 'Engineering'" sat six inches apart.
+Both were correct and nothing said so. Two separate causes:
+
+**1. The mock had drifted from the record it stands in for.** Read live from the
+Sandbox on 2026-08-31, employment by employment: **ten of eleven mock job titles
+contradicted the live record for the same id** — Chris Lee "Staff Engineer" here
+and *Data Scientist* there, Emma Thompson "Customer Experience Manager" and
+*Staff Photographer*, Lars van der Berg "Data Engineer" and *Sales Coordinator*.
+Only Alex Morgan agreed. The portal dispatches its Remote reads into the mock;
+the sidebar reads the live gateway — so one person had two job titles on one
+demo, and the file's own header said job title was "this file's own."
+
+**The ladder settles it, not a preference** (CLAUDE.md §3): a real value always
+wins, and rung 3 fills only what rung 2 left empty. Rung 2 answers this for every
+one of these ids. Eight titles were rewritten from the live record; Thomas Weber
+is left without one because the Sandbox returns null for him, and rung 3 may fill
+what rung 2 left empty but must not invent what rung 2 answered with nothing.
+
+**2. Nothing on the page said the two facts come from different places.** The
+stated home country has carried exactly that disclosure for weeks — *"not read
+from the Remote employment record and never compared to it"* — and the duty
+category never did, so the one row where the record offers an independent check
+read as though it **were** the record. `src/uc04/server.js`'s own comment already
+said the title is "the only independent evidence about the role this system
+holds" and that "nothing here compares them; a human does" — and the human cannot
+do that if nobody tells them there are two facts.
+
+The fix is the label and the sentence, on all three branches including the one
+that **escalates**, where a miscategorised `executive` costs most. Not a
+comparison: `src/uc04/intakeExtractor.js` already refuses that judgement by name,
+because choosing which of seven categories a job title implies is exactly what a
+model must not do here. A Data Scientist selecting 'engineering' is a correct
+answer; so is 'other'.
+
+### Also fixed, one level down
+
+The prose said "US → NL" while the evidence row beneath it said "United States →
+Netherlands" — both this dimension's own output. The row goes through the
+sidebar's country registry because its *label* is mapped; a code interpolated
+into a sentence is unreachable by it, which is the same defect §3.101 fixed for
+"Days in NL". All four branches now spell the names where the codes are.
+
+### Evidence
+
+`test/uc04TreatyCoverage.test.js` (12 tests) drives the real matrix, the real
+describer and the real route filter. Reverting `src/uc04/decisionFacts.js` and
+`src/uc04/sourceJurisdiction.js` fails **8 of 12**; the four that pass are the
+invariants that held before and exist to catch a future regression — the two
+surviving absences, the two registers agreeing on their key set, and the
+structural guard that no gate can read either.
+
+Suite: **4833 tests, 4830 pass, 0 fail, 3 skipped.**
+
+---
+
+## §3.106 — the reference control that could not be used, and two Unknowns that were demo data
+
+Three reports from one sitting with the sidebar and the portal open. All three
+were the same shape: a screen stating something true in a way that could only be
+read as something else.
+
+### The one that blocked a real attempt
+
+The owner corrected the prior-stay boxes on a UC-04 form reached by continuing a
+travel request, resubmitted, and got:
+
+> Reference sent: `uc04-20260831090845-4tyos`
+> … Already processed — this reference was refused as a repeat delivery
+> Reference already claimed: **59**
+
+Two ids, no stated relationship, and the second never shown to them before.
+*"i tried doing it myself, but could not go through."*
+
+**The server was right and the page was wrong.** `src/portal/server.js` files a
+continuation under the TRAVEL request's own reference, so the routing and the
+work authorization sit side by side under one id — deliberate, documented, and
+already tested (`test/portalUc03Continuation.test.js` asserts both the
+substitution and the redelivery refusal). What no test covered was what the
+requester is told. The browser sends `reference("uc04")`, a freshly generated
+id, and reported **that** back — while the server had recorded a different one.
+
+Measured on the deployment before the fix, two submissions carrying two
+genuinely different references:
+
+```
+UC-04 sent externalRef=repro-fresh-AAAA → recordedRef 64 · alreadyHandled false
+UC-04 sent externalRef=repro-fresh-BBBB → recordedRef 64 · alreadyHandled true · duplicateOf 64
+```
+
+So on this path **no value of the reference control can produce a new
+submission**, and the control said nothing about it. "Generate a new reference"
+was an offer the page could not honour.
+
+**A comment is what let it live.** `server.js` said the override was *"a no-op
+in the ordinary case"* because *"the page sends this same value back (it
+received it from the continue route)"*. It never did — `CARRIED_FIELDS` in
+`uc03Continuation.js` does not include the reference. On the continuation path
+the override is **always** a correction, so the belief that it was usually
+invisible was exactly backwards. Corrected in place, with the measurement.
+
+Three changes, none to the substitution itself:
+
+- **The page reports `recordedRef`** — the id the server actually claimed —
+  rather than its own guess, and everything the control does keys off it, or
+  "Reuse" repeats an id that was never used. `recordedRef` was already on the
+  wire, published with a comment naming this very hazard for the audit trail;
+  the browser simply never read it.
+- **When the two differ, the page says so**: which id was discarded, which one
+  the record is under, and that the control does not apply to this submission —
+  the part that actually unblocks a reader, so they stop trying.
+- **The refusal says what happened.** `deliveryFields()`'s wording is written
+  for a webhook that fired twice, where sending a different reference IS the
+  remedy. Here there is none. `continuationDuplicateFields()` narrows it — it
+  returns nothing at all unless the workflow reported a duplicate AND this was
+  a continuation, and it changes only the explanation, leaving `alreadyHandled`,
+  `duplicateDelivery` and `duplicateOf` exactly as they were:
+
+  > This travel request already has a work authorization … **The details
+  > currently on the form were not used**, and the decision shown is the one the
+  > first submission reached … To have a different work authorization assessed,
+  > start a new travel request.
+
+### The second Unknown, which was demo data rather than a defect
+
+The live page for ticket 62 reported *"Cumulative presence, rolling window —
+Unknown"* on a request that had passed every check. The check was right: nothing
+was supplied, so 0 over 0 trips is a **floor, not a measurement**, and refusing
+to read silence as a clean record is the point. But **the two quick-fills a demo
+drives to a green decision were the only place a reader met it**, and an absence
+sitting among four findings reads as a gap in the system rather than in the
+request.
+
+`uc04-low` and `uc04-persona` now carry the same prior stay the UC-03
+continuation already offers (`DEMO_PRIOR_STAY`), so the two routes into this
+form do not disagree about the traveller's history: **60 of 183** against the
+residency watch line, **60 of 90** in the Schengen window. Their PAIRED refusal
+rows got it too — `test/portalCopy.test.js` asserts each pair differs only on
+who is travelling, and it caught the first attempt, which changed one side. The
+other refusals are deliberately left blank: each refuses at a check that runs
+before the risk matrix, and handing them history risks moving which check
+decides, which is the thing those rows exist to demonstrate.
+
+**The floor case moved rather than disappeared.** `portalUc04TravelScenarios`
+relied on `uc04-low` happening to be empty; it now clears the boxes explicitly,
+which is what a tester does to see the floor and is a stronger claim than a
+quick-fill's incidental emptiness. A prefilled demo value must not be able to
+hide the honest answer, so the same scenario is driven both ways.
+
+### The third — a filer with no name
+
+*"Filed by admin_jane"* appeared in the slot that reads *"Filed by Chris Lee"*
+when the filer IS the subject. Both correct; only one a name. This is the
+**opposite** of §3.104's bare-UUID defect, and the two look identical at a
+glance: that one had a name and did not use it, this one has no name at all.
+The substitution deliberately does not fire for a company admin — nothing has
+read a record for them, and inventing one would be worse — so what is fixed is
+the row no longer *looking* like a resolved name. It is drawn in the same face
+as `.r-case-id`, which is where a reader already meets identifiers on this
+panel. The note under "What each of these does not establish" already said what
+the value is; the row now agrees with it at a glance.
+
+### Evidence
+
+Four new behavioural tests plus the two repointed ones; reverting `src/portal/`
+and `zaf-app/` fails all four. The continuation pair is driven through the real
+portal handler with a real ledger, both outcomes, and the narrowing is pinned
+from the other side too — an ordinary admin-filed duplicate must KEEP the
+repeated-delivery wording, or the fix has widened into a lie about webhooks.
+
+Suite: **4840 tests, 4837 pass, 0 fail, 3 skipped.**
+
+---
+
+## §3.107 — the immigration document nobody had looked for
+
+**2026-08-31.** The project owner, reading UC-04's fourth dimension: *"Immigration
+documents. Is this documents the employee we provide? In every life scenario,
+would the employee have an important documents in their sandbox or in their
+employee details, or did they usually have that?"*
+
+The answer is yes on both counts, and the panel was saying no without having
+looked. `documentDimension()` published an evidence row reading
+**`Document read from Remote: none`** — a hard-coded string literal, on an
+employment record the same request had already fetched.
+
+### What was measured, and on which rung
+
+**Rung 1 — Remote really does collect these.** *"Remote's Right-to-Work Checks"*
+(help article `31105131499789`, retrieved 2026-08-31): *"Remote collects
+nationally recognized identification documents and conducts secure identity
+verification through trusted providers. For employees working in a country other
+than their country of nationality or usual residence, the Mobility team reviews
+residence permits and other relevant documentation to confirm both legal stay and
+work authorization."* Ordinary EOR onboarding, and **Remote** is a holder of the
+document, not only the employee.
+
+**Rung 1 — the API has a typed home for it, on the record UC-04 already reads.**
+`GET /v1/employments/{id}` carries `files[]`, documented as *"Documents
+associated with this employment (e.g., contracts, tax forms, identity
+documents)"*, whose `File` schema example is literally
+`{name: "id.pdf", type: "id", sub_type: "personal_id"}`.
+
+**Rung 2 — the Sandbox holds none.** Swept across all 112 employments: 333 files,
+`contract` 108, `expense` 221, `document_scan` 2, `background_check` 2, **zero of
+type `id`**, every `sub_type` null. (The two `document_scan` rows are named
+`receipt.pdf`.) A Sandbox holding none of a thing is **rung 2 being empty, never
+rung 1 answering** (CLAUDE.md §3), so nothing here reads that emptiness as a
+statement about how Remote works.
+
+**And the field was being thrown away.** `grep -n files src/remote/restClient.js`
+returned nothing: `normalizeEmployment()` built its result from an allow-list and
+`files` was not on it — the same mechanism that lost `custom_fields` and broke
+UC-04's employer-permission gate for every live record.
+
+### The half of this change that must NOT work
+
+**Finding an identity document does not clear the dimension, and that is Remote's
+own rule rather than caution.** A right-to-work document on the employment record
+establishes entitlement in the **country of employment**. UC-04 asks about the
+**destination**, and Remote's *"Remote Work Authorization"* article
+(`37802834593805`, updated 2026-08-18) puts it on both sides at once: a work
+authorization is *"subject to the visa or work permit regulations of both the
+destination country and the employment country."*
+
+So `UC-04.md` §5's *"never inferred from 'this destination usually doesn't
+enforce it'"* and §9's *"No immigration document on file → Escalate — never
+inferred"* survive untouched. `summariseIdentityDocuments()` has **no `cleared`
+state and no caller that could produce one**, and
+`test/uc04ImmigrationDocuments.test.js` drives all six reachable record shapes
+through the real function asserting it each time. The dimension stays
+`unavailable` with the document **reported** and the bound **stated**.
+
+### What was built
+
+- **`src/remote/restClient.js`** carries `files` raw, as the array Remote sends —
+  same reason `basic_information` / `contract_details` / `custom_fields` are
+  carried unflattened. **An absent key stays `null`, never `[]`**: "the record
+  did not carry the field" and "the record carried it and it was empty" are two
+  states and `?? []` erases one before any caller can see it.
+- **`src/uc04/identityDocuments.js`**, the one place that interprets it. Four
+  states — `not_read`, `field_absent`, `none_on_file`, `on_file` — because
+  "nobody looked", "we read a record with no such field" and "we looked and there
+  are none" were all rendering as the same word, and only the third is a fact
+  about the employee. Same argument `employeeSubject.js` makes for its five and
+  `upstreamFailure.js` for `not_found` vs `unavailable`. **Presence only, never
+  content**: no file name, number, URL or body leaves the summariser, and a test
+  serialises the result and asserts each is absent. `background_check` and
+  `document_scan` are deliberately **not** identity documents.
+- **Read at view time, not persisted.** `uc04_authorizations` has no column for
+  it and half-adding one the store would drop is worse; the same three reasons
+  `employeeSubject.js` gives for re-reading a display name apply, and the first is
+  the one that matters here — a document filed the day after the request was
+  submitted is exactly the case a specialist cares about.
+- **One GET serves both blocks.** `readEmploymentForSubject()` was split out of
+  `describeEmployee()` so the subject panel and dimension 4 share a read. The
+  alternative was a second GET per panel open or a second copy of the
+  not_found/unavailable/not_looked_up distinction — and that distinction is the
+  whole point of the file. The other eight callers pass nothing and are unchanged.
+- **Both fixtures, one marked.** `emp_active_001` (Amara Okafor) carries a
+  `standin-` identity file, because that is the record `npm run uc04-api` seeds
+  all six demo cases against and the one the sidebar fixture renders — the
+  on_file branch is unreachable on live data, so the demo record is the only
+  place it is ever seen. Chris Lee carries the same shape for the portal
+  personas;
+  the marker makes the whole summary declare itself and every surface prints
+  *"STAND-IN FIXTURE, not a document Remote returned"* beside the finding
+  (rung 4: fabricated is permitted, unmarked is not). Emma Thompson carries a
+  contract and no identity document — **the shape all 112 live employments
+  have**, so the demo shows the distinction the Sandbox alone cannot.
+
+### Two sentences that were false and are now branch-dependent
+
+The ZAF gloss for `unavailable` read *"The check does not exist yet — nothing was
+ever consulted"*. It was wrong for **both** of its users: UC-09's
+`pending_approval` branch consults the record twice and holds no confirmation
+only between them, and UC-04's now reads `files[]`. A shared state word must not
+assert how any one dimension reached it.
+
+And the finding's own closing clause — *"which is why it is reported as absent
+rather than assumed"* — is a flat contradiction one clause after reporting a
+document. **Caught by driving both fixtures, not by reading the string**, which
+is the only way it could have been: the `on_file` branch is unreachable on live
+Sandbox data, so nothing but the stand-in exercises it.
+
+`decisionSources.js`'s `immigration_document_on_file` note said *"no document is
+read from Remote at all"*. True of the code, no longer true, corrected in place
+with what the read can and cannot establish.
+
+### Pinned
+
+`test/uc04ImmigrationDocuments.test.js`, 17 tests. Negative control: reverting
+`decisionFacts.js`, `restClient.js` and `decisionSources.js` fails **6 of 15**
+of the ones that existed at that point (the nine that still pass are the new
+summariser's own, which the revert does not touch). Includes a structural guard
+that `policyEngine`, `riskMatrix`, `approvalPolicy` and `requestParser` never
+import the summariser — a fact that cannot change an outcome can be reported
+honestly without anyone re-auditing the gates — and an assertion that the demo
+record still carries its marked fixture, since a dropped fixture would return
+the demo to "not carried on the record read" with the whole suite green.
+
+### Verified live, and the live reading is the honest one
+
+Two portal requests were filed against the deployment and read back through the
+ZAF `by-ticket` route (tickets **70** and **71**). The sidebar's Remote client is
+the real one, so what it reported is **genuine Sandbox data** rather than the
+mock: Chris Lee `none_on_file`, 1 file, `contract`; Emma Thompson
+`none_on_file`, 2 files, `contract` + `document_scan`. That independently
+reproduces the sweep — Emma really is one of the two employments holding a
+`document_scan` — and it is the field arriving end to end from Remote's API
+through the deployed function to the panel.
+
+**So on the deployment this dimension will always read "none on file", and that
+is correct rather than a shortfall.** The populated branch is a property of the
+mock, by necessity: rung 2 holds no identity document to read.
+
+Suite: **4857 tests, 4854 pass, 0 fail, 3 skipped.**
+
+---
+
+## §3.108 — the request that reached nobody, and the two stages that had no button
+
+**2026-08-31.** The project owner filed a UC-04 work authorization through `/portal`,
+opened the employer screen, and it was not there. Their words: *"It is meant to reflect
+INSTANTLY on the employer screen."*
+
+They were right, and the session before this one had already found it and left it as a
+question instead of a fix — *"worth deciding whether stage 1 in the portal should mint a
+work-authorization row so the two halves join up."* **An approver who cannot see the
+request that was just filed does not have a workflow, and framing that as a design option
+was the error.** The same reading produced three more: the employer screen was a column of
+tall cards repeating the same two paragraphs of ladder prose under every row, stage 3 had
+no control at all, and the employee never learned the answer.
+
+### What was wrong, in four independent places
+
+1. **Nothing joined the two surfaces.** `resolveEmployerScope()` read Remote's real
+   `GET /v1/work-authorization-requests` and an in-memory rung-3 stand-in store. The
+   portal writes `uc04_authorizations`. Neither knew about the other.
+2. **`npm run remoteui` built an unpooled store**, so even after the join the LOCAL demo
+   would show an empty queue — the portal and the employer screen are different processes.
+   This would have looked exactly like the bug being fixed.
+3. **The employer's own decision was invisible in `/audit`.** Its audit row carried
+   `details.workAuthorizationId` and no `details.externalRef`, and
+   `src/auditview/readStore.js` searches that field BY NAME — so the feed showed the
+   request filed and the ticket handed off with the decision between them unreachable from
+   the only id a human holds.
+4. **Two of UC-04's three deciders had nowhere to click.** Stage 2 had a screen and stage
+   3 had none.
+
+### The join
+
+`src/remoteui/workAuthRecords.js` maps a stored row into Remote's own
+`WorkAuthorizationRequest` shape, emitting **only fields the portal actually collects** —
+`reason`, `travel_document_number`, `work_location`, `user` are **omitted, never
+invented**, and facts Remote's schema has no field for (nationality, visa type, job
+duties, the risk verdict) live outside `request` rather than being smuggled into it.
+
+`resolveEmployerScope()` takes the store as a third source and is handed **only the
+employment ids already read back from Remote and found to be in the session's company** —
+so it cannot widen scope, and nothing from a query, header or body reaches it. Deduped
+against rungs 2 and 3, **a real Remote row always wins** and ours is skipped and named in
+`recordProbe.displacedByRemote`. Sorted newest-first, which is the whole of "instantly".
+
+### No migration, because none was available and none was needed
+
+Supabase is unreachable over raw TCP from this container, so a schema change was not on
+the table. The employer's verdict goes to columns that already exist, and **the status
+strings are Remote's own enum** (`approved_by_manager` / `declined_by_manager`) so the
+store's status and the screen's status are one string. Stage 3 lives on the append-only
+`audit_log`, read back by `mobilityReviewLog.js` — the same choice `src/portal/server.js`
+already documents for UC-04, with the trade stated in that file's header rather than
+glossed: no uniqueness constraint (mitigated by a `workflow_claims` claim), no index, and
+a second place UC-04 state lives.
+
+### Stage 3: recorded, never transmitted
+
+The owner's call (`qa/HUMAN-DECISIONS-REQUIRED.md` §K14, extended). **The API fact was not
+overruled** — Remote publishes no endpoint that sets `approved_by_remote`. What changed is
+that the reviewer's verdict is now recorded here, durably, naming them, and drives the
+employee's page and document.
+
+Three properties are structural rather than conventional:
+- **`submitMobilityReview()` takes no Remote client.** There is no path along which it
+  could transmit.
+- **The verbs are `clear` / `decline`, not `approve`.** The employer used that word on
+  this same record at stage 2, and one record carrying two people's "approved" is how a
+  reader comes to believe one of them settled the other.
+- **It refuses by name when the employer has not approved first**
+  (`employer_approval_not_recorded`), so a stage-3 clearance cannot arrive out of order.
+
+The same sentence — recorded here, not sent to Remote, Remote's own systems will not show
+it — appears on the reviewer's panel *before* they click, in the audit row, on the
+employee's status page and on the issued document. This repository has shipped a record
+claiming Remote approved a trip Remote never saw exactly once
+(`src/uc04/workflow.js`'s header); that is why the guarantee is built rather than promised.
+
+### The screen
+
+One row per request — name · destination · dates · reason, provenance badge, **Approve /
+Decline on the row**. Six to nine visible at once, where it was one per screenful. Decline
+reveals its reason box inline and sends nothing until confirmed, so Remote's mandatory
+reason never arrives as a post-click refusal. The verdict lands on the row in the server's
+words.
+
+**The ladder and stand-in prose are said once**, in a collapsed explainer, and a test
+COUNTS OCCURRENCES — a substring check cannot tell "said once" from "said under every
+card", which is how it came to be repeated in the first place. What stays per row is only
+what is true of that row: the origin badge and the permanent-establishment warning.
+Polling is 10s, stops entirely on a hidden tab, and defers the re-render while a decline
+reason is being typed. The origin badge renders an **unrecognised token verbatim** rather
+than switching on a closed list, so a new provenance cannot silently render as "From
+Remote's API".
+
+### Three registers that did not know about any of it
+
+Found by asking what else reads UC-04's status, and all three failed in the
+under-claiming direction — nothing was ever false, which is the only reason they were
+findable at all:
+
+- **`src/approvalqueue/awaiting.js`** had no case for either employer status, so both read
+  `unknown` and dropped out of the queue's headline. Registered — and
+  **`approved_by_manager` is `awaiting`, not settled**, because the employee is not cleared
+  to travel until stage 3 answers. This is precisely the "a status added to a store later"
+  failure that file's own header warns about, arriving after the warning was written.
+- **`src/auditview/humanDecision.js`** had no verdict entry for the four new actions, so
+  two real human decisions rendered in the live feed as generic events. The words differ
+  on purpose — stage 2 "approved", stage 3 "cleared" — and stage 2's shape is `slot`
+  rather than `settles`, matching the queue's judgement one file over.
+- **`src/approvalqueue/approvalRoutes.js`** named a mobility specialist as the person
+  making the *customer's* decision. Corrected, with stage 2 and stage 3 both enumerated —
+  **and the residual hole named rather than smoothed over**: the registry is one row per
+  use case, so a stage-2 item and a stage-3 item resolve to the same directions. Making
+  the route status-dependent is the real fix and is a shape change to that file's key.
+
+### Pinned
+
+62 new tests across four files. The queue UI test boots the real `workauth.js` in
+`node:vm` against the **real server handler**, so what it asserts on is what the server
+sends rather than a fixture. Negative controls were run per agent and per file, including
+one where reverting a store made the test file fail to *import* — which proves nothing, so
+the tighter control was used instead.
+
+Suite: **4923 tests, 4920 pass, 0 fail, 3 skipped** (baseline 4857/4854/0/3).
+
+### Not done, and named
+
+`workflows/nodes-uc04/` knows nothing about stage 3 — the n8n graph is untouched.
+`src/portal/ownership.js` lets an admin file a request they can then never collect the
+document for; deliberate, documented in `recordDelivery.js`, and a product call worth
+confirming.
+
+## §3.109 — the last copy of the wrong actor, and why stage 3 does not belong in the graph
+
+**2026-08-31.** §3.108 closed with a named gap: *"`workflows/nodes-uc04/` knows nothing
+about stage 3 — the n8n graph is untouched."* This is that gap, opened up and answered.
+It turned out to be two questions, and the second one's honest answer is a refusal.
+
+**Nothing here has been deployed.** The files are tested and the live-graph change is
+written down in `workflows/nodes-uc04/DEPLOY-2026-08-31.md`; the deploy and the live
+proof are the owner's.
+
+### What the graph was telling people
+
+`workationGates.js` composed the summary sentence *"Awaiting one mobility specialist's
+approval before the authorization is issued."* for every `ready_for_approval` decision,
+and the live `Flag Awaiting Specialist Approval` Zendesk node wrote *"AI drafted
+workation authorization {id} — awaiting ONE mobility specialist's approval"* onto the
+ticket, tagged `uc04_ready_for_approval`.
+
+Both are false under the model settled on 2026-08-30 (`UC-04.md` §1a). A
+`ready_for_approval` request waits on **the customer's own manager**, in Remote's own
+product, and it is the only work-authorization decision Remote's API accepts. **No
+Zendesk agent can make it** — `src/uc04/approvalPolicy.js` refuses them and the UC-04
+sidebar panel offers no approve control at all. So the ticket was instructing a Remote
+specialist to do something every other layer of this system refuses. Same defect,
+same day's work, as the three registers §3.108 corrected; the graph was the fourth copy.
+
+**It survived because no check reads a Zendesk node's prose.** `verify-deployed` diffs
+`jsCode`, and a Zendesk node has none — all four of UC-04's terminal Zendesk nodes are
+baselined as unguarded in `scripts/lib/unguarded-node-baseline.json`. And
+`test/n8nUc04Parity.test.js` compares **decisions**, by design and by its own header, so
+a node that reaches the right verdict and describes it to the wrong person passes it
+every time. One of its assertions was `assert.match(a.summary, /specialist's approval/)`
+— **the test was pinning the defect.**
+
+### The fix, and the one thing it deliberately did not touch
+
+`workationGates.js` now names the actor and the surface for each stage, composes a
+deterministic `internalNote` (the note the ticket carries), and emits an
+`awaitingDecision` block saying who a decision is waiting on as data rather than as
+prose to be re-derived. The words are **copied from `src/`, with attribution per
+constant**, not composed fresh — an n8n Code node has no imports, so the established
+pattern is to copy and say where from, because a second wording is a second thing to
+drift. Sources named in the file: `src/remoteui/workAuthPolicy.js`'s `STAGES`/
+`STAGE_3_NOTE`, `src/uc04/mobilityReview.js`'s notice and its `clear`/`decline` verbs,
+`src/uc04/server.js`'s `CX_SIDEBAR_NO_DECISION`, `src/approvalqueue/approvalRoutes.js`'s
+UC-04 row.
+
+**`approvalRoute` keeps the token `specialist_approval`.** It is a machine value, never
+rendered, persisted by no node on this graph, and `src/uc04/workflow.js` emits the
+identical string — renaming it would make two copies of one decision disagree about a
+field while changing nothing a human reads. What was wrong was the prose.
+
+**The note moved out of the node parameter and into the file**, which is the part that
+lasts: `Flag Awaiting Specialist Approval` will interpolate
+`{{ $('Workation Gates').item.json.internalNote }}`, the same shape UC-01's
+`Compose Internal Note` already feeds its two note nodes. From then on the sentence a
+customer's ticket carries is covered byte for byte by `verify-deployed`, instead of
+being a string somebody typed once into an editor.
+
+### Stage 3 does not belong in this graph, and the reasons are measured
+
+Three findings, all read live on 2026-08-31 rather than reasoned about.
+
+1. **The graph is not in the chain at all.** UC-04's intake trigger `99900000000009`
+   requires `current_tags includes uc04_test`. `uc04_test` matches **0 tickets** on
+   `your-subdomainhelp`. The **20** real UC-04 tickets that exist are all portal-raised and
+   carry `portal_request, uc04, uc04_specialist_approval, queue_mobility_specialists` —
+   `src/portal/ticketing.js`'s tags, which do not include `uc04_test`. So no real UC-04
+   request has ever reached this graph or can, and all 13 of its executions were direct
+   `POST`s from scripts. `uc04_employer_approved` likewise matches 0 tickets: the stage-2
+   hand-off has never run against a real ticket either.
+2. **The graph could not reach an employer approval even if it were in the chain.** The
+   trigger does NOT exclude `uc04_employer_approved`, so an approval's ticket update
+   really would re-fire it — and `Claim Ticket (Idempotency)` claims
+   `(UC-04, ticketId)`, which the intake run already consumed. The redelivery would die
+   at `Duplicate Delivery — Stop` having written nothing, so **a stage-3 branch placed
+   anywhere downstream of the claim can never run.** Moving it upstream of the claim is
+   the shape that produced 21 duplicate customer replies on UC-01 (F-3), and
+   `routeByDecisionSpec.js`'s header says in terms: do not move a branch ahead of the
+   claim node again.
+3. **The hand-off already exists and is better placed.** `handOffToMobility()` in
+   `src/remoteui/server.js` updates the existing ticket the moment the manager decides —
+   after both durable writes, unable to lose the decision, auditing its own failure under
+   its own action name and reporting it to the manager in the HTTP response. An n8n leg
+   would be an asynchronous second copy with no way to tell the decider it failed.
+
+**So what n8n owns is preparing the case, and that is what was built.** The reviewer's
+prepared case itself — the facts, the four dimensions, the risk posture, the gate ladder
+— already exists and was checked: `src/uc04/decisionFacts.js` computes it,
+`GET /uc04/api/authorizations/by-ticket/:ref` serves it, and the ZAF UC-04 panel renders
+it along with the stage-3 `clear`/`decline` control and `MOBILITY_REVIEW_NOTICE`. The
+note **points at that surface rather than reproducing it**: porting 1,400 lines of
+dimension reasoning into a Code node would be a second copy kept in step by nothing.
+
+### A repo-wide finding, not owned here
+
+**All nine intake triggers carry `uc_processed` in their `not_includes` loop guard, and
+nothing anywhere sets it** — grepped across all nine deployed graphs, 0 occurrences. So
+every one of these graphs re-fires itself on its own terminal Zendesk write. It is
+durably harmless (the claim node stops the redelivery) and it is not free: on UC-04,
+`Fetch Employment (Remote)` runs *before* the claim and carries no `onError`, so once an
+employment id ages out, the next comment on a long-finished ticket becomes an errored
+run, an `ops_alerts` row and a Telegram push. Recommended as a separable change in
+`DEPLOY-2026-08-31.md` §3, with its blast radius stated: `uc_processed` excludes a ticket
+from all nine intakes, not just UC-04's.
+
+### Pinned
+
+`test/n8nUc04StageVocabulary.test.js`, 15 tests: the decision vocabulary is unmoved, the
+prose names the customer's manager and Remote's product, four phrases can never come
+back, the note carries no harness vocabulary, and the note expression is asserted against
+the field the gates node **actually emits** — an n8n expression naming a field nothing
+produces renders as an empty string on a fully green execution, which is the
+`verify-traces` dead-probe-name class one graph over. Negative-controlled twice: **7 of
+15 fail** against the pre-change node body, and `flagAwaitingApprovalIssues()` is shown
+rejecting the live node as it stands today plus seven single-field mutations of the
+target.
+
+Suite: **4943 tests, 4940 pass, 0 fail, 3 skipped** (baseline 4928/4925/0/3).
+`verify-deployed`: **58 checked · 1 drifted** — `Workation Gates`, which is the deploy.
+
+### Not done, and named
+
+- **`src/uc04/requestParser.js` still carries the old sentence** verbatim
+  (`draftSummaryTemplate`, the `specialist_approval` branch). It is the same defect in
+  the Node path, it is outside this pass's ownership, and it means the two copies of
+  UC-04's summary now say different things until it is corrected. The n8n parity test
+  does not compare summaries across the two, so nothing will go red.
+- **`src/portal/ticketing.js` tags every UC-04 hand-off `uc04_specialist_approval`** —
+  the wrong actor again, on 20 live tickets.
+- **The new Zendesk-node spec is not wired into `verify-deployed`.** Adding the
+  `STRUCTURAL_MAPPINGS` row is a two-line change to `scripts/lib/deployedNodeMappings.mjs`
+  and would move `Flag Awaiting Specialist Approval` out of the unguarded baseline; until
+  it lands, `flagAwaitingApprovalIssues()` is checked hermetically only.
+
+### The checker nothing called (closed 2026-08-31, same day)
+
+The pass above shipped `flagAwaitingApprovalIssues()` and fifteen hermetic tests that
+prove it catches every one of the four defects on the live node — and its own header
+said, honestly, that **nothing ran it against the deployment**: the node had no
+`STRUCTURAL_MAPPINGS` row and sat in `unguarded-node-baseline.json` as accepted debt.
+That is a detector, not a guard. For a few hours the state was the one
+`scripts/lib/nodeCoverage.mjs` exists to describe: `verify-deployed` reporting
+**0 drifted**, true and meaningless, because the node was never among the ones it
+compared.
+
+Wired now. `scripts/lib/deployedNodeMappings.mjs` gains the row —
+`checkParams: flagAwaitingApprovalIssues`, `expectedInputs: ["Route by Decision"]`,
+`expectedOutputs: []` — and the baseline entry is removed in the same change.
+**Live afterwards: `59 nodes checked · 0 drifted · 126 of 183 live nodes NOT checked ·
+0 new unguarded nodes failing the ratchet`** (58 / 127 immediately before). It is the
+first `STRUCTURAL_MAPPINGS` row on UC-04's graph and the second outside UC-01's.
+
+**`expectedInputs` is doing real work here, not filling a field.** Output **0** of
+UC-04's `Route by Decision` is the `ready_for_approval` branch (read live: rules are
+`0:ready_for_approval 1:blocked 2:escalate`, fallback `unrecognised`), and
+`structuralNodeIssues()`'s `expectedInputs` check reads `main[0]` specifically — so a
+rule reorder that pointed the *awaiting-your-manager* note at a **blocked** trip turns
+`verify-deployed` red. `expectedOutputs: []` pins the node terminal, so anything wired
+downstream of a customer-facing Zendesk write has to be declared rather than appear.
+
+**Three tests hold the wiring itself**, because a guard is only as real as the thing
+that invokes it, and `ratchetViolations()` keys off the LIVE unchecked set — which
+makes a leftover baseline entry harmless residue rather than an error, and therefore
+invisible. So the baseline's *absence* is asserted directly. All three were
+negative-controlled against a mutated tree, one regression at a time: row deleted
+(**2 fail**), `checkParams` swapped for a stub returning `[]` (**1 fail**), baseline
+entry restored (**1 fail**), `expectedInputs` emptied (**1 fail**), restored (**0 fail**).
+The stub case is the one worth naming — the row is checked by *running* its
+`checkParams` against both the good node and the known-bad snapshot, not by comparing
+function identity, so a row wired to something merely named alike still fails.
+
+**Two things this does not cover, stated rather than implied.** UC-04's
+`Route by Decision` has no `STRUCTURAL_MAPPINGS` row of its own, because
+`routeByDecisionSpec.js`'s `RULES` are UC-01's seven decisions and UC-04 emits three —
+a UC-04 route spec is its own work order. And the graph's **other three terminal Zendesk
+nodes** (`Flag Blocked Workation`, `Escalate Workation Ticket`, `Unrecognised Workation
+Decision`) are still baselined and their prose has never been read against UC-04.md §1a.
+The defect this pass fixed was found by accident; nothing has yet looked for it in the
+three places it is most likely to also be. Inventory and counts:
+`docs/DEPLOYED-NODE-COVERAGE.md`'s 2026-08-31 update.
+
+---
+
+## §3.110 — twenty-six terminal Zendesk nodes deployed and proven on real tickets, and the outage that found itself on the way
+
+**2026-08-31.** The 2026-08-31 audit found wrong prose on the terminal Zendesk
+nodes of seven graphs. This is the pass that published the corrections, wired
+them into `verify-deployed`, and drove **thirteen real Zendesk tickets** (83–95)
+through
+production to prove it. It also found, by accident and by driving rather than by
+reading, that **UC-01 currently answers no new ticket at all**.
+
+### What a "terminal Zendesk node" is, and why nothing could see it
+
+A Zendesk *update ticket* node carries no `jsCode`. `MAPPINGS` in
+`scripts/lib/deployedNodeMappings.mjs` diffs `parameters.jsCode` against a file,
+so it is **structurally blind** to these nodes: their sentences were typed into
+node parameters, versioned by nothing and diffed by nothing. And
+`test/n8nUc0NParity.test.js` compares **decisions** — so a node that reaches the
+right verdict and describes it to the wrong person passes every parity test
+there is.
+
+That blind spot is where all of the following lived at once:
+
+- UC-09's payroll notes said `AI drafted` and `HIGH RISK` on a graph with **zero
+  LLM nodes**, and told a specialist an escalated adjustment `needs manual
+  payroll handling`.
+- UC-05's sign-off note asserted *"No Remote write exists"* — false since
+  `PUT /v1/resignations/{id}/validate` shipped. The boundary is a **policy
+  choice**, and saying it is an absence in Remote's API misdescribes the one
+  decision the use case is built on.
+- UC-06 printed *"Payroll cycle: none identified"* where the calendar had
+  **never been consulted** — a refusal dressed as a finding.
+- UC-03's `Render Informational Answer` — the one string on that graph a
+  customer reads — told them to *"reply to this ticket and a specialist will
+  review and issue it"*. The graph claims `(UC-03, ticket)` before its first
+  durable write, so a reply re-triggers it and stops at `Duplicate Delivery —
+  Stop`. Advice to do the one thing that produces nothing. `UC-03.md` had
+  **quoted that sentence as a defect** for longer than it took to fix, because
+  nothing read the node.
+- UC-01's `Reply Out of Scope` opened *"I'm sorry, I only handle…"* — first
+  person singular, from an automation, promising a return it does not make.
+- Fourteen escalation notes claimed a queue tag the ticket never receives
+  (rca-iih7 / D-14).
+
+### One table, two consumers
+
+`workflows/nodes/terminalZendeskDeployTargets.js` pairs all **26** nodes with
+the spec that owns their parameters and the checker(s) that must pass after
+publication. `scripts/deploy-terminal-nodes.mjs` publishes from it;
+`STRUCTURAL_MAPPINGS` checks from it. They are the same objects, so what is
+deployed and what is verified cannot drift.
+
+The **orthogonality** is what makes two specs naming one node sane rather than
+redundant: a per-use-case spec owns the node's PROSE, `escalationQueueTagSpec.js`
+owns one dimension of its TAGS and deliberately inspects nothing else. A node
+covered by both gets one parameters object and **both** checkers — stricter than
+picking a winner. And the module **throws at import** if a prose edit would
+revert D-14, so the deploy tool cannot start rather than silently undoing
+rca-iih7 on thirteen nodes and reporting success.
+
+### Deploy order is not interchangeable
+
+**Code nodes first, Zendesk parameters second.** The Zendesk nodes interpolate
+fields the gates bodies compose; published in the other order they dereference a
+field that does not exist and render an **empty string on a fully green
+execution**. On UC-02's `Resolve Expense Ticket` that is an empty public reply
+to a customer whose expense has just been approved.
+
+`verify-deployed` afterwards: **86 nodes checked · 0 drifted · 0 unpublished**,
+baseline pruned 111 → 99.
+
+### The proof — thirteen tickets driven, eight completed, read back off Zendesk
+
+Thirteen `uc0N_test` tickets were created (83–95). **Eight completed** and are
+the proof below; the other **five are UC-01 and completed nothing** — that is
+the outage in the next section, not a gap in this one. Both numbers are stated
+because quoting only the eight would describe a pass that went better than it
+did.
+
+Not deploy status codes. The notes themselves, read from the tickets:
+
+- **#91 — UC-03, the strongest.** `auto_resolve`, ticket **solved**, and the
+  customer received the replacement paragraph: a formal letter *"is a separate
+  request rather than a reply here… Raise one in Remote's Request Hub"*. Plain
+  text, no entities, no harness vocabulary.
+- **#83 — UC-09.** *"DECIDED BY DETERMINISTIC CODE — this workflow runs no
+  language model at any step"*, and for `identity_not_verified`: *"Money never
+  starts moving on a request whose origin is unverified… There is no route from
+  here to a payment."* No `HIGH RISK`, no `AI drafted`, no `manual payroll
+  handling`.
+- **#84 — UC-05.** Names `PUT /v1/resignations/{id}/validate`, scope
+  `resignation:write`, and calls the boundary *"a policy choice, not an absence
+  in Remote's API"*.
+- **#85 — UC-06.** *"Payroll cycle: NOT EVALUATED — the run stopped before the
+  payroll calendar was consulted."*
+- **#89 — UC-02.** States that the run stopped at gate 1 **before** gate 13,
+  so the classifier's confidence *"played no part in this outcome"* — the
+  fail-closed confidence guard landed earlier the same day, rendered.
+- **#90 — UC-04.** `Mobility & Legal (Tier-2)` spelled one way throughout, and
+  the three-stage model named.
+
+One incidental finding: `&amp;` appears in a note's `plain_body` and
+`html_body` but **not** in `body`. That is Zendesk's own rendering, not the
+note — worth knowing before someone "fixes" a group name that is already
+correct.
+
+### What driving found that reading could not
+
+**UC-01 processes nothing.** Five real `uc01_test` tickets (88, 92, 93, 94, 95)
+produced executions `11174`, `11179`–`11182`. All five `success`, `pinData:
+null`, all five decided correctly at `Identity + Policy Gates` — and **all five
+stopped at `Duplicate Delivery — Stop`**, claim node `main[0]` empty and
+`main[1]` populated: the primary key refused the insert.
+
+`workflow_claims` keys `(use_case, external_ref)` and `external_ref` is a bare
+ticket number with no record of which account minted it. `your-subdomain` reached
+**#143**; `your-subdomainhelp` restarted at **#1**. So a brand-new ticket is refused
+service as a redelivery of an unrelated one. It is the **write-side twin of
+CLAUDE.md §7 item 23**, and item 23's fix (`zendeskAccounts.js`, derive the
+account from a row's timestamp) does not touch the ledger at all.
+
+The other eight graphs looked fine because the key includes the use case and
+UC-01 is the most-driven graph in this project's history — **the sample that
+worked was the larger one, and the use case that is completely dead is the
+flagship.** Recorded as CLAUDE.md §7 honest-gaps **item 24** with two remedies;
+not fixed here, because every remedy rewrites how a production ledger is keyed
+and §7b reserves that.
+
+### Also this pass — the screen that sorted by a fact it did not show
+
+`/remoteui`'s work-authorization queue listed 23 rows with no filing time, while
+`sortBySubmittedAt()` **ordered the list by `submitted_at`**. So an employer
+could not tell which row was the request they had just filed — the question the
+screen exists to answer — with the data already in the payload governing the
+order. Now rendered per row, absolute (the list auto-refreshes every ten
+seconds, so a relative stamp restates itself against a moving now), with the
+exact ISO instant in the `title`, and an unrecorded time rendered as *"filing
+time not recorded"* rather than as a plausible date. Three tests, negative-
+controlled against the pre-fix asset: exactly those three fail there.
+
+---
+
+## §3.111 — the ledger key is now account-qualified, and UC-01 answers tickets again
+
+**2026-08-31, immediately after §3.110 found the outage.** §3.110 ended with a
+diagnosis and no fix: `workflow_claims` is keyed `(use_case, external_ref)`,
+`external_ref` was a bare Zendesk ticket number, this project has moved account
+twice, and the current account restarted its numbering at 1 while the retired
+one reached 143 — so five brand-new tickets were each refused by the PRIMARY
+KEY as a redelivery of an unrelated old one, silently, with every execution
+reporting `success`. That was left unfixed on purpose: every remedy rewrites how
+a production ledger is keyed, and CLAUDE.md §7b reserves that. The owner chose
+**option 1** within the hour.
+
+### What was built
+
+`src/shared/claimRef.js` — `qualifyClaimRef()` turns a bare ticket number into
+`<account>:<number>` and leaves everything else alone. The account comes from
+the open row in `ZENDESK_ACCOUNTS`, the register this project already updates on
+an account move, so a fourth move is one line.
+
+**The fix is additive, and that is the whole argument for it.** A qualified ref
+can never equal a bare one, so no row was migrated, updated or deleted: every
+historical claim keeps its meaning and keeps protecting the ticket it was really
+about. It also meant no write to the production database — which could not have
+been executed from this container anyway (CLAUDE.md §6: Supabase is unreachable
+over raw TCP here). The rejected alternative, deleting the pre-migration claim
+rows, is one statement and instantly correct, and it throws away the
+exactly-once history of every ticket the retired account processed. Cheaper and
+strictly worse.
+
+**Only a bare ticket number is qualified**, and the narrowness is load-bearing.
+A descriptive proof ref, a portal submission id, a content-derived dedupe key
+(`src/thirdparty/`, `src/uc01/selfServiceLetter.js`) and the authorization UUID
+UC-04's stage 3 claims under are already globally unique and name no account.
+Qualifying them would change a key for no reason AND break continuity with the
+rows that already hold them — a new failure in exchange for nothing.
+
+### One rule, two execution paths
+
+The Node app calls a function; the nine n8n graphs evaluate a STRING, and a
+string is covered by no test that imports a function. So
+`workflows/nodes/claimNodeSpec.js` GENERATES the expression from the same
+`currentZendeskAccount()` the Node path keys on, and
+`test/claimRefQualification.test.js` executes the published expression in a
+`node:vm` sandbox with n8n's own `$json` / `$execution` in scope and asserts the
+two agree over one shared table of inputs — the same discipline
+`test/n8nParity.test.js` applies to Code-node bodies, applied to an expression.
+
+Two paths keying differently would be the two-ledger failure the single shared
+table exists to prevent, reintroduced one level down. And an n8n Code node
+cannot read `process.env` at all (CLAUDE.md §4 records a webhook header that
+went out empty for exactly this reason), so the account HAS to be a literal in
+the published expression — which is why it comes from a versioned table rather
+than an environment variable.
+
+`CLAIM_TARGETS` moved out of `scripts/verify-claim-nodes.mjs` into that spec, so
+the deploy and the live checker now read one object. `test/claimNodeContract.js`
+used to scrape the table out of the script's source with a regex, because that
+script runs network calls at module scope and cannot be imported; it now imports
+the real table, the same upgrade `deployedNodeMappings.mjs` got in rca-rqeo.
+
+### The read side, widened — but only where it moved
+
+`readStore.lookupRef()` and `findClaimDecision()` now search BOTH spellings,
+qualified first. Rows written before today hold the bare form, and a human
+typing `93` into the audit viewer's bug-audit tab means "the ticket in front of
+me" — on that screen an absent claim row is read as *"the exactly-once ledger
+did not protect this ticket"*, so answering with one spelling would be a
+confidently wrong answer rather than a near miss.
+
+The DECISION search was deliberately **not** widened. Only the claim node's key
+changed; `audit_log.details->>'externalRef'` still carries the bare ticket
+number, and matching a qualified spelling there would match nothing while
+implying the audit trail had moved too.
+
+### Proven in both directions, on one real ticket, minutes apart
+
+Deployed to all nine graphs and verified from the read-back — 9/9
+`versionId === activeVersionId`, `verify-claim-nodes` **9 checked · 0 defective ·
+0 unpublished**. Then a real `uc01_test` ticket, **100**, chosen deliberately
+INSIDE the collision range:
+
+| | execution | claim node outputs | outcome |
+|---|---|---|---|
+| first delivery | `11198` | `main[0]` **1**, `main[1]` 0 | 22 nodes `success`, `pinData: None` — `cases 57486123`, `audit_log 0f73955e`, audit trace, review queue, routing, Zendesk write. Identity `requester_matches_employment`; decision `human_review / over_scope_request`. Claim row reads **`external_ref: "your-subdomainhelp:100"`** |
+| redelivery, same ref | `11200` | `main[0]` 0, `main[1]` **1** | 9 nodes, `lastNodeExecuted: "Duplicate Delivery — Stop"`, nothing written |
+
+The first row is the exact inverse of the five dead runs in §3.110. The second
+matters just as much: **exactly-once was not traded away to get
+exactly-anything.**
+
+`npm test` on this tree: **5,318 tests, 0 fail.**
+
+---
+
+## §3.112 — the sidebar dropped the employer's approval at the moment it mattered
+
+**2026-08-31, found by the project owner opening an approved ticket** (#82) and
+asking where the employer's name and position were. Three defects, none visible
+to any existing test, compounding into one blank space.
+
+**1. The block was hidden, not missing.** The API published it the whole time —
+verified live against the deployment for that exact ticket, which returned
+`settled: {headline: "Approved.", facts: [...]}`. `main.js`'s `renderActions()`
+drew `settled` only inside its `if (!view.actionable)` branch, a rule written
+when *settled* and *nothing left to do here* were the same thing. Since
+2026-08-31 (§3.109) UC-04 is BOTH: stage 2, the employer's approval, is settled,
+while stage 3, Remote's own mobility review, is open on that very screen. So the
+employer's approval vanished from the panel at exactly the moment a specialist
+is asked to review it — the one moment knowing who approved it matters. The
+panel's own comment asserted the settlement *"is rendered in full by the DECISION
+card's `settled` rows"*, which had silently become false.
+
+It now renders above the controls, set off by a rule, **without the `finality`
+sentence** — *"an approved request cannot be approved or declined again"* is true
+of the stage below and reads as "there is nothing to do here" when printed
+directly above a live control. The closed-case branch still prints it in full.
+
+**2. The name was never durable.** `uc04_authorizations` has no column for the
+approver's display name (`recordEmployerDecision()` says so and explains why),
+so it lived on the in-memory row and in the prose of a Zendesk note. The sidebar
+reads Postgres from another process, so the strongest thing the panel could have
+said was *"Approved by admin_jane"* — a session id, which is an audit-grade
+identity and not an answer to "who approved this".
+
+The audit log is now the store for it, exactly as it already is for stage 3:
+`src/remoteui/server.js` records `approverName` in the append-only row's jsonb
+`details` (no migration, and `actor` still carries the id unchanged), and
+`src/uc04/employerDecisionLog.js` reads it back. It fills a null and never
+overwrites a fact the row already holds; a missing name yields null and the
+panel prints the id alone, because an id is a worse answer than a name and a
+fabricated name would be far worse than either. An unreachable audit table costs
+the name, never the panel.
+
+**3. An employer DECLINE was not settled at all.** `settledFacts()`'s approve
+branch accepts a row on `approvedAt` — precisely because the employer's stored
+status is Remote's own `approved_by_manager` rather than `executed`. The decline
+branch tested only the status word, and `declined_by_manager` is not an alias of
+`declined` (`STATUS_ALIASES` maps `denied` and nothing else). So a decline fell
+through to null and the panel showed no settled facts: the decliner, the date
+AND the mandatory reason all gone, on the outcome where a reason is compulsory.
+Asymmetric handling of two halves of one decision is how a negative outcome comes
+to be less well recorded than a positive one.
+
+`test/uc04EmployerApproverIdentity.test.js` (9 tests) pins all three, and is
+negative-controlled: exactly 3 of the 9 fail on the pre-fix tree, one per defect.
+
+---
+
+## §3.113 — UC-01 driven green on a real ticket, and what the green run found
+
+**2026-08-31.** The first UC-01 ticket to complete since the ledger fix
+(§3.111), driven end to end and verified from the destination rather than the
+run flag.
+
+**Ticket 101** — real `uc01_test` ticket, requester Alex Morgan, whose email the
+identity gate matched against the Remote Sandbox record. Execution **`11206`**,
+`pinData: None`, **29 of 29 nodes `success`**, `auto_resolve /
+all_gates_passed`, zero flags. `classification.source: "llm"`, intent
+`standard_letter`, confidence 0.95. Real rows with server-generated ids:
+`cases 9cbc7daa`, `audit_log 0544fbe5`, and a `workflow_claims` row reading
+**`external_ref: "your-subdomainhelp:101"`** — the qualified key, on a green run.
+
+Read back off Zendesk, not inferred from the execution: ticket **101 solved**,
+tagged `uc01_auto_resolved`, in HR Ops (`99900000000009`), with a public reply
+delivered as **rendered HTML** rather than escaped source. The letter names the
+employing entity, status, contract type, start date and probation, and carries
+the confidentiality sentence. **It contains no salary** — against a record whose
+`compensation_gross_amount` is `10399748`, checked by reading that value off the
+Sandbox and searching the delivered text for it.
+
+### The finding the green run produced
+
+Ticket **100**, driven an hour earlier against the SAME employee, asked for
+*"my job title"* and was correctly refused to a human as
+`human_review / over_scope_request` — `job_title` is not in
+`STANDARD_LETTER_FIELDS`. Ticket 101 did not ask for it **and the letter
+delivered it anyway**: `Job title — Content Writer Wizard`.
+
+So UC-01 escalates a request that NAMES the job title and discloses it unasked
+to a request that does not — same person, same document, same automation. Both
+lists are individually defensible (one answers "what may this letter contain",
+the other "what may be asked for without a human looking") but not in this
+direction: a field cannot be too sensitive to be asked for while being printed
+unasked.
+
+**Not fixed here.** Adding `job_title` to `STANDARD_LETTER_FIELDS` widens what
+auto-resolves and feeds `authorisableDisclosures()`, the release path — a
+disclosure-policy change, not a mechanical one, and this repository does not
+widen a gate as a side effect of an unrelated pass. Recorded with both options
+and a recommendation as `qa/HUMAN-DECISIONS-REQUIRED.md` **K15**.
+
+---
+
+## §3.114 — the sidebar stops showing repository internals, and names the approver
+
+**2026-08-31, both found by the project owner reading the panel before showing
+it to an audience.**
+
+### 1. Repository internals in customer-facing prose
+
+The panel was rendering source-tree paths (`src/uc04/decisionSources.js`),
+`docs/knowledge/…md` citations, internal register ids (`C-8`, `K-4`), an
+entitlement-roster key (`uc04:mobility_specialist`), a refusal code
+(`approver_not_entitled`), the decision slug (`all_gates_passed`) and raw UUIDs
+where a person's name belongs.
+
+**The rule already existed and this surface was missed.** On 2026-08-29 the
+public surfaces — `/portal`, `/audit`, `/queue` — were stripped of exactly this
+class ("internal issue ids and `src/` paths", CLAUDE.md §4). The ZAF sidebar is
+served by Zendesk out of `zaf-app/`, not by that deployment, so it was not in
+that pass.
+
+**A citation is not weakened by losing its file path.** What makes it checkable
+— the instrument, the article locator, the publisher, the retrieval standing
+(*"Regulation (EU) 2016/399, Article 6(1), [CONFIRMED — statute, retrieved
+2026-08-19]"*) — all still renders. The repo path only ever said where OUR COPY
+lives, which is not a fact about the law. The API still publishes `path` for a
+reviewer who has the repository; a screen is not that reviewer.
+
+`test/zafNoDeveloperArtifacts.test.js` is the durable part: it renders the REAL
+`main.js`/`panels.js` into the fake DOM and scans the text that came out for
+seven forbidden patterns. Asserting on the rendered page rather than the payload
+is the whole point — the payload may legitimately carry a path.
+
+### 2. "Approved by admin_jane" is not an answer
+
+The owner's objection, in their words: *"admin_jane could be anybody… just
+imagine Remote has a hundred companies as clients. How do they know which
+company admin_jane is? How do we know the position of admin_jane?"* — and
+`admin_jane` reads like somebody at Remote when the entire point of stage 2 is
+that the decision belongs to the **customer**.
+
+Three rows now, each omitted rather than guessed when it was not recorded:
+
+| | |
+|---|---|
+| Approved by | Jane Okonkwo (admin_jane) |
+| Their role | Head of People Operations |
+| Acting for | Meridian Analytics — the employer, not Remote |
+
+*Their role*, not *job title*: it is the standing the decision was made in,
+which is the question a reviewer is asking. The session id stays beside the
+name because it is what the audit trail is keyed on and what the Zendesk
+hand-off note already prints — the two surfaces must agree; it is only demoted
+from being the whole answer.
+
+**The identity is a named, marked fixture — rung 4, and it had to be.** No
+company name exists anywhere in the Sandbox record: an employment carries
+`company_id` and `legal_entity_id` and no human name for either, so there is no
+higher rung to take it from. `approverTitle`/`approverCompany` have no column on
+`uc04_authorizations` either, so they ride on the append-only audit row's jsonb
+and are read back by `employerDecisionLog.js` — the same route the name took in
+§3.112, for the same reason.
+
+### Identifiers a person can read
+
+`shortReference()` renders a UUID as its first block (`45cca190`) — a **prefix
+of the real id**, not a hash, so it still resolves by prefix search and can
+never name a record that does not exist. The full key stays on the record and on
+the audit row. Anything that is not a UUID is returned unchanged: an email
+address or a ticket number is already readable, and truncating one would destroy
+information rather than hide noise.
+
+It exists three times — `main.js`, `panels.js`, `src/shared/publicReference.js`
+— because the two browser files are separate `<script>` tags with no module
+system between them. Publishing it on `window` from one and reading it in the
+other was tried first and **silently degraded to a no-op**, which is precisely
+why the three copies are now held equal by test.
+
+### Four tests changed direction, not by accident
+
+Four existing tests asserted these strings MUST survive, each with a stated
+reason. Every one was written for a specialist with database access; none was
+written for a page shown to customers. Each is now inverted with the argument
+recorded in place: `uc02Review` and `zafApp` (the decision slug — traceability
+lives on the `audit_log` row, which is where a searchable identifier belongs),
+`zafApprovalRole` (the role slug — the row already names the role in words and
+says what it decides), and `uc04DecisionSources` (the spec section number — what
+the assertion was FOR, that the requirement is this use case's own rule and not
+an authority's, is now asserted directly).
+
+`npm test`: **5,333 tests, 0 fail.**
+
+---
+
+## §3.115 — the same sweep across the other eight use cases
+
+**2026-08-31.** §3.114 cleaned the UC-04 panel and guarded it by rendering that
+panel and scanning the text. The project owner's reply was the right challenge:
+*"I hope when I check all the other use cases, I will not see developer
+information in the sidebars again."*
+
+**They would have.** §3.114 fixed the panel that was reported and guarded only
+that one — a render check proves what a reader sees, but only for a case
+somebody seeded, which is how the leak survived the first pass.
+
+### What the wider check found
+
+`test/decisionProseIsCustomerFacing.test.js` covers all nine use cases at the
+place every one of these leaks actually lived: the `decisionSources.js` /
+`decisionFacts.js` modules that compose the prose the panels display. It runs
+twice over each module — once walking **exported values**, once over the
+**source text** — and the second pass is the one that matters. Run alone, the
+export walk passed eight of nine modules while `src/uc05/decisionFacts.js` still
+contained *"Adding this country's statutory notice rule to
+src/uc05/noticePeriodTable.js"* and `src/uc04/decisionFacts.js` still named
+`uc04_authorizations`, both **inside functions**, both destined for a screen. A
+guard that reports clean on prose it never looked at is worse than no guard.
+
+Comments are stripped first, and that distinction is the design: this repository
+explains itself in comments and must keep naming files, tables and findings
+there. The rule is not *never write `src/` in this file*; it is *never put it in
+a string a customer will read*.
+
+Fixed in UC-04, UC-05, UC-07 and UC-08 — a source file behind a notice figure, a
+routing module named as its own finding, a spec section behind a treaty table, a
+`travel_document_number` traced to the module that resolves it, and four
+references to the `uc04_authorizations` table. Every sentence keeps its meaning:
+*"the notice-period table"*, *"the routing table"*, *"this system's
+work-authorization record"*.
+
+### And every panel's identifier rows
+
+`panels.js` printed a bare `employmentId` and `requester` in **every** use
+case's rows. UC-04's were shortened when it was reported; the other eight were
+not — exactly the gap the owner asked about. All seventeen id renders now go
+through `shortRef()`, and a structural test refuses a bare id in any panel,
+present or future. It also asserts the transform is still REACHED, because a
+guard that passes by the rows having been deleted would be worse than the leak.
+
+`npm test`: **5,352 tests, 0 fail.** Two more existing assertions changed
+direction with the prose, each for the same reason as the four in §3.114: both
+demanded a repository artifact — `/audit_log|reason_text/` and
+`/noticePeriodTable\.js/` — in a sentence that renders on a customer-facing
+screen. What each was FOR is unchanged and is now asserted in the words that
+replaced them.
+
+---
+
+## §3.116 — all nine panels opened, and the two leaks that only opening them found
+
+**2026-08-31.** §3.115 swept the prose modules for all nine use cases and
+guarded the class statically. The project owner then asked for the thing that
+had still not been done: **open each of the nine panels and check them.** Two
+leaks were sitting there that nothing already written could have found.
+
+### What only rendering found
+
+- **UC-01 printed `uc01:hr_ops`** in the middle of a sentence about who decides:
+  *"the entitlement roster grants uc01:hr_ops"*. Invisible to the prose check,
+  which reads `decisionSources`/`decisionFacts` — this string is composed in
+  `panels.js`.
+- **UC-08 cited the Dutch residence article and rendered a passage naming
+  `src/uc04/riskMatrix.js` and `src/uc04/decisionFacts.js`** — this project's own
+  source files, shown to a customer as though they were part of Netherlands tax
+  law. Invisible to everything, because the string lives in a **generated**
+  corpus built from a retrieved statutory document that nobody would think to
+  scan for source paths.
+
+The second is the more serious finding, and it is not really about strings. Each
+sidecar under `docs/knowledge/` is a retrieved authority **plus this project's
+own commentary about it** — *"What this settles"*, *"Why this is the entry most
+likely to change someone's mind"*. The chunker admitted every `##` section
+equally, so those notes became **citable passages**, served beside the statute,
+in the same shape, under the same authority's title.
+
+### The fix, and the measurement that corrected it
+
+The chunker now refuses text that names this repository's own code — on the
+principle that a passage written about our system cannot be source material.
+
+**The first attempt dropped the whole section and was wrong.** It took the corpus
+from 57 passages to 30, lost two documents entirely, and broke UC-08's 183-day
+retrieval outright — `test/uc08.test.js` failed with *"a 183-day question must be
+answered from the retrieved corpus, never from a model paraphrase"*. These
+sidecars **interleave** a quoted limb with a note about what it settles for our
+code; the quote is the citation, the aside is not.
+
+Filtering per **paragraph** keeps 51 passages and all 14 documents, drops six
+maintainer asides, and leaves every measured pair answering from the statute.
+`test/statutoryRetrieval.test.js`'s floor of 50 now sits one above the count, on
+purpose: a further fall means real coverage is eroding, which is when it should
+go red.
+
+Two n8n Code node bodies are regenerated from the corpus
+(`nodes-uc08/buildDossier.js`, `nodes-uc07/relocationGates.js`), so both were
+republished and read back.
+
+### The guard is now nine panels, not one
+
+`test/fixtures/nineSidebarPanels.js` seeds one case per use case, serves it
+through that use case's **real HTTP handler**, and boots the real sidebar against
+it. Every seed asserts its own decision and every panel asserts it actually
+loaded — a not-found page passes any scan trivially, which is the exact shape of
+false confidence this file exists to remove.
+
+All nine: **clean**. `npm test`: **5,361 tests, 0 fail.**
+
+The transferable lesson is the one this repository keeps paying for, in a third
+costume: a check that covers the case somebody happened to seed reports clean on
+everything it never looked at. §3.114 guarded one panel; §3.115 guarded the prose
+modules; neither could see a slug composed in the panel layer or a source path
+inside a generated corpus.
+
+---
+
+## §3.117 — seeds for the decline and blocked outcomes, and the leak they found
+
+**2026-08-31.** §3.116 opened all nine panels and proved them clean, and named
+its own limit honestly: nine *seeded* cases, one decision path each. A panel
+branch only some other outcome reaches was not covered. The project owner asked
+for those branches to be seeded too.
+
+### What is now opened
+
+**19 panel states**, up from 9 — every prepared case, plus:
+
+| outcome | use cases | why not the others |
+|---|---|---|
+| **blocked** | UC-01 (`consent_refused`), UC-02 (`duplicate_submission`), UC-04 (`sanctioned_region`) | only these three have a `blocked` decision at all; the rest top out at `escalate` |
+| **declined** | UC-01, UC-02, UC-03, UC-04, UC-05, UC-06, UC-09 | **UC-07 and UC-08 are absent BY CONSTRUCTION** — no execution path, no POST route, nothing to decline. A decline seed for either would assert the opposite of their headline guarantee |
+
+These are the pages where a leak matters most: somebody is being told their
+request was refused, and by whom.
+
+### The leak it found
+
+**UC-02's blocked panel printed a raw store-row UUID and a raw ISO instant** —
+*"Its store row a8bd1baa-f808-43d7-b8be-dbb5ae378763 … Decided at
+2026-08-31T22:10:50.422Z"*. Nothing before this reached it: the prepared seed
+decides `human_review`, and this text is composed only on the duplicate-receipt
+refusal.
+
+The pointer itself is right and stays — it exists so a reviewer can open the
+earlier record instead of searching for a row they have no key for. It is now a
+short reference (a **prefix**, so a prefix search still finds it) and a date a
+person reads.
+
+### Three seeds were wrong before they were right, and the seeds caught it
+
+Each seed asserts its own outcome, which is what turned three quiet fixtures
+into three loud failures:
+
+- **UC-02 blocked** first re-submitted the *same* expense. That is not a
+  duplicate receipt and is correctly not blocked — the gate's own words are
+  *"already reimbursed on ANOTHER expense"*. Fixed to two different expenses
+  sharing one receipt hash.
+- **UC-09 declined** posted `decline`; that API still speaks Remote's older
+  negative verb and answered `unknown_action`.
+- **UC-03 declined** could not reach `formal_letter_requested` at all, because
+  since 2026-08-30 a letter request auto-resolves as `standard_letter_issued`
+  for every seeded employment. It uses `letterAutoIssue: false` — UC-03's own
+  documented deployment switch for turning the 🟢 auto-issue rung off — rather
+  than a fabricated employment. **That is the product working, not a gap.**
+
+A seed that had quietly rendered the wrong outcome would have produced a green
+scan of a page nobody asked for.
+
+`npm test`: **5,371 tests, 0 fail.** One existing assertion changed with the
+prose — it demanded the FULL store-row UUID in the panel text, and now demands
+the short reference and refuses the full one.
+
+---
+
+## §3.118 — the panel computed the numbers and then hid them
+
+**2026-08-31.** The project owner opened UC-04's sidebar as the mobility
+specialist would and asked the question the whole use case rests on: **what is
+the point of this automation?** They could not see the research. The only thing
+that stood out was who approved it — which was there because they had asked for
+it the day before.
+
+**They were right, and it is measurable.** On a real prepared case the panel is
+19,483 characters. What is open by default: the risk rail, who this is about,
+who filed it, the trip line, *what was NOT established* at full length, and the
+decision form. What is **collapsed**:
+
+| collapsed section | characters |
+|---|---|
+| Every check that cleared (N) | **3,613** |
+| The rules this is based on | 4,856 + 2,228 |
+| What each of these does not establish | 1,580 |
+| Decided by check 18 of 18 | 2,228 |
+| How to read the sources under each finding | 995 |
+
+**Every figure the system computed was in the first row of that table.** Days
+already spent in the destination, the Schengen 90-in-180 allowance, the
+183-in-365 tax-residency watch, the treaty and PE findings — all one click away,
+while the caveats were unmissable. The work HAD been done. A panel that leads
+with its own limitations reads as though it has nothing to say.
+
+### The change
+
+`renderMeasurementStrip()` puts the counts directly under the trip they are
+about, open, before anything that qualifies them:
+
+```
+THE COUNTS THIS DECISION TURNS ON
+Schengen days across a rolling 180 days      21 of 90 days     69 days left   Within the limit
+Days in Netherlands across a rolling 365 …   67 of 183 days   116 days left   Within the limit
+Each figure is repeated in full below, with the window it was measured over
+and what the source says about it.
+```
+
+**It adds no figure, recomputes nothing and reorders no finding.** Every number
+is `basis.measurements`, rendered from the same data the collapsed block renders
+in full — and the window, the citations and the caveats all stay exactly where
+they were, because a headline number without its caveat is the failure this
+repository is most careful about. Each line ends in the state word the full
+finding carries, so a measurement that is NOT within its limit says so here
+first. A panel with no measurements renders no strip rather than an empty
+heading.
+
+### The seed had to change to see it
+
+UC-04's prepared seed carried no `travelHistory`, so it produced ONE measurement
+and no cumulative-presence breakdown — half of what a specialist actually gets.
+It now carries a prior stay and reproduces the owner's own case: US → NL, 21
+days, 46 already spent, 67 of 183.
+
+`test/zafDecisionCounts.test.js` asserts the figures appear in text computed by
+**stripping every `<details>` body** — i.e. what is on screen before anyone
+clicks — that the strip is outside every collapsed section, that the window,
+findings and citations are still below it, and that a measurement-free panel
+renders nothing. Negative-controlled: the whole file fails on the pre-fix tree.
+
+`npm test`: **5,375 tests, 0 fail.**
+
+## §3.119 — UC-04's decision surface: four things a mobility specialist needs, put on the panel
+
+**2026-09-01.** The owner asked whether everything a mobility specialist needs
+to authorize a work authorization was on the sidebar. It was not, and the
+answer named four gaps. All four are now closed, each as its own commit with
+its own tests. Scope and rationale: `docs/UC04-DECISION-SURFACE.md`; evidence:
+`docs/UC04-RESEARCH-FINDINGS.md`.
+
+| | what the panel now shows | commit |
+|---|---|---|
+| **W-5b** | 20 findings rewritten to *state the fact, say what it blocks, say what would clear it* — capped and guarded by test | `3f37e8a`, `211d5bd` |
+| **W-3** | **Notice before departure**, against Remote's own published 14-day floor and 3-8 week recommendation | `5550f10`, `32ba438` |
+| **W-1** | **The request the employee raised in Remote**, read live — travel document number, work location, signing answer, reason, status | `d992b56` |
+| **W-2** | **What they will be doing there** — the three questions Remote's own RWA form asks, plus the work location | `41bb894` |
+| **Z = Y** | **Where the customer has companies** — art. 15(2)(b), the treaty condition the panel had been printing a caveat about | `1dc4579` |
+
+**Five things worth keeping, each of which cost something to find.**
+
+1. **A floor is not a ceiling, and both measurement renderers assumed a
+   ceiling.** They print "67 of 90 days · 23 days left". Applied to a minimum
+   that inverts — "91 of 14 days · 77 days left" reads as the worst row on the
+   page when it is the safest. Rows now declare `comparison: "floor"`; absent
+   still means ceiling, so nothing existing moved.
+2. **The panel's own vocabulary already had the right word.** `urgent` —
+   *"checked, and the time left to act on it is short"* — was written before the
+   lead-time row existed and describes it exactly. The first draft used
+   `breached`, which renders "OVER THE LIMIT" in the tone reserved for things an
+   approval cannot override.
+3. **Rung 1 was sitting unread.** W-3 shipped a `[PROPOSED]` 14-day line this
+   project chose. Remote publishes a notice expectation for exactly this
+   request (article `37802834593805`), and the research recording it was written
+   the day before. Now `[VENDOR-PUBLIC]`, with a second line at 21 days that is
+   reported and never flagged — advice is not a threshold, and this repository
+   has twice turned a recommendation into a refusal (C-10, C-20).
+4. **W-1 and W-2 both shipped smaller than scoped and better.** W-1 asked for
+   two columns and a migration; `work_authorization_id` was already durable, so
+   what was missing was a live READ, which brings six fields rather than two and
+   cannot go stale. W-2 asked for six invented yes/no questions; Remote's own
+   form asks three open ones, and rung 1 is not overridden by this project's
+   opinion about what a form should ask.
+5. **Two defects only DRIVING the bundle found, and both were invisible to every
+   unit test.** `loadUc04()` builds its view from a whitelist, so two published
+   server fields reached nobody while every test passed — the shape that once
+   put `gateLadder` on zero of nine panels. And the linked-request provenance
+   sentence printed a raw UUID at the specialist, caught by
+   `zafNoDeveloperArtifacts.test.js` before it shipped.
+
+**Nothing new can decide anything.** The activity profile, the linked request
+and the employer presence are each asserted, by reading the gate files, not to
+be imported by `policyEngine.js`, `riskMatrix.js`, `approvalPolicy.js`,
+`workflow.js` or `requestParser.js` — and the activity profile behaviourally
+too: the same request decides identically with an empty profile and with one
+reading *"negotiating and signing a distribution contract in a biosafety level 3
+laboratory"*. UC-04's blocking set stays immigration and data quality only.
+
+**`npm test`: 5,428 tests, 0 fail.** **NOT deployed** —
+`workflows/nodes-uc04/workationGates.js` carries the lead-time flag and is ahead
+of the live graph `WORKFLOW_UC04_ID`, which it already was.

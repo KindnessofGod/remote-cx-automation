@@ -1,0 +1,27 @@
+// Mirrors src/uc03/letter.js's renderInformationalAnswer() + withDisclaimer(..., "travel").
+// AUTO path only: plain text, zero-touch, deterministic. No compensation, no
+// legal conclusion -- entry requirements are the destination authority's to set.
+const ctx = $('Travel Router Gates').first().json;
+const c = ctx.classification;
+
+const COUNTRY_NAMES = {
+  ES: 'Spain', DE: 'Germany', FR: 'France', PT: 'Portugal', IT: 'Italy',
+  NL: 'Netherlands', IE: 'Ireland', PL: 'Poland', GB: 'United Kingdom',
+  US: 'United States', CA: 'Canada', IN: 'India', PH: 'Philippines',
+  MX: 'Mexico', NG: 'Nigeria', EE: 'Estonia',
+};
+const destination = COUNTRY_NAMES[c.destinationCountry] || c.destinationCountry;
+const windowStr = c.startDate && c.endDate ? (c.startDate + ' to ' + c.endDate) : null;
+const durationLine = ctx.durationDays ? ' (' + ctx.durationDays + ' days)' : '';
+
+const TRAVEL_DISCLAIMER = 'This is general information only and not legal or immigration advice. Entry requirements are set by the destination country and can change; please confirm current rules before you travel.';
+
+const body = 'Thank you for your inquiry about business travel to ' + destination + (windowStr ? ', ' + windowStr : '') + durationLine + '.\n\n' +
+  'Based on the details of your request, here is a summary:\n' +
+  '  - Destination: ' + destination + ' (' + c.destinationCountry + ')\n' +
+  (windowStr ? '  - Travel period: ' + windowStr + '\n' : '') +
+  '  - Duration: ' + (ctx.durationDays ? ctx.durationDays + ' days' : 'not stated') + '\n\n' +
+  'Short-term business travel of this kind requires no additional action on the Remote platform. Entry requirements for the destination country vary and are set by its authorities -- please confirm current visa and entry rules before you travel.\n\n' +
+  'If you need a formal travel support letter (for a visa application or port-of-entry), reply to this ticket and a specialist will review and issue it.\n\n---\n' + TRAVEL_DISCLAIMER;
+
+return [{ json: { ...ctx, informationalAnswer: body } }];

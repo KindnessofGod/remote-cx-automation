@@ -454,6 +454,28 @@ header { margin-bottom: 6px; }
 .badge.state-declined,
 .badge.state-blocked { --r-dot: var(--r-danger); }
 
+/* UC-04 stage 3 — Remote's own mobility review, drawn beside the stage-2 badge
+   in the same cell. Same tokens again, deliberately: a reader must not have to
+   learn a second colour language to read two badges on one row, and `open`
+   shares the waiting dot with `awaiting_review` because it IS the same fact
+   about a different stage. `not_reached` and `unknown` are left with the
+   neutral dot on purpose — neither is a verdict, and colouring them would make
+   "there is nothing here to review" look like an outcome. */
+.badge.stage-cleared { --r-dot: var(--r-ok); }
+.badge.stage-declined { --r-dot: var(--r-danger); }
+.badge.stage-open { --r-dot: var(--r-dot-waiting); }
+
+/* Two badges, stacked, never side by side. This column is narrow and a wrapped
+   pill reads as two separate things; stacked, the order is the order the two
+   stages happen in. `align-items: start` keeps each pill the width of its own
+   text rather than stretching both to the column. */
+.my-request-row .status-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 6px;
+}
+
 /* =========================================================================
    MY REQUESTS — one row per request, the card scrolling sideways.
    =========================================================================
@@ -502,24 +524,29 @@ header { margin-bottom: 6px; }
    is the quiet half and the value is the fact, which is the opposite of how the
    old run-on read: there, the labels were buried mid-sentence and the reader
    had to find them. */
-.my-requests-table .resolution-headline {
+.my-requests-table .resolution-headline,
+.decision-item .resolution-headline {
   display: block;
   font-weight: 600;
   color: var(--r-text-primary);
 }
-.my-requests-table .resolution-fact { display: block; margin-top: 3px; }
-.my-requests-table .resolution-label {
+.my-requests-table .resolution-fact,
+.decision-item .resolution-fact { display: block; margin-top: 3px; }
+.my-requests-table .resolution-label,
+.decision-item .resolution-label {
   color: var(--r-text-muted);
   font-size: 11.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-right: 6px;
 }
-.my-requests-table .resolution-value { color: var(--r-text-primary); }
+.my-requests-table .resolution-value,
+.decision-item .resolution-value { color: var(--r-text-primary); }
 /* Whether the decision can still change is a STATE, not a sentence to re-read
    every time — set apart and quiet, so it is there when asked for and not in
    the way when it is not. */
-.my-requests-table .resolution-finality {
+.my-requests-table .resolution-finality,
+.decision-item .resolution-finality {
   display: block;
   margin-top: 5px;
   color: var(--r-text-muted);
@@ -1170,6 +1197,24 @@ header { margin-bottom: 6px; }
   font-size: 0.86em;
 }
 
+/* WHO A WORK AUTHORIZATION IS ABOUT, under the box holding their identifier.
+   A line of its own rather than a trailing inline hint: it changes when a
+   quick-fill runs, and a phrase appended to a label is exactly the kind of
+   movement a reader does not notice. `.is-unknown` is quieter, not louder — a
+   hand-typed Sandbox id is legitimate, so this states what it could not
+   resolve without dressing it as an error. */
+.traveller-name {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.86em;
+  font-weight: 500;
+  color: var(--r-text-secondary, inherit);
+}
+.traveller-name.is-unknown {
+  font-weight: 400;
+  font-style: italic;
+}
+
 .gap-prompt {
   border: 1px solid var(--r-warn, var(--r-border));
   border-radius: var(--r-radius, 8px);
@@ -1239,6 +1284,89 @@ header { margin-bottom: 6px; }
 }
 .interstitial-dialog.letter-dialog { max-width: min(800px, calc(100vw - 32px)); }
 
+/* ---------------------------------------------------------------------------
+   THE DECISION ANNOUNCEMENT
+   ---------------------------------------------------------------------------
+   Added 2026-09-03, after the owner's verdict on the deployment: "they look
+   absolutely horrendous, the worst UI I've ever seen." They did, and it was
+   not a matter of taste — this was the ONE dialog in the portal whose markup
+   named classes that do not exist in any stylesheet. It asked for
+   `interstitial-actions` (every other dialog uses `.interstitial-buttons`) and
+   `r-button` (every other button uses `.r-btn`), so the row had no layout and
+   the Close button was a raw browser control on a styled page. Both are
+   corrected in app.js; what is left here is the list, and the focus ring.
+
+   THE FOCUS RING. showDecisions() gives the heading `tabindex="-1"` and
+   focuses it so a screen reader starts at the top of the announcement rather
+   than on the Close button. Chrome draws its focus ring on a programmatic
+   focus like that, which put a heavy black rectangle around the title — the
+   single thing that made the dialog look broken rather than plain. The ring is
+   dropped for that case ONLY: the heading is not reachable by keyboard, so it
+   is a ring nobody navigating can be deprived of. Every real control keeps
+   `:focus-visible`. */
+.interstitial-title:focus { outline: none; }
+
+.decision-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+/* SEPARATED, NOT BOXED. Several decisions in one dialog have to read as
+   several things; a rule between them does that without giving each one a card
+   of its own, which at four decisions would be four sheets of paper in a
+   window. The first item has no rule above it — the heading is its separator. */
+.decision-list > li + li {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--r-border);
+}
+.decision-item > p { margin: 0 0 6px; }
+.decision-item > p:last-child { margin-bottom: 0; }
+.decision-item-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--r-text);
+}
+/* The server's own sentence, given room to be read. It runs to several lines
+   on a real decision and is the reason anyone opened the dialog. */
+.decision-item-body {
+  max-width: 68ch;
+  line-height: 1.55;
+}
+/* SOMEBODY'S WORDS, MARKED AS SUCH. The quote marks say it in the text; the
+   rule says it at a glance, so a reader skimming cannot take a person's note
+   for the platform's sentence. */
+/* THE SAME FIELDS, WITHOUT THE TABLE'S LEFT RULE. In a cell that rule separates
+   the resolution from the status detail above it. In the dialog the resolution
+   IS the content, there is nothing above it to be separated from, and a second
+   left rule would collide with the quoted note's. */
+.decision-item .what-resolution {
+  display: block;
+  margin-top: 2px;
+  max-width: 68ch;
+  line-height: 1.55;
+}
+.decision-item .resolution-headline { margin-bottom: 2px; }
+/* THE LABEL ON ITS OWN LINE, HERE ONLY. In the table these values are short
+   and an inline label reads as a caption. In the dialog they are frequently
+   whole sentences -- "No — no Remote work-authorisation request is linked to
+   this decision, so there was nothing at Remote to update" -- and an inline
+   label indents the first line while every line after it starts at the margin,
+   which is the shape that makes a paragraph look broken. */
+.decision-item .resolution-label {
+  display: block;
+  margin-right: 0;
+  margin-bottom: 1px;
+}
+.decision-item .resolution-fact { margin-top: 8px; }
+.decision-item .resolution-finality { margin-top: 10px; }
+
+.decision-item-note {
+  border-left: 3px solid var(--r-border-strong, var(--r-border));
+  padding-left: 10px;
+  color: var(--r-text);
+}
+
 /* The sidebar identity changed under the reader. Several quick-fills carry a
    persona — who is asking is half of what they demonstrate — and every one of
    those switches used to happen in silence, which is what "how do i start as
@@ -1266,3 +1394,28 @@ header { margin-bottom: 6px; }
   margin-bottom: 0;
   border-bottom: 0;
 }
+
+/* --- [E-1] the receipt reading panel ------------------------------------
+   Styled as a QUOTATION of the document, not as a field of the form: it must
+   never look like something the employee typed or can edit, because it is the
+   model's reading and the whole design rule is that the two readings stay
+   visibly separate. */
+.receipt-reading {
+  margin: 10px 0 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #d8dce3;
+  background: #f7f8fa;
+  font-size: 14px;
+}
+.receipt-reading-head { font-weight: 600; margin-bottom: 4px; }
+.receipt-reading-note { color: #4a5160; font-size: 13px; margin-bottom: 8px; line-height: 1.45; }
+.receipt-reading-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-top: 1px solid #e6e9ee; }
+.receipt-reading-key { color: #4a5160; }
+.receipt-reading-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+/* Reading in progress: visibly working, never mistakable for a result. */
+.receipt-reading-reading { border-style: dashed; color: #4a5160; }
+/* Not read is not a refusal — amber, not red. The claim can still be filed;
+   it will go to a person. */
+.receipt-reading-unread { border-color: #e0c58a; background: #fdf8ee; }
+.receipt-reading-read { border-color: #b9cfae; background: #f4f9f1; }

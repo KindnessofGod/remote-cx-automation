@@ -26,6 +26,8 @@ import { matchKeywords } from "../shared/keywordMatch.js";
 // a decision input — this use case's only decision is "escalate, always".
 // ---------------------------------------------------------------------------
 
+import { retrieveStatutoryCitations } from "../knowledge/statutoryRetrieval.js";
+
 export const MOBILITY_CORPUS = [
   {
     id: "mobility-transition-safety",
@@ -99,7 +101,22 @@ export function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-/** The original retrieval mechanism, kept as the safe unconfigured default. */
+/**
+ * Keyword matching over MOBILITY_CORPUS — Remote's own process guidance.
+ *
+ * KEPT AS THE PRIMARY LEG, unlike UC-08's equivalent, and the difference is
+ * what the two corpora ARE. UC-08's three hand-written entries were paraphrases
+ * of a MODEL convention standing in for instruments the repository already
+ * held, so they were demoted. These six are Remote process knowledge —
+ * Minimum Onboarding Time, PTO portability between contracts, destination-ready
+ * -before-source-exit — which no statute anywhere states and which a relocation
+ * dossier genuinely needs. They are not a stand-in for anything.
+ *
+ * What was missing was the OTHER half: a permanent relocation also raises social
+ * security coordination, and D-17 (Regulation 883/2004) and D-20 (the SSA
+ * totalization table) were sitting unreachable. So the statutory corpus is
+ * ADDED here rather than substituted — see retrieveMobilityGuidance().
+ */
 function retrieveByKeywords(text, corpus) {
   const lower = asLowerText(text);
   const matches = [];
@@ -148,6 +165,7 @@ export class MobilityRetriever {
     this.embed = embed;
     this.pgPool = pgPool;
     this.corpus = corpus;
+    this.usingDefaultCorpus = corpus === MOBILITY_CORPUS;
     this.threshold = threshold;
   }
 
@@ -155,12 +173,12 @@ export class MobilityRetriever {
    * @param {string} text
    * @returns {Promise<Array<{id: string, title: string, summary: string, matchedOn: string[]}>>}
    */
-  async retrieveMobilityGuidance(text) {
-    if (!this.embed) return retrieveByKeywords(text, this.corpus);
+  async retrieveMobilityGuidance(text, { countries = null } = {}) {
+    if (!this.embed) return this.#unconfiguredLeg(text, countries);
 
     const queryVector = await this.embed(text);
     const stored = await this.#storedVectors();
-    if (stored.length === 0) return retrieveByKeywords(text, this.corpus);
+    if (stored.length === 0) return this.#unconfiguredLeg(text, countries);
 
     const ranked = stored
       .map((entry) => ({ entry, similarity: cosineSimilarity(queryVector, entry.embedding) }))
@@ -175,6 +193,37 @@ export class MobilityRetriever {
         `embedding similarity — ranked ${i + 1} of ${ranked.length} passage(s), above the ${this.threshold} match threshold`,
       ],
     }));
+  }
+
+  /**
+   * Process guidance FIRST, then the statutory instruments — both, never one.
+   *
+   * ORDER IS DELIBERATE. A relocation specialist's first question is what Remote
+   * has to do and in what sequence; the coordination instrument is context for
+   * the second. Reversing it would bury the operational answer under a
+   * regulation.
+   *
+   * A caller that supplied its own corpus is opting out of the statutory index
+   * entirely — the hermetic tests inject fake embedded corpora and would
+   * otherwise silently get the real one back alongside their double.
+   */
+  #unconfiguredLeg(text, countries = null) {
+    const process = retrieveByKeywords(text, this.corpus);
+    if (!this.usingDefaultCorpus) return process;
+    /* THE ROUTE, WHEN THE CALLER KNOWS IT — otherwise the jurisdictions are
+       read out of the prose by countriesNamed(). Passing null is not a bug and
+       is still the behaviour for any caller that has only text; what WAS a bug
+       is that no caller could pass it at all, so a request whose route came
+       from structured intake ("relocationType: permanent", source US,
+       destination NL) and whose prose named no country was searched with no
+       jurisdiction filter, and matched nothing statutory. It failed CLOSED —
+       no wrong-country citation was ever produced — but it lost the right ones
+       silently, because the process-guidance leg still returned hits so
+       `no_citations` never fired. UC-08's retriever has taken `countries` since
+       §3.95; this is the same seam, a use case late. */
+    const statutory = retrieveStatutoryCitations(text, { feed: "UC-07", limit: 2, countries });
+    const seen = new Set(process.map((c) => c.id));
+    return [...process, ...statutory.filter((c) => !seen.has(c.id))];
   }
 
   /** Stored vectors: corpus entries carrying an embedding first, else the pgvector table. */
@@ -204,8 +253,8 @@ let defaultRetriever = new MobilityRetriever();
  * @param {string} text
  * @returns {Promise<Array<{id: string, title: string, summary: string, matchedOn: string[]}>>}
  */
-export async function retrieveMobilityGuidance(text) {
-  return defaultRetriever.retrieveMobilityGuidance(text);
+export async function retrieveMobilityGuidance(text, opts) {
+  return defaultRetriever.retrieveMobilityGuidance(text, opts);
 }
 
 /**

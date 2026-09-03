@@ -118,6 +118,8 @@ import { POLICY_CAP_CURRENCY } from "./policyCaps.js";
 import { formatMoney } from "../shared/money.js";
 import { selectableCategories } from "./expenseCategories.js";
 import { decisionFacts, fact, unknownFact } from "../shared/decisionFacts.js";
+import { shortReference } from "../shared/publicReference.js";
+import { humanTime } from "../shared/settledDecision.js";
 
 export const CONFIDENCE_THRESHOLD = 0.85;
 
@@ -178,6 +180,11 @@ export function isMoneyScaledInteger(value) {
  * @param {object} args.classification      {categoryId, confidence, reason, source} from the classifier
  * @param {number|null} args.policyCap      the category's spend cap in integer ×100, or null when UNKNOWN
  *   (null is "no cap could be found", which routes to a human — see F-12)
+ * @param {{extracted: object|null, source: string, reason: string}|null} [args.receiptReading]
+ *   What receiptExtraction.js read off the attached receipt, or null/absent when
+ *   no reading was attempted on this path. ABSENT IS NOT "UNREADABLE" — see gate
+ *   8b. Defaults to `null`, so every existing caller and test is unaffected and
+ *   the green tier is not disabled by wiring this in.
  * @param {Array<{call:string,status:number|null,kind:string,message:string}>} [args.upstreamFailures]
  *   Reads that FAILED rather than returned data (shared/upstreamFailure.js).
  *   Defaults to `[]`, so every existing caller and test is unaffected. Each
@@ -234,6 +241,8 @@ export const GATE_SEQUENCE = Object.freeze([
   { position: 6, reason: "duplicate_submission", gate: "Duplicate receipt", checks: "this receipt was not already reimbursed", means: "This receipt was already reimbursed on another expense, so paying it again would pay the same expense twice." },
   { position: 7, reason: "category_unverified", gate: "Category", checks: "the category is a real, fileable one for this employee", means: "The category is not one this employee can file against, so the spend cannot be checked against any policy cap." },
   { position: 8, reason: "missing_receipt_evidence", gate: "Receipt evidence", checks: "a receipt is attached", means: "No receipt is attached, so there is nothing evidencing what was spent." },
+  { position: 8, reason: "receipt_unreadable", gate: "Receipt evidence", checks: "the attached receipt could actually be read", means: "The receipt is attached but could not be read, so nothing has checked what it says. An unreadable receipt is an unchecked one." },
+  { position: 8, reason: "receipt_does_not_support_claim", gate: "Receipt evidence", checks: "the receipt agrees with the recorded claim", means: "What the receipt shows does not match what the claim records, so a person compares the two readings side by side." },
   { position: 9, reason: "invalid_amount", gate: "Amount sanity", checks: "every money field is a valid ×100 integer", means: "One of the money fields is not a whole number of minor units, so the arithmetic on it cannot be trusted." },
   { position: 10, reason: "tax_exceeds_amount", gate: "Tax containment", checks: "the tax portion does not exceed its whole", means: "The tax portion is larger than the expense it is part of, which cannot be correct." },
   { position: 11, reason: "currency_conversion_unverified", gate: "Conversion", checks: "a cross-currency expense cannot be verified, so a human decides", means: "The expense was filed in one currency and converted into another, and this system cannot verify the rate that was used — so a person decides rather than approving a figure it cannot check." },
@@ -293,6 +302,27 @@ export function describeDecidingGate(reason) {
   };
 }
 
+/**
+ * Reasons that mean NOBODY TRIED, as opposed to tried-and-failed.
+ *
+ * The difference decides whether a claim is refused. `extraction_not_configured`
+ * is a deployment that has no reader wired; `no_receipt_attached` is the
+ * ordinary case where the receipt lives on the Remote expense record and never
+ * touched the Zendesk ticket — which is MOST expense tickets. Treating either as
+ * "unreadable" would refuse almost everything and disable the green tier, the
+ * failure §16.8 of the acceptance contract exists for.
+ *
+ * Everything NOT in this list refuses, so the list is the thing to be careful
+ * about: adding a genuine failure here would silently re-open the hole [E-1]
+ * closed.
+ */
+export const RECEIPT_NOT_ATTEMPTED_REASONS = Object.freeze([
+  "extraction_not_configured",
+  "no_receipt_attached",
+  "zendesk_not_configured",
+  "no_ticket_supplied",
+]);
+
 export function evaluate({
   identityVerified,
   employmentActive,
@@ -302,6 +332,7 @@ export function evaluate({
   categoryValid,
   classification,
   policyCap,
+  receiptReading = null,
   upstreamFailures = [],
   now = new Date(),
 }) {
@@ -384,6 +415,52 @@ export function evaluate({
   // a placeholder, not an artifact anybody could pull up and re-check.
   if (!usableReceipts(expense).length) {
     return { decision: "human_review", reason: "missing_receipt_evidence", flags: ["missing_receipt_evidence"] };
+  }
+
+  // Gate 8b — DOES THE RECEIPT SUPPORT THE CLAIM? [E-1]
+  //
+  // Gate 8 above proves an artifact EXISTS. This one is the first thing in this
+  // use case that reads what the artifact SAYS. Acceptance contract §6:
+  // "The receipt image contradicts the record — wrong vendor, wrong date, wrong
+  // currency, or a total that is not the claimed amount" -> `human_review` /
+  // `receipt_does_not_support_claim`, and "the receipt cannot be fetched or
+  // cannot be read" -> `human_review` / `receipt_unreadable`, because "an
+  // unreadable receipt is an unchecked one".
+  //
+  // THREE PROPERTIES THIS IS BUILT TO HOLD, all of them testable:
+  //
+  // 1. REMOTE'S FIGURES ARE NEVER OVERWRITTEN BY THE MODEL'S (§13). Nothing
+  //    below assigns to `expense`. The model's numbers are compared and then
+  //    discarded; they reach a human as a second reading beside Remote's, never
+  //    merged into one corrected figure — a merged figure has already decided.
+  // 2. IT CAN ONLY EVER REFUSE. There is no branch here returning
+  //    `auto_approve`, so no future edit can let a model's transcription
+  //    approve anything.
+  // 3. IT IS SKIPPED ENTIRELY WHEN NO READING WAS ATTEMPTED. `receiptReading`
+  //    absent means the extractor is not wired on this path — which is NOT the
+  //    same as a receipt that could not be read, and must not be. Treating
+  //    "unconfigured" as "unreadable" would send every claim everywhere to a
+  //    human and quietly disable the green tier, which is precisely the failure
+  //    §16.8 of the contract exists for.
+  if (receiptReading) {
+    if (!receiptReading.extracted) {
+      // Attempted and failed. `extraction_not_configured` is the one reason
+      // that means "nobody tried", so it does not refuse.
+      if (!RECEIPT_NOT_ATTEMPTED_REASONS.includes(receiptReading.reason)) {
+        return { decision: "human_review", reason: "receipt_unreadable", flags: ["receipt_unreadable"] };
+      }
+    } else {
+      const contradictions = receiptContradictions(expense, receiptReading.extracted);
+      if (contradictions.length) {
+        return {
+          decision: "human_review",
+          reason: "receipt_does_not_support_claim",
+          // The flags name WHICH field disagreed, so the reviewer's panel can
+          // point at it. They are observations, never figures.
+          flags: ["receipt_does_not_support_claim", ...contradictions],
+        };
+      }
+    }
   }
 
   // Gate 9 — amount sanity (F-23), on the REAL field names. Before any
@@ -476,8 +553,19 @@ export function evaluate({
   // auto path moves money (PATCH /v1/expenses/:id {status:"approved"}).
   const confidenceValue = classification.confidence;
   if (typeof confidenceValue !== "number" || Number.isNaN(confidenceValue)) {
-    flags.push("confidence_unknown");
-    return { decision: "human_review", flags, reason: "low_confidence" };
+    // FIXED 2026-08-31. This read `flags.push("confidence_unknown")` and
+    // `flags` is bound NOWHERE — not a parameter of `evaluate()`, not declared
+    // in this file. So the gate that exists to fail closed on an unusable
+    // confidence threw `ReferenceError: flags is not defined` instead of
+    // returning `human_review`, and in n8n a throw aborts the node BEFORE the
+    // audit write, losing the decision entirely.
+    //
+    // It survived because no test ever fed a non-numeric confidence: both
+    // classifiers always emit a number, so the line is unreachable through the
+    // normal path and is exactly the defensive branch you cannot reach on
+    // purpose. That is what makes a fail-closed guard worth writing and worth
+    // testing directly rather than through the caller.
+    return { decision: "human_review", reason: "low_confidence", flags: ["low_confidence", "confidence_unknown"] };
   }
   if (confidenceValue < CONFIDENCE_THRESHOLD) {
     return { decision: "human_review", reason: "low_confidence", flags: ["low_confidence"] };
@@ -1004,8 +1092,15 @@ export function describeDecisionFacts({ reason, evidence = null }) {
         [
           fact("Already filed as expense", e.duplicateOf?.expenseId),
           fact("That decision was", e.duplicateOf?.decision),
-          fact("Decided at", e.duplicateOf?.decidedAt),
-          fact("Its store row", e.duplicateOf?.storeId, "the id to open in the audit viewer"),
+          // A DATE A PERSON READS, and a reference a person can quote
+          // (2026-08-31). This row printed a raw ISO instant and a full UUID on
+          // a panel a customer sees — found by seeding UC-02's BLOCKED outcome
+          // and rendering it, which no earlier check reached. The short form is
+          // a PREFIX of the real id, so the pointer still does its job: it is
+          // here so a reviewer can open the earlier record rather than search
+          // for a row they have no key for, and a prefix search finds it.
+          fact("Decided at", humanTime(e.duplicateOf?.decidedAt) ?? e.duplicateOf?.decidedAt),
+          fact("Its store row", shortReference(e.duplicateOf?.storeId), "the reference to open in the audit viewer"),
           e.duplicateOf?.externalRef
             ? fact("Its ticket", e.duplicateOf.externalRef)
             : unknownFact("Its ticket", "The earlier submission carried no ticket reference — it was filed through a surface that does not create one, so open it by its store row above."),
@@ -1210,3 +1305,109 @@ const IDENTITY_SENTENCE = Object.freeze({
   unauthenticated_requires_stepup:
     "The submission arrived with no authenticated session at all, so the submitter's identity rests on a claim. Nothing about the expense was disclosed or decided.",
 });
+
+/**
+ * Which recorded fields the receipt disagrees with. Observations only — this
+ * returns field NAMES, never amounts, so no caller can accidentally treat the
+ * model's number as a value to use.
+ *
+ * WHAT IS COMPARED, AND WHAT DELIBERATELY IS NOT:
+ *
+ * - `currency` and `total` are compared when the receipt shows both. Money is
+ *   compared as integer minor units on both sides — the same ×100 discipline as
+ *   everywhere else — so no float ever enters the comparison.
+ * - `date` is compared only when the record carries `expense_date`.
+ * - VENDOR IS NOT COMPARED, though §6 lists it. The expense record has no
+ *   merchant field: its nearest counterpart is `title`, which is a human's
+ *   description of the purpose ("Team lunch") and not the vendor's trading name
+ *   ("Cafe Central"). Comparing those two would flag almost every honest claim,
+ *   and a gate that fires on everything teaches its reader to ignore it. When a
+ *   merchant field exists on the record this is the place to add it.
+ *
+ * A null on either side is not a disagreement. An unreadable FIELD is not a
+ * contradicted one, and saying otherwise would refuse a claim for the crime of
+ * having a smudged date.
+ */
+/**
+ * One sentence a reviewer can read, putting the receipt's figures BESIDE
+ * Remote's rather than merged into them.
+ *
+ * WHY THIS EXISTS. Gate 8b's own header states the intent — the model's
+ * numbers "reach a human as a second reading beside Remote's, never merged
+ * into one corrected figure" — and until now nothing delivered them anywhere.
+ * The reading was computed, compared, and discarded. On the Zendesk path the
+ * only trace of it was inside the n8n execution: the internal note said
+ * `decision: human_review (policy_cap_unknown)` and never mentioned that a
+ * receipt had been read at all, so the reviewer it was compiled for could not
+ * see it, and neither could anyone watching a demonstration.
+ *
+ * THREE THINGS IT DELIBERATELY DOES.
+ *
+ * 1. BOTH FIGURES, ALWAYS, SIDE BY SIDE — even when they agree. A note that
+ *    printed only the receipt's total would be the merged figure the gate
+ *    forbids, one indirection away: a reader would take it as "the amount".
+ *    Printing both makes it unmistakable which number came from where, and
+ *    lets a reviewer catch a case the gate cannot (both readings wrong in the
+ *    same direction).
+ * 2. IT NAMES WHAT DISAGREED, using the gate's own contradiction codes rather
+ *    than re-deriving the comparison. A second implementation of "do these
+ *    agree?" would eventually disagree with the gate, and the note would then
+ *    contradict the decision it is explaining.
+ * 3. IT DECIDES NOTHING. Pure, called after evaluate(), consulted by no gate.
+ *
+ * `notAttempted` is kept distinct from `unreadable` because those are
+ * different facts about the world and the same word for both is what
+ * RECEIPT_NOT_ATTEMPTED_REASONS exists to prevent: nobody tried, versus tried
+ * and failed.
+ *
+ * @returns {string|null} null when there is nothing to say, so a caller can
+ *   append it unconditionally without producing a dangling sentence.
+ */
+export function describeReceiptReading(expense, receiptReading) {
+  if (!receiptReading) return null;
+
+  const money = (minor, currency) =>
+    Number.isInteger(minor) ? `${(minor / 100).toFixed(2)} ${currency ?? ""}`.trim() : "an unreadable amount";
+  const claimCurrency = expense?.currency?.code ?? expense?.currency ?? null;
+
+  if (!receiptReading.extracted) {
+    return RECEIPT_NOT_ATTEMPTED_REASONS.includes(receiptReading.reason)
+      ? `Receipt: not read (${receiptReading.reason}) — nothing was checked against the claim, and nothing was assumed either.`
+      : `Receipt: attached but could NOT be read (${receiptReading.reason}). An unreadable receipt is an unchecked one.`;
+  }
+
+  const e = receiptReading.extracted;
+  const disagreements = receiptContradictions(expense, e);
+  const parts = [
+    `Receipt reads: ${e.merchant ?? "unnamed merchant"}, ${money(e.total, e.currency)}, dated ${e.date ?? "no legible date"}.`,
+    `Claim records: ${money(expense?.amount, claimCurrency)}, dated ${expense?.expense_date ?? "no date"}.`,
+  ];
+  parts.push(
+    disagreements.length
+      ? `These DISAGREE (${disagreements.join(", ")}) — both readings are shown above; neither has been corrected by the other.`
+      : "These agree on currency, total and date. Merchant is not compared: the expense record has no merchant field."
+  );
+  return parts.join(" ");
+}
+
+export function receiptContradictions(expense, extracted) {
+  const out = [];
+  if (!expense || !extracted) return out;
+
+  const claimedCurrency = expense?.currency?.code ?? expense?.currency ?? null;
+  if (extracted.currency && claimedCurrency && String(extracted.currency).toUpperCase() !== String(claimedCurrency).toUpperCase()) {
+    out.push("receipt_currency_differs");
+  }
+
+  const claimedTotal = Number.isInteger(expense?.amount) ? expense.amount : null;
+  if (Number.isInteger(extracted.total) && claimedTotal !== null && extracted.total !== claimedTotal) {
+    out.push("receipt_total_differs");
+  }
+
+  const claimedDate = typeof expense?.expense_date === "string" ? expense.expense_date.slice(0, 10) : null;
+  if (extracted.date && claimedDate && extracted.date !== claimedDate) {
+    out.push("receipt_date_differs");
+  }
+
+  return out;
+}

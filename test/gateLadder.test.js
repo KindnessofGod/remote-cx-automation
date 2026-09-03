@@ -37,6 +37,7 @@ import * as uc05 from "../src/uc05/policyEngine.js";
 import * as uc06 from "../src/uc06/policyEngine.js";
 import * as uc09 from "../src/uc09/policyEngine.js";
 import { classifyRisk } from "../src/uc04/riskMatrix.js";
+import { classifyEngagement, NON_EOR_ENGAGEMENTS } from "../src/uc01/engagementEligibility.js";
 
 // --- the scrapers ----------------------------------------------------------
 
@@ -135,8 +136,19 @@ const CASES = [
   {
     name: "UC-03",
     module: uc03,
-    // Reasons this use case can actually return, scraped from its own source.
-    scraped: () => reasonsReturnedBy(uc03.evaluate),
+    // Reasons this use case can actually return, scraped from its own source —
+    // PLUS the engagement vocabulary, which UC-03's first gate returns through
+    // a variable (`reason: engagement.reason`) and the scraper therefore cannot
+    // see. Same shape as UC-04's `classifyRisk` line below, and read from the
+    // engagement module's OWN exports rather than restated here: the two
+    // non-EOR reasons are the VALUES of its map, so a class added there shows
+    // up here without anybody remembering to add it.
+    scraped: () =>
+      new Set([
+        ...reasonsReturnedBy(uc03.evaluate),
+        ...reasonsReturnedBy(classifyEngagement),
+        ...Object.values(NON_EOR_ENGAGEMENTS),
+      ]),
   },
   {
     name: "UC-04",
@@ -201,7 +213,18 @@ for (const { name, module, scraped } of CASES) {
   test(`${name}: every row says what it checks and what it means, without restating the slug`, () => {
     for (const row of module.GATE_SEQUENCE) {
       assert.ok(row.gate && row.gate.length > 0, `${name}/${row.reason} has no gate name`);
-      assert.ok(row.checks && row.checks.length > 0, `${name}/${row.reason} has no 'checks'`);
+      /* A LENGTH FLOOR OF 1 IS NOT A GUARD, AND AN EM DASH WALKED THROUGH IT
+         (2026-08-31). UC-04's position 15 carried `checks: "—"` — length 1, so
+         this passed — and the sidebar rendered "15. risk_matrix passed ·
+         Checks: —": a bug canary presented to a specialist as a check that ran
+         and cleared with nothing to say. `means` on the very next line was
+         already floored at 20; the asymmetry was the whole defect. Both are 20
+         now, which is short enough to admit any real sentence and long enough
+         to reject a placeholder. */
+      assert.ok(
+        row.checks && row.checks.length > 20,
+        `${name}/${row.reason} has no usable 'checks' — the gate ladder prints it verbatim, so a dash or a placeholder reaches a specialist as an empty rung`
+      );
       assert.ok(
         row.means && row.means.length > 20,
         `${name}/${row.reason} has no usable 'means' — a support specialist has to be able to read it`
@@ -236,10 +259,21 @@ for (const { name, module, scraped } of CASES) {
 // Each assertion below is the one thing a reader would otherwise have to take
 // on trust: that position N really is the Nth thing evaluate() checks.
 
-test("UC-03's order: identity, employment, UC-04 routing, then destination, then time", () => {
+test("UC-03's order: engagement, identity, employment, UC-04 routing, then destination, then time", () => {
   assert.deepEqual(
     uc03.GATE_SEQUENCE.map((r) => r.reason),
     [
+      // ENGAGEMENT FIRST, ahead of identity (2026-09-03), for the reason
+      // src/uc01/engagementEligibility.js gives: eligibility is a property of
+      // the RECORD and identity a property of the REQUESTER, so an engagement
+      // Remote does not issue this product for is refused having read no travel
+      // facts and disclosed nothing. Five rungs because the gate refuses five
+      // ways and each is a different conversation.
+      "engagement_not_eor_contractor",
+      "engagement_not_eor_direct",
+      "engagement_onboarding_incomplete",
+      "engagement_offboarding",
+      "eor_status_unknown",
       "identity_not_verified",
       "employee_not_active",
       // The confidence pair sits ahead of the routing gate: every decision
@@ -354,25 +388,42 @@ test("UC-05's order: identity, employment, seniority date, country table, discre
       "employee_not_active",
       "missing_seniority_date",
       "unsupported_country",
-      // THREE ADJACENT RUNGS, THREE DIFFERENT FACTS, AND ALL THREE PRODUCE NO
+      // FOUR ADJACENT RUNGS, FOUR DIFFERENT FACTS, AND ALL FOUR PRODUCE NO
       // DATE — which is what made them collapsible. Reading down:
       //   unsupported_country         we hold no rule; the law may require anything
       //   no_statutory_notice_period  SOURCED: no statutory minimum binds a
       //                               resigning employee. The notice owed is
       //                               contractual and we do not hold contracts.
+      //   no_statutory_notice_during_probation
+      //                               SOURCED, and the opposite direction: the
+      //                               country HAS a statutory period and its
+      //                               statute positively says none runs during
+      //                               probation. Added 2026-09-02.
       //   no_matching_notice_bracket  we hold the rule; no bracket covers this tenure
       // The first pair was reported identically once, which told a UK employee
-      // three weeks in that the United Kingdom is unsupported. The middle rung
+      // three weeks in that the United Kingdom is unsupported. The second rung
       // was added 2026-08-20 for the same class of error one country over:
       // every American resignation escalated as `unsupported_country`, a
-      // durable and false claim that the US is outside Remote's coverage.
+      // durable and false claim that the US is outside Remote's coverage. The
+      // third for the same class again, inside one country: a Portuguese
+      // probationer was answered with the ordinary 30-day bracket beside a
+      // citation, in the same object, saying they owed nothing.
       "no_statutory_notice_period",
+      "no_statutory_notice_during_probation",
       "no_matching_notice_bracket",
       "statutory_discrepancy",
-      // Deliberately AFTER the discrepancy: that is a finding about the
-      // request, this is a problem with the data we were handed. Both
-      // escalate, so only the recorded reason differs — and mislabelling one
-      // as the other sends the case to the wrong desk.
+      // TWO SHORTFALLS, TWO RUNGS, AND THEY MEASURE DIFFERENT THINGS. The rung
+      // above compares the statutory end date with the date the EMPLOYEE
+      // proposed; this one compares the statutory quantity with the notice
+      // REMOTE's own record requires (`days_of_notice`, which Remote states
+      // blends the contract with local labour law). Same desk, different
+      // finding — and sharing one reason string would make the rung above print
+      // a sentence about a proposal that does not exist on these cases.
+      "remote_notice_below_statutory",
+      // Deliberately AFTER both: those are findings about the request, this is
+      // a problem with the data we were handed. All three escalate, so only the
+      // recorded reason differs — and mislabelling one as another sends the
+      // case to the wrong desk.
       "pto_balance_unusable",
       "all_gates_passed",
     ]

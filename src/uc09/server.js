@@ -23,6 +23,7 @@ import { resolveApprover, resolveReader } from "../shared/approverAuth.js";
 import { describeDecidingGate, describeGateLadder } from "./policyEngine.js";
 import { describeAdjustment } from "./approvalView.js";
 import { describeAdjustmentBasis } from "./decisionFacts.js";
+import { byTicketAccountRefusal } from "../shared/byTicketAccountGuard.js";
 
 /**
  * @param {object} deps
@@ -85,6 +86,10 @@ export function createUc09Handler({ adjustmentStore, audit, remote, allowedOrigi
       // would otherwise be read as an adjustment id.
       if (req.method === "GET" && isPath(parts, ["api", "adjustments", "by-ticket"]) && parts[3] && parts.length === 4) {
         const adjustmentRow = await adjustmentStore.findByExternalRef(parts[3]);
+        // ACCOUNT COLLISION GUARD — a bare ticket number means nothing without the
+        // account it was issued by. See src/shared/byTicketAccountGuard.js.
+        const foreignAccount = byTicketAccountRefusal(adjustmentRow, parts[3]);
+        if (foreignAccount) return send(res, 404, foreignAccount);
         if (!adjustmentRow) return send(res, 404, { found: false });
         const actionability = evaluateAdjustmentActionability({ adjustmentRow });
         return send(res, 200, {

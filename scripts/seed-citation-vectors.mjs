@@ -294,6 +294,23 @@ export const MIN_CHUNK_CHARS = 240;
  * @param {{maxChars?: number, minChars?: number}} [opts]
  * @returns {Array<{heading: string, text: string}>}
  */
+/**
+ * Does this passage talk about THIS REPOSITORY rather than about the law?
+ *
+ * Deliberately narrow — a source path, a source filename or the name of an
+ * internal register. It must not fire on a statute that happens to mention a
+ * file extension, and it must not become a general prose filter: the only claim
+ * being made is "a passage that cites our own code is a note about the system".
+ */
+export function namesRepositoryInternals(text) {
+  const t = String(text ?? "");
+  return (
+    /\bsrc\/[a-z0-9]+\//i.test(t) ||
+    /\b[A-Za-z0-9_-]+\.(?:js|mjs)\b/.test(t) ||
+    /\bCONTRADICTIONS\.md\b/.test(t)
+  );
+}
+
 export function chunkMarkdown(body, { maxChars = MAX_CHUNK_CHARS, minChars = MIN_CHUNK_CHARS } = {}) {
   const sections = [];
   const lines = String(body).split("\n");
@@ -317,8 +334,43 @@ export function chunkMarkdown(body, { maxChars = MAX_CHUNK_CHARS, minChars = MIN
 
   const chunks = [];
   for (const section of sections) {
+    // A MAINTAINER'S NOTE IS NOT A CITATION (2026-08-31).
+    //
+    // Each sidecar under docs/knowledge/ is a retrieved authority PLUS this
+    // project's own commentary about it — "Why this is the entry most likely to
+    // change someone's mind", "Postscript — the licence, resolved", and so on.
+    // The chunker admitted every `##` section equally, so those notes became
+    // citable passages and were served to a specialist BESIDE the statute, in
+    // the same shape, under the same authority's title.
+    //
+    // Found by opening all nine ZAF panels and reading them: UC-08's dossier
+    // cited D-31 (the Dutch residence article) and rendered a passage naming
+    // `src/uc04/riskMatrix.js` and `src/uc04/decisionFacts.js` — our own source
+    // files, quoted to a customer as though they were part of Netherlands tax
+    // law. Neither the static prose check nor the UC-04 render check could see
+    // it: the string is in a GENERATED corpus, built from a document nobody
+    // would think to scan for source paths.
+    //
+    // THE TEST IS THE CONTENT, NOT THE HEADING. A heading denylist would need
+    // updating for every new note and would fail silently when it was not. A
+    // section that names this repository's own code is, by construction,
+    // written about the system rather than about the law — so it cannot be
+    // source material, and it is refused. The section stays in the document,
+    // where it belongs and where maintainers read it.
     const prefix = section.heading ? `${section.heading}\n\n` : "";
-    const paragraphs = section.text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+    // FILTERED PER PARAGRAPH, NOT PER SECTION — and the difference was measured,
+    // not guessed. Dropping the whole section took the corpus from 57 passages
+    // to 30 and broke UC-08's 183-day retrieval outright, because these sidecars
+    // interleave a quoted limb with a note about what it settles for our code.
+    // The quote is the citation; the aside is not. Removing only the offending
+    // paragraph keeps 55 passages and leaves every measured pair answering from
+    // the statute.
+    const paragraphs = section.text
+      .split(/\n{2,}/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .filter((p) => !namesRepositoryInternals(p));
+    if (paragraphs.length === 0) continue;
     let current = [];
     let currentLen = 0;
     const emit = () => {

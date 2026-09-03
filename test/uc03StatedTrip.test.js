@@ -20,7 +20,7 @@
 //   2. THE NO-OP PROPERTY — with no fields, every existing outcome is
 //      byte-identical. §6.1: "The field is an OVERRIDE, not a new precondition —
 //      so no request that succeeds today can start failing."
-//   3. §6.5's OWN FIRST CHECK — the archived employee still refuses at rung 2
+//   3. §6.5's OWN FIRST CHECK — the archived employee still refuses at its own rung
 //      with every box filled. "If filling the new fields changes that outcome,
 //      the fields have become a gate instead of an override."
 //   4. A MALFORMED VALUE IS ABSENT, NEVER COERCED, AND ALWAYS RECORDED — the
@@ -47,7 +47,7 @@ import { CaseStore } from "../src/shared/caseStore.js";
 import { handleTravelInquiry, acceptTravelLetterOffer } from "../src/uc03/workflow.js";
 import { classifyTravelInquiry, classifyTravelInquiryRuleBased } from "../src/uc03/classifier.js";
 import { renderTravelLetterHtml } from "../src/uc03/letter.js";
-import { describeDecisionFacts } from "../src/uc03/policyEngine.js";
+import { describeDecisionFacts, GATE_SEQUENCE } from "../src/uc03/policyEngine.js";
 import {
   mergeStatedTrip,
   normaliseStatedAddressee,
@@ -198,7 +198,7 @@ test("a classification object handed nothing to merge is returned by IDENTITY, n
 // 3. §6.5's OWN FIRST CHECK — the fields must not become a gate
 // ---------------------------------------------------------------------------
 
-test("the archived employee still refuses at rung 2 with every field filled in", async () => {
+test("the archived employee still refuses at its own rung with every field filled in", async () => {
   const r = await handleTravelInquiry(
     {
       text: SPAIN_TEXT,
@@ -219,7 +219,7 @@ test("the archived employee still refuses at rung 2 with every field filled in",
   // speaks to it. A complete, valid, well-shaped set of fields changes nothing.
   assert.equal(r.decision, "escalate");
   assert.equal(r.reason, "employee_not_active");
-  assert.equal(r.decidedBy.position, 2);
+  assert.equal(r.decidedBy.position, GATE_SEQUENCE.find((g) => g.reason === "employee_not_active").position);
   assert.equal(r.letterHtml, undefined, "an archived employee must never be issued a letter");
   // The fields are still RECORDED — refusing is not a reason to lose what the
   // person told us — they simply decided nothing.
@@ -417,8 +417,12 @@ test("a compound ask in the request text still escalates, even when the addresse
 // for why that would cost three LLM calls and a correct intent read.
 
 test("an LLM date that is not ISO is dropped and recorded, and the rest of the reading survives", async () => {
+  // The year is IN THE TEXT on purpose: since 2026-08-30 a date whose year
+  // nobody wrote is dropped as ungrounded, and this test is about the SHAPE
+  // rule. Without a year both dates would vanish for the other reason and the
+  // test would pass while proving nothing.
   const result = await classifyTravelInquiry(
-    { text: "Conference in Germany, mid-September." },
+    { text: "Conference in Germany, mid-September 2026." },
     {
       askJson: async () => ({
         intent: "business_travel",
@@ -452,7 +456,7 @@ test("an LLM date that is not ISO is dropped and recorded, and the rest of the r
 
 test("a clean LLM classification carries no dateProblems key at all", async () => {
   const result = await classifyTravelInquiry(
-    { text: "Conference in Germany." },
+    { text: "Conference in Germany, 20 September 2026 to 26 September 2026." },
     {
       askJson: async () => ({
         intent: "business_travel",

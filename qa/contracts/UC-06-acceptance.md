@@ -1704,6 +1704,21 @@ not because it is convenient.
 
 ## 18. Build queue
 
+> **2026-09-02 — what the three-persona UI E2E built from this queue.** Step 2's
+> LABEL half is built: slot 1 reads *Employer's signatory* on the status page,
+> the sidebar, the queue and the settled sentences, with the role id
+> `customer_admin` deliberately unchanged (the read-alias question is moot —
+> nothing was renamed that an `APPROVER_ROLES` value keys on). Step 6
+> (`[A-30]` `[A-31]`) is built: a stand-in-filed ticket carries
+> `queue_payroll_ops` (+ `escalation_payroll_ops` on an escalation) and lands in
+> group `99900000000009`, asserted by `test/remoteui.test.js`, read back live on
+> tickets 284–286. §16 item 9 (exactly-once) is **demonstrated** — executions
+> 12038 / 12040. §8 invariant 13 now holds on the n8n path too
+> (`workflows/nodes-uc06/appendAuditLogSpec.js`, audit row `ddab7859`).
+> Steps 3–5 (`automatable`, the signature-time re-check) are untouched.
+> Evidence: `qa/evidence/UC-06/2026-09-02-uc06-e2e/`.
+
+
 **Nothing below is built.** This pass changed documentation only; `git diff` against
 `src/`, `test/`, `workflows/` and `zaf-app/` is empty. Read this section before
 starting any UC-06 build work.

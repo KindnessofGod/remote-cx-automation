@@ -219,12 +219,30 @@ test("an alpha-2 country code never silently becomes a calendar — the path is 
     assert.equal(direct.status, 404);
     assert.deepEqual(await direct.json(), { message: "Country not found" }, "Remote's own message, verbatim");
 
-    // Through the client, "CA" cannot be resolved against this mock's registry
-    // (Canada is deliberately absent from it), so the request is never sent —
-    // which is the fail-closed answer, not a guessed country code.
-    const result = await client.listHolidayCalendarResult({ countryCode: "CA", year: 2026 });
-    assert.equal(result.holidays, null);
-    assert.match(result.error.message, /never requested/);
+    // WHAT THIS TEST IS ACTUALLY ABOUT, restated 2026-09-02 when Canada joined
+    // the mock registry and broke the old version of it.
+    //
+    // It used to pass "CA" here and rely on Canada being ABSENT, so nothing
+    // could resolve it. That conflated two different things: "the client must
+    // not GUESS an alpha-3 from an alpha-2" and "this particular country
+    // happens to be missing". Resolving CA -> CAN through the registry is a
+    // LOOKUP, and it is the behaviour F-27 exists to provide. Both halves are
+    // now asserted, so neither can be lost:
+    //
+    // (a) an alpha-2 the registry does NOT hold is refused before the wire —
+    //     no guess, no request. Japan is the fixture (see mockServer.js).
+    const unknown = await client.listHolidayCalendarResult({ countryCode: "JP", year: 2026 });
+    assert.equal(unknown.holidays, null, "an unresolvable alpha-2 produced a calendar");
+    assert.match(unknown.error.message, /never requested/);
+
+    // (b) an alpha-2 the registry DOES hold resolves and is served. Without
+    //     this the test would pass just as well against a client that refused
+    //     every alpha-2 — which is failing closed by never working, and is not
+    //     what "the path is alpha-3 keyed" means.
+    const resolved = await client.listHolidayCalendarResult({ countryCode: "CA", year: 2026 });
+    assert.ok(Array.isArray(resolved.holidays), "CA no longer resolves through the registry to CAN");
+    assert.equal(resolved.error, null);
+    assert.ok(resolved.holidays.length > 0, "the resolved calendar came back empty");
   });
 });
 

@@ -317,6 +317,52 @@ export const SCHENGEN_LIMIT_DAYS = 90;
 export const SCHENGEN_WINDOW_DAYS = 180;
 
 /**
+ * W-3. Notice before departure, in whole calendar days — REMOTE'S OWN NUMBERS.
+ *
+ * `[VENDOR-PUBLIC]`, upgraded from `[PROPOSED]` the same day it shipped. The
+ * first version of this constant was a working minimum this project chose,
+ * disclosed as having no authority behind it. It did not need one: Remote
+ * publishes a notice expectation for exactly this request, and rung 1 of the
+ * substitution ladder is never overridden by a lower rung (CLAUDE.md §3).
+ *
+ * Remote Help Center article `37802834593805`, retrieved 2026-08-18 and
+ * recorded in `docs/UC04-RESEARCH-FINDINGS.md` §1: a remote work authorization
+ * should be raised *"at least 3–8 weeks before your intended departure"*, and
+ * under two weeks requires live messaging rather than the ordinary flow.
+ *
+ * So there are TWO lines and they do different jobs:
+ *   · 14 days — the floor below which Remote's own process changes. This is the
+ *     one that raises a flag.
+ *   · 21 days — the bottom of the window Remote actually recommends. Reported,
+ *     never flagged: a trip inside Remote's own stated range is not an
+ *     exception, and treating advice as a threshold is how this repository has
+ *     twice turned a recommendation into a refusal (C-10, C-20).
+ *
+ * NEITHER IS A STATUTE and the row says so. A notice period is a vendor's
+ * process expectation, not a rule of law, and the difference matters to the
+ * specialist deciding whether to make an exception.
+ */
+export const LEAD_TIME_MINIMUM_DAYS = 14;
+export const LEAD_TIME_RECOMMENDED_DAYS = 21;
+
+/**
+ * Whole calendar days from `from` to `to`, or null if either is unreadable.
+ * Measured on UTC day boundaries via `toDayIndex()` — a trip starting tomorrow
+ * is 1 day away whatever hour it is now, which is how a person counts notice.
+ * Negative when `to` is already past; callers screen that separately, because
+ * a trip already under way is `start_in_past` and blocks.
+ * @param {unknown} from
+ * @param {unknown} to
+ * @returns {number|null}
+ */
+function wholeDaysBetween(from, to) {
+  const a = toDayIndex(from);
+  const b = toDayIndex(to);
+  if (a === null || b === null) return null;
+  return b - a;
+}
+
+/**
  * Parse a "YYYY-MM-DD" (or any ISO) date to a whole UTC day index, or null.
  * Day index = days since the epoch, so interval maths is plain integers and no
  * DST or timezone offset can move a boundary by one day. Copied in shape from
@@ -792,7 +838,7 @@ export function classifyRisk(args) {
   const tripDays = tripDurationDays(startDate, endDate);
 
   if (reasons.length > 0) {
-    return { riskLevel: "blocked", reasons, flags, tripDays, cumulativeDays: null, schengen: null, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
+    return { riskLevel: "blocked", reasons, flags, tripDays, leadTimeDays: null, cumulativeDays: null, schengen: null, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
   }
 
   // --- Schengen visa-free 90/180 window (statutory, not invented) --------
@@ -850,7 +896,7 @@ export function classifyRisk(args) {
     // the peak it measured is the evidence for the refusal, and dropping it
     // would leave a `schengen_90_180_exceeded` with no figure behind it — which
     // is the state decisionFacts.js had to apologise for in prose.
-    return { riskLevel: "blocked", reasons, flags, tripDays, cumulativeDays: null, schengen, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
+    return { riskLevel: "blocked", reasons, flags, tripDays, leadTimeDays: null, cumulativeDays: null, schengen, travelHistoryProblems: historyProblems, considerations, normalized: { homeCountry, destinationCountry, nationality } };
   }
 
   // --- Destination outside everything the matrix knows about ---------------
@@ -893,6 +939,40 @@ export function classifyRisk(args) {
     flags.push("non_treaty_pair");
   }
 
+  /* W-3 — HOW MUCH NOTICE THERE ACTUALLY IS, which is the first thing a real
+     mobility team triages on and the one fact this matrix never computed.
+     A request filed three days before departure and one filed three months out
+     produced byte-identical output, so the specialist had to subtract two dates
+     by eye to find the only variable that decides whether anything can still be
+     obtained in time. Every remedy this panel names — a work permit, an A1, a
+     certificate of coverage, a Modelo 21-RFI reaching the payer — takes weeks,
+     and "obtain it before approving" is advice or a fiction depending entirely
+     on this number.
+
+     IT IS A SOFT FLAG AND IT MUST STAY ONE. Short notice is not an immigration
+     bar and not a data-quality fault, and UC-04's blocking set is deliberately
+     only those two (docs/UC04-RESEARCH-FINDINGS.md §5). Every mobility product
+     surveyed clears the low-risk and routes the rest to a named human, and none
+     refuses a trip on its own authority (§3) — so this moves the level and
+     changes what is shown, and never what may be executed. Making it escalate
+     would also route ordinary short-notice trips into the Tier-2 legal queue
+     that UC-04.md reserves for unconfirmed jurisdictions, which is the defect
+     §7 item 7 already records once.
+
+     THE 14 DAYS ARE `[PROPOSED]` AND SAY SO. No authority sets a notice period
+     for a workation; this is a working minimum chosen so the number has
+     something to be read against, and the row that renders it names it as this
+     system's own line rather than anybody's rule. A trip already under way is
+     `start_in_past`, which blocks above this and returns before it. */
+  let leadTimeDays = null;
+  if (!Number.isNaN(new Date(startDate).getTime())) {
+    leadTimeDays = wholeDaysBetween(now, startDate);
+    if (leadTimeDays !== null && leadTimeDays < LEAD_TIME_MINIMUM_DAYS) {
+      considerations.push("short_notice_before_departure");
+      flags.push("lead_time_short");
+    }
+  }
+
   // Long cumulative presence pushes toward medium (tax-residency watch).
   // We compute the trailing 365-day window, same shape as UC-08's calculator
   // for the same reason.
@@ -930,7 +1010,9 @@ export function classifyRisk(args) {
   else if (
     flags.includes("non_treaty_pair") ||
     flags.includes("tax_residency_watch") ||
-    flags.includes("schengen_visa_unverified")
+    flags.includes("schengen_visa_unverified") ||
+    // W-3. Medium, never high: it is a reason to look, never a reason to refuse.
+    flags.includes("lead_time_short")
   )
     riskLevel = "medium";
 
@@ -939,6 +1021,7 @@ export function classifyRisk(args) {
     reasons,
     flags,
     tripDays,
+    leadTimeDays,
     cumulativeDays,
     // The Schengen peak this trip actually reached, and the 180-day window that
     // produced it — null when the allowance never governed the trip (outside

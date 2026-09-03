@@ -101,6 +101,14 @@ export function describeDecidingGate(sequence, reason) {
  *
  * @param {GateRow[]} sequence
  * @param {string} reason
+ * A FOURTH STATUS EXISTS AND IS NOT PRODUCED HERE. `not_evaluated` — a rung
+ * above the deciding one that was reached but could not evaluate anything —
+ * is applied by a use case's own post-processing (src/uc05/policyEngine.js
+ * qualifyGateLadder), because only the stored row knows whether a check ran.
+ * Position alone cannot tell "ran and found nothing" from "never had its
+ * inputs", and calling the second "passed" is the misreading this ladder
+ * exists to prevent.
+ *
  * @returns {Array<GateRow & {status:"passed"|"decided"|"not_reached"}>}
  */
 export function describeGateLadder(sequence, reason) {

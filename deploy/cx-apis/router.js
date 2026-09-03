@@ -139,6 +139,36 @@ export const QUEUE_VIEW = Object.freeze({
 });
 
 /**
+ * The Remote-product stand-in (src/remoteui/), mounted alongside the nine, the
+ * portal, the audit viewer and the queue.
+ *
+ * Same reasoning as PORTAL for staying out of USE_CASES: it is not a
+ * review/approval API and cannot present a ZAF token — it stands in for
+ * Remote's OWN product surfaces, which are not inside Zendesk — so listing it
+ * there would subject it to a gate it can never pass. It carries the portal's
+ * shared-key gate instead (src/portal/access.js), one key now opening five
+ * surfaces.
+ *
+ * WHY IT IS MOUNTED AT ALL. It was `npm run remoteui` and nothing else, so the
+ * two flows that begin inside Remote's product — a customer admin requesting a
+ * contract amendment, and a customer's manager deciding a work-authorization
+ * request — could not appear in a browser demo of the deployment at all. Every
+ * other surface in this repository could; these two were reachable only from a
+ * clone.
+ *
+ * IT WRITES. `writes: true` is a fact about the code and not a posture: the
+ * amendment path creates a real Zendesk ticket, and the work-authorization path
+ * records a durable audit row and can PATCH a real Remote record. That is
+ * exactly why the shared key is not optional here, and why the gate lives in
+ * the surface itself rather than in a copy kept here.
+ */
+export const REMOTE_UI = Object.freeze({
+  prefix: "remoteui",
+  label: "Remote product stand-in — the customer admin's amendment request (UC-06) and the employer's work-authorization decision (UC-04, stage 2)",
+  writes: true,
+});
+
+/**
  * The third-party consent door (src/thirdparty/), mounted alongside the nine,
  * the portal, the audit viewer and the queue. It is NOT a fifth "portal-style"
  * surface with the same shared-key gate — it is deliberately gated by
@@ -197,7 +227,7 @@ function forwardedSearch(url) {
 
 /**
  * @typedef {object} Route
- * @property {"meta"|"usecase"|"portal"|"audit"|"queue"|"thirdparty"|"unknown"} kind
+ * @property {"meta"|"usecase"|"portal"|"audit"|"queue"|"remoteui"|"thirdparty"|"unknown"} kind
  * @property {string} path        the resolved original path, for diagnostics
  * @property {string} [route]     meta only: which meta route
  * @property {string} [prefix]    usecase only: "uc06"
@@ -251,6 +281,17 @@ export function resolveRoute(rawUrl) {
     return {
       kind: "audit",
       prefix: AUDIT_VIEW.prefix,
+      path,
+      innerPath,
+      url: innerPath + forwardedSearch(url),
+    };
+  }
+
+  if (segments[0] === REMOTE_UI.prefix) {
+    const innerPath = "/" + segments.slice(1).join("/");
+    return {
+      kind: "remoteui",
+      prefix: REMOTE_UI.prefix,
       path,
       innerPath,
       url: innerPath + forwardedSearch(url),

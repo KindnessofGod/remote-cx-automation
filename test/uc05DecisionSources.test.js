@@ -323,35 +323,74 @@ test("the 60 days this case applied is the article's own figure, and the boundar
 // ===========================================================================
 
 test("a country whose notice statute this corpus does not hold gets NO citation, and is told so", () => {
-  // GB is the fixture the rest of the UC-05 suite uses, and it is the honest
-  // case: the Employment Rights Act is not in docs/knowledge/.
-  assert.equal(sourcesForFinding("statutory_discrepancy", "GB"), null);
-  assert.equal(sourcesForFinding("statutory_notice_rule", "IE"), null);
+  // THE FIXTURE MOVED FROM GB TO GERMANY ON 2026-09-02, because GB stopped being
+  // the honest case: the Employment Rights Act IS in docs/knowledge/ now (D-41),
+  // and so are Ireland's Act (D-42) and Poland's Kodeks pracy (D-43).
+  //
+  // Germany is the right fixture and its absence is documented rather than
+  // incidental: `gesetze-im-internet.de` does not answer a TCP connection from
+  // this container, three mirrors were considered and refused under
+  // RETRIEVAL-BLOCKED.md §5, and what stands in is a BMAS brochure tagged
+  // `[AGENCY]` — an agency publication, not the statute. So this system holds
+  // no German statute, which is exactly the state this test exists to pin.
+  // THE FIXTURE MOVED AGAIN ON 2026-09-02, DE → IN. Germany is sourced now:
+  // D-45 (the BMAS statement of § 622) is cited at AGENCY strength, tagged as
+  // one degree weaker than the statute and never "[CONFIRMED — statute]". An
+  // employment-law reviewer found the German panel saying "No source … nothing
+  // has checked against the statute" while that document sat in the corpus.
+  // India is in the notice table and holds no retrieved source at all.
+  assert.equal(sourcesForFinding("statutory_discrepancy", "IN"), null);
+  assert.equal(sourcesForFinding("statutory_notice_rule", "IN"), null);
+  const de = sourcesForFinding("statutory_notice_rule", "DE");
+  assert.ok(de, "DE is sourced by D-45 and must cite it");
+  assert.equal(de.citations[0].sourceId, "D-45");
+  assert.match(de.citations[0].evidence, /^\[AGENCY/, "Germany's source is a ministry statement and must say so");
+  assert.doesNotMatch(de.citations[0].evidence, /CONFIRMED/, "an agency statement must never be re-tagged as the statute");
+  assert.match(de.citations[0].citedFor, /§ 622\(2\).*EMPLOYER/s, "the employer's ladder is quoted beside the employee's four weeks");
+  // And the countries that ARE now sourced must NOT come back null — otherwise
+  // this test would keep passing against a library that had quietly lost them.
+  assert.ok(sourcesForFinding("statutory_notice_rule", "GB"), "GB is sourced by D-41 and must cite it");
+  assert.ok(sourcesForFinding("statutory_notice_rule", "IE"), "IE is sourced by D-42 and must cite it");
+  assert.ok(sourcesForFinding("statutory_notice_rule", "PL"), "PL is sourced by D-43 and must cite it");
   assert.equal(sourcesForFinding("statutory_discrepancy", null), null);
   assert.equal(sourcesForFinding("a_finding_that_does_not_exist", "PT"), null);
   // Prototype-chain lookups must not resolve to a "finding".
   assert.equal(sourcesForFinding("constructor", "PT"), null);
   assert.equal(uncitedFinding("constructor", "PT"), null);
 
-  const absent = uncitedFinding("statutory_notice_rule", "GB");
+  const absent = uncitedFinding("statutory_notice_rule", "IN");
   assert.match(absent.why, /No source/);
-  assert.match(absent.why, /GB is not among them/);
-  assert.match(absent.why, /noticePeriodTable\.js/, "the reader must be told what the number DOES rest on");
+  assert.match(absent.why, /IN is not among them/);
+  // THE SOURCE IS NAMED IN WORDS, NOT AS A FILENAME (2026-08-31). This matched
+  // /noticePeriodTable\.js/ — a source file, in prose that renders on the
+  // customer-facing sidebar. The claim being tested is unchanged and is what is
+  // asserted now: the reader must be told what the number DOES rest on, and
+  // that it rests on an unverified short citation.
+  assert.match(absent.why, /notice-period table/, "the reader must be told what the number DOES rest on");
+  assert.match(absent.why, /no URL, no version and no retrieved-on date/);
   assert.match(absent.why, /not a finding that the number is wrong/);
 
   // And the handlings are refused for the same reason — an option list under an
   // unread jurisdiction is a nearest match in disguise.
-  assert.equal(shortfallHandlings("GB"), null);
+  assert.equal(shortfallHandlings("DE"), null);
   assert.equal(shortfallHandlings(null), null);
 });
 
-test("a GB shortfall reaches the same team with no citation attached, and says why", () => {
+test("a shortfall in an UNSOURCED country reaches the same team with no citation attached, and says why", () => {
+  // GERMANY, NOT GB (2026-09-02). This test's whole subject is what happens when
+  // a shortfall arises in a country this corpus holds no statute for — and GB
+  // stopped being one when D-41 was retrieved. Left as GB it would have gone on
+  // asserting "GB is not among them" while the repository held the Employment
+  // Rights Act, which is the stale-register failure this pass exists to close.
+  //
+  // The DE fixture is a genuine shortfall: four weeks' statutory notice under
+  // BGB §622(1), against a proposed date eleven days out.
   const gb = evaluateUc05({
     identityVerified: true,
-    employment: { status: "active", country_code: "GB", start_date: "2019-06-25" },
-    proposedEndDate: "2026-08-01",
+    employment: { status: "active", country_code: "DE", start_date: "2019-06-25" },
+    proposedEndDate: "2026-08-05",
     timeOffBalances: [],
-    currency: "GBP",
+    currency: "EUR",
     now: "2026-07-25",
   });
   assert.equal(gb.reason, "statutory_discrepancy");
@@ -363,7 +402,7 @@ test("a GB shortfall reaches the same team with no citation attached, and says w
   assert.equal(basis.discrepancy.handling, null);
   assert.deepEqual(basis.discrepancy.fields, []);
   assert.equal(basis.discrepancy.uncited.length, 1);
-  assert.match(basis.discrepancy.uncited[0].why, /GB is not among them/);
+  assert.match(basis.discrepancy.uncited[0].why, /DE is not among them/);
   // The team is still named — routing does not depend on holding a statute.
   assert.ok(basis.discrepancy.sentence.includes(escalationTeamFor("UC-05")));
   // And the unknown says the absence is about the source, not about the law.

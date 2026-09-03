@@ -207,18 +207,38 @@ async function main() {
   const authorizationStore = new AuthorizationStore({ pgPool });
   const audit = new AuditLogger(null, { pgPool });
 
-  let mockServer = null;
+  // THE SEED ALWAYS READS THE MOCK, WHATEVER THE SERVER READS (2026-08-30).
+  //
+  // The seed's six cases name `emp_active_001`, a MOCK fixture. It was being
+  // built through whichever client the server uses — so on any machine with a
+  // real REMOTE_API_TOKEN (which is every machine this is ever demonstrated
+  // on) the Sandbox 404'd that id, `getEmployment()` returned null, and the
+  // identity gate refused. All six seeded cases came up
+  // `escalate / identity_not_verified`, and the sidebar's UC-04 demo has
+  // therefore only ever shown six identity failures.
+  //
+  // It is the §3.30 shape this repo keeps paying for: "structurally cannot
+  // succeed" and "appropriately cautious" look identical from outside, and the
+  // gate was working perfectly the whole time. Invisible to the suite, too —
+  // a test process has no token, so the mock answers and the seed succeeds.
+  //
+  // A fixture must be read from the world it belongs to. The server keeps the
+  // configured client for real traffic; only the seed is pinned to the mock,
+  // which is the same promise the portal already makes about its own personas.
+  const mockServer = await startMockServer(SEED_PORT);
+  const seedRemote = new RemoteClient({ baseUrl: `http://localhost:${SEED_PORT}` });
+
   let remote;
   if (pgPool) {
     remote = new RemoteClient({ baseUrl: config.remote.baseUrl, token: config.remote.token });
     console.log("▶ Source: Supabase Postgres (real uc04_authorizations) + Remote " + (config.remote.token ? "Sandbox" : "mock"));
+    console.log("   Seed: mock fixtures (the six demo cases name mock employment ids, which a real Sandbox 404s).");
   } else {
-    mockServer = await startMockServer(SEED_PORT);
-    remote = new RemoteClient({ baseUrl: `http://localhost:${SEED_PORT}` });
+    remote = seedRemote;
     console.log("▶ Source: seeded in-memory store — nothing is persisted.");
   }
 
-  const seeded = await seed(remote, audit, authorizationStore);
+  const seeded = await seed(seedRemote, audit, authorizationStore);
   if (pgPool) await authorizationStore.flush(); // confirm the seed rows actually land before serving
 
   // SIGNED IDENTITY (finding F-20). Signed identity is now the default

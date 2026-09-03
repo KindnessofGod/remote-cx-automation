@@ -794,7 +794,13 @@ export const GATE_SEQUENCE = Object.freeze([
     position: 7,
     reason: "adjustment_needs_approval",
     gate: "outcome",
-    checks: "—",
+    // WAS "—" UNTIL 2026-08-31, found by tightening test/gateLadder.test.js's
+    // floor from 1 character to 20 after UC-04's identical placeholder reached
+    // a specialist as "Checks: —" on a rung marked passed. The rung is
+    // unreachable (see `means`), which is exactly why nobody noticed: a
+    // placeholder that never renders in production still renders in the FULL
+    // ladder, which this project prints on every case on purpose.
+    checks: "the approval floor is still at least two people, so one of the rungs above always decides first",
     means:
       "A placeholder the gates cannot actually produce: the required-approver count is floored at two, so one of the two rungs above always decides first. Seeing this on a real case means the approval floor has been changed and this ladder is out of date — report it rather than explaining it to the requester.",
   },

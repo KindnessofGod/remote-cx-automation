@@ -850,7 +850,7 @@ export const GATE_SEQUENCE = Object.freeze([
     gate: "outcome",
     checks: "every gate above passed",
     means:
-      "Every check passed, so the amendment is prepared and waiting on TWO named humans: the customer admin, and an independent Remote payroll specialist. Nothing has been sent to Remote — the contract is unchanged until both slots are filled by two different people, and one approval alone executes nothing.",
+      "Every check passed, so the amendment is prepared and waiting on TWO named humans: the employer's signatory, and an independent Remote payroll specialist. Nothing has been sent to Remote — the contract is unchanged until both slots are filled by two different people, and one approval alone executes nothing.",
   },
 ]);
 

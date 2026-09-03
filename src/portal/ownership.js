@@ -31,12 +31,18 @@
 //     outright, so an admin scope would be a scope for requests that cannot
 //     exist.
 //
-//   - ON-BEHALF-OF (UC-04 workation, UC-09 payroll adjustment). Filed by a
-//     company admin ABOUT an employee. Scoping these by employment would show
-//     the admin nothing — their own employment id is null, and the record's
-//     belongs to somebody else. The record carries `requester`
+//   - ON-BEHALF-OF (UC-09 payroll adjustment). Filed by a company admin ABOUT
+//     an employee. Scoping these by employment would show the admin nothing —
+//     their own employment id is null, and the record's belongs to somebody
+//     else. The record carries `requester`
 //     (= session.authenticatedAdminId, set by the workflow itself, never by
 //     the form), so that is the scope.
+//
+//   - EITHER (UC-04 workation). Since 2026-08-30 a work-authorization request
+//     can be filed BY THE EMPLOYEE about their own trip (Remote's own primary
+//     actor for it) or by a company admin on their behalf, so this type has two
+//     owners and needs a rule per persona kind rather than one per type. See
+//     the block above SELF_OR_ON_BEHALF_OF for the disclosure decision.
 //
 //   - DOSSIERS (UC-07, UC-08). 🔴, and the odd ones out in a way that matters.
 //     Their stores have no `requester` column at all — a dossier records the
@@ -67,7 +73,38 @@
 const SELF_SERVICE = new Set(["uc01", "uc02", "uc03", "uc05"]);
 
 /** Filed by a company admin, about an employee. */
-const ON_BEHALF_OF = new Set(["uc04", "uc09"]);
+const ON_BEHALF_OF = new Set(["uc09"]);
+
+/**
+ * Filed EITHER by the employee about their own trip OR by a company admin on
+ * their behalf — UC-04, and only UC-04 (see src/uc04/submissionIdentity.js).
+ *
+ * THE EMPLOYEE'S SCOPE IS THE TIGHTER OF THE TWO CANDIDATES, DELIBERATELY.
+ * Two readings of "mine" were available here and they are not the same
+ * question:
+ *
+ *   (a) rows I FILED           -> requester = my employment id
+ *   (b) rows ABOUT ME          -> employment_id = my employment id
+ *
+ * (b) is WIDER, and widening what a page shows is a disclosure change, not a
+ * convenience: it would put every workation assessment a company admin filed
+ * about that employee — including one they may not know exists, with the
+ * admin's own id, the risk level and the drafted summary on it — onto the
+ * employee's history page, on the strength of a UI decision nobody reviewed.
+ * That may well be the right product call, and it is one for a human to make
+ * (there is no consent record and no policy anywhere in this repo that says an
+ * employee may read their employer's mobility assessment of them). Until then
+ * this scopes on BOTH columns ANDed — filed by me, about me — which is the
+ * only shape an employee can create through this portal anyway, so nothing
+ * they filed is hidden by it.
+ *
+ * The AND matters for a second reason. `requester` and `employment_id` hold
+ * ids from two different spaces (an admin id, an employment id), and scoping on
+ * `requester` alone would trust that they can never collide. They do not today
+ * — admin ids read `admin_jane` — but "these two namespaces never overlap" is
+ * exactly the kind of invariant nothing enforces and one seed file can break.
+ */
+const SELF_OR_ON_BEHALF_OF = new Set(["uc04"]);
 
 /** 🔴 dossiers: no requester is recorded anywhere on the row. */
 const DOSSIERS = new Set(["uc07", "uc08"]);
@@ -105,6 +142,26 @@ export function ownerScopeFor(persona, typeId) {
       );
     }
     return scoped({ employmentId: persona.employmentId, ...useCaseFor(typeId) });
+  }
+
+  if (SELF_OR_ON_BEHALF_OF.has(typeId)) {
+    if (persona.kind === "employee") {
+      if (!persona.employmentId) {
+        return unscoped(
+          "This session names no employment record, so there is nothing it could have filed about itself."
+        );
+      }
+      // Filed by me, about me — both, ANDed. See the set's header for why the
+      // wider "everything about me" reading was NOT taken.
+      return scoped({ employmentId: persona.employmentId, requester: persona.employmentId });
+    }
+    const filerId = persona.kind === "company_admin" ? persona.session?.authenticatedAdminId : null;
+    if (!filerId) {
+      return unscoped(
+        "Filed by the travelling employee or by a company admin on their behalf. This session is neither, so it owns none of these."
+      );
+    }
+    return scoped({ requester: filerId });
   }
 
   if (ON_BEHALF_OF.has(typeId)) {

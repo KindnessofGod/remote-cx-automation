@@ -341,18 +341,47 @@ async function seedUc09Adjustment() {
 
 // ---------------------------------------------------------------------------
 
-test("🟡 UC-04: an actionable workation never claims there is no execution path", async () => {
+test("🟡 UC-04: a workation with a real execution path never claims there is none", async () => {
   const { result, handler } = await seedUc04Workation();
 
-  // THE PRECONDITION IS HALF THE TEST. If this case were not actionable, the
-  // absence of the claim below would prove nothing — a screen with no controls
-  // is entitled to say a great deal more. This is the exact shape from the
-  // screenshot: approvable, and escalated to `high` case risk by one flag.
+  // THE PRECONDITION IS HALF THE TEST. If this use case genuinely had no
+  // execution path, the absence of the claim below would prove nothing — a
+  // screen with no controls is entitled to say a great deal more. This is the
+  // exact shape from the screenshot: an approvable request, escalated to `high`
+  // case risk by one flag.
   assert.equal(result.decision, "ready_for_approval");
-  assert.deepEqual(result.flags, ["a1_certificate_recommended"]);
+  // `lead_time_short` joined this set when W-3 landed, and the fixture earns it
+  // honestly: `now` is 2026-08-19 and the trip starts 2026-09-01, which is 13
+  // days — one short of the working minimum. Both dates are fixed, so this is
+  // deterministic rather than a clock-dependent flake. The property under test
+  // is unaffected: the decision is still `ready_for_approval` and the execution
+  // path is still reachable, which is what the claim below is about.
+  assert.deepEqual(result.flags, ["a1_certificate_recommended", "lead_time_short"]);
 
   const api = await callHandler(handler, { method: "GET", path: "/api/authorizations/by-ticket/21" });
-  assert.equal(api.body.actionable, true, "the fixture stopped being approvable");
+
+  /* THE PRECONDITION MOVED ON 2026-08-30, AND THE DISTINCTION IT NOW CARRIES IS
+     SHARPER THAN THE ONE IT REPLACED.
+
+     This line read `api.body.actionable === true`. UC-04's approval was
+     `approved_by_manager` — which Remote's schema gives to `employer_approver`,
+     the CUSTOMER'S own manager — so the sidebar was making the customer's
+     decision under a Remote CX agent's name. It has moved to the
+     customer-facing surface, and this route, the sidebar's, now answers `false`
+     for every case (sidebarActionability(), src/uc04/server.js).
+
+     THAT DOES NOT MAKE UC-04 A 🔴 USE CASE, and the whole point of this file is
+     that the two must not be confused. `executionModel: "single_approval"` is
+     still the truth: a named human approving IS this use case's execution path,
+     it is reachable, and the approval policy still answers the real stage-2
+     question — republished untouched as `employerActionable`, asserted below so
+     that "the sidebar does not act" can never quietly become "nothing acts".
+     UC-07 and UC-08 have no such answer to publish, because for them there is
+     no path at all. */
+  assert.equal(api.body.actionable, false, "the sidebar is being offered the customer's decision again");
+  assert.equal(api.body.employerActionable, true, "the fixture stopped being approvable by the employer");
+  assert.match(api.body.actionableReason, /employer's approval belongs to the customer/i);
+  assert.match(api.body.actionableReason, /no endpoint for that stage/i);
   assert.equal(api.body.useCaseTier, "medium", "UC-04's architectural tier is 🟡 and cannot be escalated");
   assert.equal(api.body.executionModel, "single_approval");
   assert.equal(api.body.caseRisk, "high", "one flag still escalates THIS REQUEST — that fact is not being hidden");
@@ -370,9 +399,27 @@ test("🟡 UC-04: an actionable workation never claims there is no execution pat
     "the sidebar claimed a 🟡 use case has no execution path — while rendering its Approve button"
   );
 
-  // And the control it would have been contradicting is really there.
-  const approve = screen.buttons.filter((b) => /approve/i.test(b.textContent));
-  assert.equal(approve.length, 1, "the approve control is missing — the contradiction test proves nothing without it");
+  /* AND THE SCREEN OFFERS NOTHING TO CLICK — which is the assertion that
+     replaced "the approve control is really there" (2026-08-30).
+
+     THIS IS THE HARD CASE THIS FILE EXISTS FOR, and it is worth being explicit
+     about why it is not a contradiction. UC-04 now renders no controls, exactly
+     like the 🔴 dossiers below — and it still may not print their sentence,
+     because the reason is different in kind. UC-07/UC-08 have no execution
+     path: nobody, anywhere, can act. UC-04 has one that works; it is simply not
+     Remote CX's to walk, and it happens on the customer's own surface. A screen
+     that blurred those two would tell a specialist a request is unactionable
+     when the customer is, at that moment, able to approve it.
+
+     So: no buttons, and no 🔴 claim. Both, together, or neither is worth
+     anything. */
+  assert.equal(screen.buttons.length, 0, "the sidebar offered the customer's decision to a Remote CX agent");
+  assert.match(
+    screen.text,
+    /employer's approval belongs to the customer/i,
+    "the missing control is not explained — a missing button and a broken one look identical"
+  );
+  assert.match(screen.text, /no endpoint for that stage/i, "the stage with no API is not named");
 
   /* BOTH FACTS STILL REACH THE SPECIALIST, each in its own sentence. Neither is
      suppressed to resolve the contradiction; they were never in conflict, only
@@ -389,7 +436,11 @@ test("🟡 UC-04: an actionable workation never claims there is no execution pat
   assert.doesNotMatch(screen.text, /Classified as a /, "the tier's name still repeats the risk sentence's own baseline");
   assert.match(screen.text, /Nothing in this use case is written until a named human approves it/);
   assert.match(screen.text, /This request: high risk/);
-  assert.match(screen.text, /raised above this use case's medium baseline by 1 flag raised on this request/);
+  // Two flags since W-3: `a1_certificate_recommended` and `lead_time_short`
+  // (13 days' notice against a 14-day minimum, both dates fixed in the seed).
+  // What this line pins is the SENTENCE — the baseline named exactly once,
+  // inside the request's own risk statement — and it still does.
+  assert.match(screen.text, /raised above this use case's medium baseline by 2 flags raised on this request/);
 });
 
 test("🔴 UC-08: a dossier still makes the guarantee, and still offers nothing to click", async () => {
@@ -415,7 +466,16 @@ test("🔴 UC-08: a dossier still makes the guarantee, and still offers nothing 
   // rca-iih7 / D-31: "Classified as a high-risk use case" is gone; the
   // baseline is named inside the request's own risk sentence instead.
   assert.doesNotMatch(screen.text, /Classified as a /);
-  assert.match(screen.text, /this use case's (own )?high baseline/, "the tier's baseline must still reach the specialist somewhere");
+  /* THE SENTENCE'S SUBJECT MOVED ON 2026-08-31 and the assertion follows it.
+     With no escalating flag, `caseRisk` IS the static tier baseline — a
+     property of the use case, not of this request — so the line now opens
+     "This use case: high risk" and the tail reads "its own high baseline". It
+     used to open "This request:", which put the loudest sentence on the page in
+     apparent disagreement with "Risk rollup", the one genuinely per-request
+     number. Both halves are asserted, because the baseline reaching the reader
+     and the reader being told whose property it is are two different claims. */
+  assert.match(screen.text, /This use case: high risk/, "the tier's baseline no longer names its own subject");
+  assert.match(screen.text, /own high baseline/, "the tier's baseline must still reach the specialist somewhere");
   assert.match(screen.text, THE_CLAIM, "the 🔴 guarantee stopped being stated where it is actually true");
   assert.match(screen.text, /can only be escalated/);
   assert.equal(screen.buttons.length, 0, "a 🔴 dossier rendered a control");
@@ -530,7 +590,22 @@ test("🔴 UC-09: the money path states its tier, its risk and its controls with
   // rca-iih7 / D-31: "Classified as a high-risk use case" is gone; the
   // baseline is named inside the request's own risk sentence instead.
   assert.doesNotMatch(screen.text, /Classified as a /);
-  assert.match(screen.text, /this use case's (own )?high baseline/, "the tier's baseline must still reach the specialist somewhere");
+  /* THE SENTENCE'S SUBJECT MOVED ON 2026-08-31 and the assertion follows it.
+     With no escalating flag, `caseRisk` IS the static tier baseline — a
+     property of the use case, not of this request — so the line now opens
+     "This use case: high risk" and the tail reads "its own high baseline". It
+     used to open "This request:", which put the loudest sentence on the page in
+     apparent disagreement with "Risk rollup", the one genuinely per-request
+     number. Both halves are asserted, because the baseline reaching the reader
+     and the reader being told whose property it is are two different claims. */
+  /* NO SUBJECT ASSERTION HERE, AND THAT IS THE POINT OF THE 2026-08-31 CHANGE.
+     UC-09's seeded case IS escalated, so `caseRisk` is a fact about THIS
+     REQUEST and the line correctly opens "This request:" (asserted below). The
+     UC-08 dossier above raises nothing, so its `caseRisk` is the static tier
+     baseline and its line opens "This use case:". One sentence, two subjects,
+     chosen by whether anything was actually raised — which is what stopped the
+     loudest line on the page contradicting "Risk rollup" at the bottom. */
+  assert.match(screen.text, /this use case's high baseline/, "the tier's baseline must still reach the specialist somewhere");
   // The subject of the sentence is now the USE CASE, named — it used to read
   // "at least two named humans ... must approve before any money moves", which
   // is true of the use case and was read as a promise about the request.

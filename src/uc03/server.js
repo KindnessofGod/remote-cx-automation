@@ -69,6 +69,7 @@ import { describeRiskPosture } from "../shared/riskEngine.js";
 import { describeEmployee } from "../shared/employeeSubject.js";
 import { describeRequesterParties } from "../shared/requesterSubject.js";
 import { readJsonBody } from "../shared/httpBody.js";
+import { byTicketAccountRefusal } from "../shared/byTicketAccountGuard.js";
 
 /**
  * @param {object} deps
@@ -149,6 +150,10 @@ export function createUc03Handler({
         // Scoped to UC-03: `cases` is shared with UC-01, so a bare ticket id
         // matched that use case's rows too and rendered them here.
         const caseRow = await caseStore.findByExternalRef(parts[3], "UC-03");
+        // ACCOUNT COLLISION GUARD — a bare ticket number means nothing without the
+        // account it was issued by. See src/shared/byTicketAccountGuard.js.
+        const foreignAccount = byTicketAccountRefusal(caseRow, parts[3]);
+        if (foreignAccount) return send(res, 404, foreignAccount);
         if (!caseRow) return send(res, 404, { found: false });
         // The reader identity, when there is one — the only input `youHold` can
         // be answered from. Never `req.headers` directly: an unverified name is

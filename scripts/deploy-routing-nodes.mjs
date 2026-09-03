@@ -53,6 +53,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESCALATION_ROUTES } from "../src/shared/escalationRouting.js";
+import { outputForSplicedNode } from "./lib/graphReachability.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PORT_FILE = "workflows/nodes/assignRouting.js";
@@ -103,9 +104,24 @@ const GRAPHS = [
 
 /**
  * Every human-facing Zendesk node across the nine. Asserted, not counted after
- * the fact. 26 before this pass; 27 after, because of the UC-06 fix below.
+ * the fact. 26 before that pass; 27 after, because of the UC-06 fix below.
+ *
+ * RAISED TO 29 on 2026-08-29, and the reason is recorded rather than the number
+ * quietly bumped — the whole point of asserting a count is that somebody has to
+ * justify changing it. UC-01 gained two human-facing Zendesk nodes AFTER this
+ * constant was written (`d64dc83`, 2026-08-19): `Reply Out of Scope` and
+ * `Reply + Close (No Hand-off)`, both from `ef1f3ba` on 2026-08-22, which gave
+ * UC-01's three unrouted decisions their own leaf nodes. Both are genuinely
+ * human-facing and both must be assigned, so 29 is the correct expectation and
+ * 27 was simply a week out of date.
+ *
+ * Verified before changing it: the live Zendesk-node sets on all nine graphs
+ * are IDENTICAL to the snapshots in qa/evidence/n8n-graph-snapshots/2026-08-28,
+ * so no graph changed shape during the Zendesk account migration that surfaced
+ * this — the guard was already stale and would have fired for anyone running
+ * this script since 08-22.
  */
-const EXPECTED_HUMAN_FACING = 27;
+const EXPECTED_HUMAN_FACING = 29;
 
 /**
  * PRE-EXISTING DEFECT, FIXED HERE: UC-06's `unrecognised` fallback shared
@@ -253,7 +269,22 @@ for (const graph of GRAPHS) {
     failed++;
     continue;
   }
-  wf.connections[NODE_NAME] = { main: [[{ node: downName, type: "main", index: 0 }]] };
+  // DO NOT CLOBBER A LONGER PATH. This used to assign unconditionally, which is
+  // right the first time and destructive every time after: on 2026-08-29 UC-01's
+  // live chain was `Assign Routing → Compose Internal Note → Route by Decision`,
+  // and re-running this rewrote it to go direct, orphaning "Compose Internal
+  // Note" — a node with no inbound edge, which silently never runs. Nothing
+  // showed it: this script printed "wiring ok", the graph stayed active and
+  // published, and executions kept succeeding. What was lost was the reasoning
+  // in the escalation note, i.e. F-11 defeated by unplugging the note's author
+  // rather than by editing the note.
+  const rewired = outputForSplicedNode(wf.connections, NODE_NAME, downName);
+  if (rewired) {
+    wf.connections[NODE_NAME] = rewired;
+  } else {
+    const via = (wf.connections[NODE_NAME]?.main?.[0] ?? []).map((c) => c.node).join(", ");
+    console.log(`  = ${NODE_NAME} already reaches ${downName} via [${via}] — left as is`);
+  }
 
   // --- 3. every human-facing Zendesk node consumes it ------------------------
   const zendesk = wf.nodes.filter((n) => n.type === "n8n-nodes-base.zendesk");

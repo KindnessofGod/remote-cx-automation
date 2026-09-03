@@ -17,13 +17,25 @@
 >   D-26, D-32 and D-39** (the last as a register entry only, deliberately).
 >   **35 of 39.**
 >
+> - **Pass 4 (2026-09-02, the employee-notice pass).** One question — *what does
+>   the statute require of a **resigning employee**?* — asked of the countries in
+>   `NOTICE_PERIOD_TABLE` whose statute had never been retrieved. **D-05 closed**
+>   (see the correction below — it was never JavaScript-only in the sense this
+>   file recorded), and **D-41, D-42, D-43, D-44** landed from
+>   `legislation.gov.uk`, `irishstatutebook.ie` + `revisedacts.lawreform.ie`,
+>   `api.sejm.gov.pl` and `legisquebec.gouv.qc.ca`. **One new blocker was found
+>   and it is the first of its class: `www.gesetze-im-internet.de` does not
+>   answer a TCP connection from this container at all** — see **§4a**.
+>
 > The vendored files are the `D-NN-*.md` sidecars beside this one and the bytes
 > under [`sources/`](sources/); the findings are in
 > [`CONTRADICTIONS.md`](CONTRADICTIONS.md), which grew from 16 items to 27.
 >
-> **Four remain**, and no two for the same reason: **D-05** (JavaScript-only),
+> ~~**Four remain**, and no two for the same reason: **D-05** (JavaScript-only),
 > **D-12** (origin TLS), **D-13** (re-scoped, never retried), **D-30** (licence,
-> not access). Per-document record in §4.
+> not access).~~ **As at 2026-09-02: D-05 is retrieved; D-12, D-13 and D-30 are
+> unchanged; and the German BGB is added as a new blocker (§4a).** Per-document
+> record in §4.
 
 ---
 
@@ -147,7 +159,42 @@ Everything else the earlier passes listed here has since been retrieved; those
 entries have moved to their own `D-NN-*.md` sidecars, which carry the URL, byte
 count, checksum and licence. What follows is only what is still open.
 
-### Class C — JavaScript-only application shells · D-05
+### ~~Class C — JavaScript-only application shells · D-05~~ **CLOSED 2026-09-02, and the classification was the error**
+
+> **D-05 was retrieved on 2026-09-02.** See
+> [`D-05-ca-on-employment-standards-act.md`](D-05-ca-on-employment-standards-act.md).
+> **Nothing about `www.ontario.ca` changed** — the entry below is still an
+> accurate description of what every one of those URLs does. What was wrong was
+> the sentence it was compressed into.
+>
+> The e-Laws **page** is a React application. The e-Laws **data** is a plain
+> JSON endpoint that the page's own bundle calls, and it needs no browser:
+>
+> ```
+> https://www.ontario.ca/laws/api/v2/legislation/en/doc-search/statute/00e41
+> https://www.ontario.ca/laws/api/v2/legislation/en/currency-date
+> ```
+>
+> Finding it meant reading `/laws/static/js/main.dbd400db.js` for the base URL
+> and the path shape. Note that the entry below records `/api/statute/00e41`
+> returning **502** — that probe was one path segment and one API version away
+> from the answer, and its failure was read as confirming the class.
+>
+> **`/00e41/xml` deserves a specific mention** because it is the most misleading
+> probe on the list: it returns **HTTP 200 and the same 54 KB shell**, so a
+> checker looking for a non-200 sees success and a checker looking for XML sees
+> HTML and concludes the site has none.
+>
+> **The transferable correction: this entry should have read *"the e-Laws HTML
+> page is a JavaScript shell"*, which is a fact, rather than *"e-Laws is
+> JavaScript-only"*, which is a conclusion about the authority drawn from one
+> delivery channel.** The Portuguese note immediately below already says exactly
+> that — *"class C was never a statement about the authority, only about one of
+> its delivery channels"* — and was written on the same day, about the same
+> class, and did not get applied to the neighbouring entry. **The same pass
+> re-checked DRE against this new lever and DRE really does not have one**
+> (see D-02's 2026-09-02 postscript), so the two are genuinely different and
+> each had to be probed rather than inferred from the other.
 
 **Ontario e-Laws** (`www.ontario.ca/laws/...`) serves an application shell —
 *"e-Laws needs JavaScript to function properly"* — on `/00e41`, `/00e41/v54`,
@@ -203,6 +250,45 @@ moved the day before it was read), and the UN's copyright statement — *"All
 rights reserved … none of the materials … may be used, reproduced or
 transmitted"* — which also corrects the manifest's licence class for it from (b)
 to (c).
+
+## 4a. Found by the 2026-09-02 pass — Germany's federal law portal does not answer at all
+
+**This is the first document in this corpus that failed at the TCP layer**, and
+that is the whole finding. Every earlier failure produced a response of some kind
+— a proxy 403, an HTTP 200 carrying a JavaScript shell, a TLS chain error, a bot
+interstitial. This one produces nothing.
+
+| | |
+|---|---|
+| **Host** | `www.gesetze-im-internet.de` — the Bundesministerium der Justiz / Bundesamt für Justiz portal, and **the only place BGB § 622's current consolidated wording is published by an authority** |
+| **Resolves to** | `195.74.94.216`, reverse `www.gesetze-im-internet.edge.juris.de` (IPv4 only; no AAAA) |
+| **Observed** | `Trying 195.74.94.216:443... Connection timed out after 40004 milliseconds.` **Three consecutive attempts on 443, one on port 80, and a bare `/dev/tcp` connect — all time out.** No SYN-ACK, no proxy line, no certificate. This container has **no proxy configured** and every other authority in this pass answered directly, so it is not our egress. |
+| **Consequence** | `NOTICE_PERIOD_TABLE.DE` is the one row in the table whose statute this repository has not read. |
+
+**What was tried instead, in order, and why each was rejected or accepted:**
+
+| Attempted | Result |
+|---|---|
+| `gesetze-im-internet.de` without `www`, and port 80 | Same timeout. |
+| `www.recht.bund.de` — the official Verkündungsplattform since 2023 | **Reachable.** But it publishes **gazette issues**, not consolidated codes. Reconstructing § 622's current wording from the 1896 BGB plus every amending act is not retrieval. |
+| `www.bgbl.de` | Reachable, redirects to the `xaver` viewer. Same problem: a gazette, not a consolidation. |
+| `testphase.rechtsinformationen.bund.de` — the federal Rechtsinformationsportal, with a documented API at `docs.rechtsinformationen.bund.de` | **Reachable, and the API works** — `/v1/legislation?searchTerm=…` returns real hydra collections. **The BGB is not in it.** Its coverage is BGBl-era ELI identifiers; `eli/bund/bgbl-1/1896/s195` and the RGBl form both 404, and `?abbreviation=BGB` returns `totalItems: 0`. Also note `robots.txt` is `Disallow: /`. |
+| `www.bmas.de` — the federal ministry responsible for labour law | **Reachable, and it answers the question at agency strength.** Retrieved as **D-45**, tagged `[AGENCY]`, with a box at the top of that file saying it is not the statute. |
+| A mirror (`dejure.org`, `buzer.de`, and others that are reachable) | **Not fetched.** §5 of this file already refuses this route for the EU annexes and the sanctions lists, and the reason is unchanged: *a mirror is not the authority*, and a German-law mirror is exactly the kind of source whose consolidation date nobody can verify. |
+
+**The work order.** § 622 needs one fetch of
+`https://www.gesetze-im-internet.de/bgb/__622.html` from any machine that is not
+this container — the same shape of remedy as the three US immigration pages in
+§4, which refuse this container's address and were transcribed by the repository
+owner in a browser. Until then **D-45 stands in and says so**, and **K-6** in
+`CONTRADICTIONS.md` carries the agency tag rather than a statutory one.
+
+**One thing not to conclude from this.** Germany's row happens to be *correct* on
+the question this pass cared about — it encodes the basic period both parties owe
+and does not encode the employer's graduated ladder (**K-6**). That is a lucky
+outcome, not evidence that the missing statute does not matter: the paragraph
+numbering, the 15th-or-end-of-month disjunction and the ≤20-employee carve-out
+are all unevidenced at statutory level.
 
 ## 5. The route still deliberately not taken
 

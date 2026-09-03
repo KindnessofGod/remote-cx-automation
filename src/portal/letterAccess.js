@@ -57,6 +57,14 @@
 
 import { evaluateLetterDelivery } from "../uc03/letterDelivery.js";
 import { evaluateLetterDelivery as evaluateUc01LetterDelivery } from "../uc01/letterDelivery.js";
+// UC-04's record has no `documents` row and no draft state of its own — its gate
+// is an ORDERING rule over three parties' decisions. See the describer at the
+// foot of this file.
+import { evaluateAuthorizationRecordDelivery } from "../uc04/recordDelivery.js";
+// UC-05's report has no `documents` row either, and its gate is an ORDERING
+// rule over one decision rather than three. See the describer at the foot of
+// this file.
+import { evaluateResignationReportDelivery } from "../uc05/reportDelivery.js";
 
 /** What a history row can say about a letter. Presentation only. */
 export const LETTER_STATES = Object.freeze({
@@ -184,4 +192,154 @@ export function describeUc01LetterForRequester({ caseRow, letterDocument = null,
   // rather than assumed impossible, the same discipline the UC-03 branch
   // above applies to its own "should never happen" refusals.
   return { state: LETTER_STATES.NONE, label: "Not available", detail: verdict.reason, collect: null };
+}
+
+/**
+ * The work-authorization record on one UC-04 request, as the employee it is
+ * about should see it — the same shape as the two describers above, for the
+ * same reason, and with one state neither of them has.
+ *
+ * FOUR STATES, NOT THREE, AND THE EXTRA ONE IS THE POINT. UC-03's letter can be
+ * ISSUED, DRAFTED or absent. A UC-04 record has an ordering condition on top:
+ * it states what THREE parties decided, and it cannot be issued before the last
+ * of them has decided. So "not yet" here means one of two genuinely different
+ * things — the customer's manager has not approved, or Remote's mobility review
+ * has not been recorded — and the two are held apart rather than collapsed into
+ * "pending", because they are answered by different people in different places.
+ * `src/uc04/recordDelivery.js`'s refusal codes are what tell them apart, and
+ * this function reads that gate rather than restating it, exactly as the UC-03
+ * describer above reads `evaluateLetterDelivery()`.
+ *
+ * A DECLINED REVIEW IS `NONE`, NOT A DOCUMENT. There is no artifact for a
+ * refused trip, and offering one would be the reassuring rounding this whole
+ * module refuses to make. The decision itself is still on the request's own row.
+ *
+ * @param {object} args
+ * @param {object|null} args.authorizationRow  the `uc04_authorizations` row
+ * @param {object|null} [args.review]  the stage-3 verdict (src/uc04/mobilityReviewLog.js)
+ * @param {object|null} args.session  the reader's server-owned session
+ * @returns {{state:string, label:string, detail:string, collect:{method:string,path:string}|null}}
+ */
+export function describeAuthorizationRecordForRequester({ authorizationRow, review = null, session }) {
+  const verdict = evaluateAuthorizationRecordDelivery({ authorizationRow, session, review });
+
+  if (verdict.allowed) {
+    return {
+      state: LETTER_STATES.ISSUED,
+      label: "Ready",
+      detail:
+        "Your employer approved this trip and Remote's mobility review has been recorded as cleared. " +
+        "The record of those decisions is yours to open or save.",
+      // RELATIVE, WITH NO LEADING SLASH — see the identical comment on the
+      // UC-03 branch above; the production outage it describes applies here
+      // exactly as it does there.
+      //
+      // `noun` AND `idField` ARE THE SERVER'S TOO, and both exist because this
+      // is the first collectable artifact that is not a letter. The browser's
+      // one collector (`collectLetter()` in assets/app.js) hard-coded the word
+      // "letter" in its button labels and `caseId` in its body — right for
+      // UC-01 and UC-03, and wrong here in both halves: this is a record, and
+      // the id it is keyed by is an authorization id. Naming them on the
+      // descriptor keeps ONE collector rather than forking it, and keeps the
+      // page composing no vocabulary of its own.
+      collect: {
+        method: "POST",
+        path: "api/requests/uc04/record",
+        noun: "work authorization record",
+        idField: "authorizationId",
+      },
+    };
+  }
+
+  // THE TWO "NOT YET"s, EACH NAMING WHO IT IS WAITING ON. Both render as
+  // DRAFTED — the portal's "a human still has this" state — because that is
+  // what they are, and because a control here would promise a document the
+  // ordering rule exists to withhold.
+  if (verdict.code === "employer_approval_not_recorded" || verdict.code === "mobility_review_not_recorded") {
+    return {
+      state: LETTER_STATES.DRAFTED,
+      label: verdict.code === "employer_approval_not_recorded" ? "With your manager" : "With Remote",
+      // The gate's own words, because they name WHO has it — the same rule the
+      // UC-03 branch above follows, and for the same reason a team name typed
+      // here would be wrong.
+      detail: verdict.reason,
+      collect: null,
+    };
+  }
+
+  // A declined trip, a declined review, and every refusal about the READER —
+  // `not_the_employee` in particular, which a company admin who filed on the
+  // employee's behalf will legitimately hit. Rendered as the gate's own
+  // sentence with no control; never as "you have no record", which would report
+  // an access rule as an absence.
+  return { state: LETTER_STATES.NONE, label: "None", detail: verdict.reason, collect: null };
+}
+
+/**
+ * The notice and settlement report on one UC-05 resignation, as the employee it
+ * is about should see it — the same shape as the three describers above, for
+ * the same reason.
+ *
+ * THE STATE THIS ONE ADDS IS "NOT YET, AND HERE IS WHO HAS IT". UC-05's whole
+ * output is a document (src/uc05/noticeReport.js's header: no Remote
+ * termination endpoint exists, so the signed-off report IS the artifact), and
+ * until HR Ops signs it off, everything on it is a calculation rather than a
+ * record. So `pending_signoff` renders as DRAFTED with no control — the same
+ * choice UC-03's drafted letter makes, for the same reason: a button here would
+ * promise a document the sign-off gate exists to withhold.
+ *
+ * AN ESCALATED RESIGNATION IS `NONE`, NOT "NOT YET". It never entered the
+ * sign-off path, so no report was produced and none is coming — a different
+ * sentence from "waiting", and collapsing the two would tell somebody to keep
+ * checking back for something that does not exist. A DECLINED one is `NONE` for
+ * the matching reason: there is no artifact for a report HR Ops would not sign,
+ * and offering one would be the reassuring rounding this module refuses to make.
+ * The decision itself is still on the request's own row.
+ *
+ * @param {object} args
+ * @param {object|null} args.resignationRow  the `uc05_resignations` row
+ * @param {object|null} args.session  the reader's server-owned session
+ * @returns {{state:string, label:string, detail:string, collect:object|null}}
+ */
+export function describeResignationReportForRequester({ resignationRow, session }) {
+  const verdict = evaluateResignationReportDelivery({ resignationRow, session });
+
+  if (verdict.allowed) {
+    return {
+      state: LETTER_STATES.ISSUED,
+      label: "Ready",
+      detail:
+        "HR Ops has signed off your notice period and holiday settlement. That signed-off report is the record — it is yours to open or save.",
+      // RELATIVE, WITH NO LEADING SLASH — see the identical comment on the
+      // UC-03 branch above; the production outage it describes applies here
+      // exactly as it does there.
+      //
+      // `noun` AND `idField` ARE THE SERVER'S, for the reason the UC-04 branch
+      // gives: the browser's one collector hard-codes "letter" and `caseId`,
+      // and both are wrong here — this is a report, keyed by a resignation id.
+      collect: {
+        method: "POST",
+        path: "api/requests/uc05/report",
+        noun: "notice and settlement report",
+        idField: "resignationId",
+      },
+    };
+  }
+
+  if (verdict.code === "report_not_signed_off") {
+    return {
+      state: LETTER_STATES.DRAFTED,
+      label: "With HR Ops",
+      // The gate's own words, because they name WHO has it and WHY it is
+      // withheld — the same rule the UC-03 and UC-04 branches follow.
+      detail: verdict.reason,
+      collect: null,
+    };
+  }
+
+  // A declined report, a resignation that never reached sign-off, and every
+  // refusal about the READER. Rendered as the gate's own sentence with no
+  // control; never as "you have no report", which would report an access rule
+  // or an escalation as an absence.
+  return { state: LETTER_STATES.NONE, label: "None", detail: verdict.reason, collect: null };
 }

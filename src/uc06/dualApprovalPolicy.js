@@ -57,7 +57,7 @@ import { isSameApprover, canonicalizeApprover } from "../shared/approverIdentity
 // `customer_admin` — that carve-out is the defect, restated.
 // ---------------------------------------------------------------------------
 
-import { attribution, noteClause, remoteWriteClause } from "../shared/settledDecision.js";
+import { attribution, humanTime, noteClause, remoteWriteClause } from "../shared/settledDecision.js";
 import { canonicalDecisionStatus } from "../shared/declineVocabulary.js";
 // The one definition of the "no session was present" marker the workflows
 // write into `requester`. Imported rather than re-spelled, because a second
@@ -313,7 +313,7 @@ export function describeSettled(amendmentRow) {
     const payroll = row.payrollApproval ?? null;
     const signatures =
       admin || payroll
-        ? ` Approved by ${describeSlot("Customer Admin", admin)} and ${describeSlot("Payroll Specialist", payroll)}.`
+        ? ` Approved by ${describeSlot("the employer's signatory", admin)} and ${describeSlot("the Remote payroll specialist", payroll)}.`
         : "";
     const wrote = remoteWriteClause(row.remoteResult, {
       landed: "The amendment was applied at Remote.",
@@ -325,11 +325,108 @@ export function describeSettled(amendmentRow) {
   return REFUSALS.already_decided.reason;
 }
 
+/**
+ * THE SETTLED DECISION AS FACTS, for the sidebar's header badge and its settled
+ * block — UC-04's settledFacts() shape (`state`, `badge`, `headline`, `facts`,
+ * `finality`), which zaf-app/assets/main.js already renders for any use case
+ * that publishes it.
+ *
+ * WHY (2026-09-02, local seeded rows 3001 and 3003). After both signatures the
+ * panel still read "Awaiting dual approval" in the badge and "Nothing has been
+ * sent to Remote — the contract is unchanged until both slots are filled" in
+ * the lead paragraph, one card above "Already EXECUTED … applied at Remote";
+ * after a decline the same two lines sat above "Already DECLINED". The badge is
+ * derived from `case.decision`, which is the request-time verdict and correctly
+ * never changes; only a `settled` block can override it, and UC-06 published
+ * none. describeSettled() above stays as the string form for callers that want
+ * a sentence; this is the same facts as rows.
+ *
+ * "SENT TO REMOTE" IS A FACT, NOT A CLAIM. Two humans agreeing and Remote
+ * accepting are different events (§14's last bullet), so the row names what
+ * Remote answered — the contract-amendment id and status it returned — or says
+ * that no write is recorded. Nothing here invents an outcome.
+ *
+ * @param {object|null} row
+ * @returns {{state:string,badge:string,headline:string,facts:Array<{label:string,value:string}>,finality:string}|null}
+ */
+export function settledFacts(row) {
+  if (!row) return null;
+
+  if (canonicalDecisionStatus(row.status) === "declined") {
+    const declined = row.declinedBy ?? row.deniedBy ?? {};
+    const facts = [];
+    const who = String(declined.approver ?? "").trim() || "an unnamed approver";
+    facts.push({ label: "Declined by", value: declined.role ? `${who} (${roleLabel(declined.role)})` : who });
+    const when = humanTime(declined.at);
+    if (when) facts.push({ label: "Declined on", value: when });
+    const note = String(declined.note ?? "").trim();
+    facts.push({ label: "Reason given", value: note || "No reason was recorded, which a decline is supposed to carry." });
+    facts.push({ label: "Sent to Remote", value: "Nothing. A declined amendment is never filed." });
+    return {
+      state: "declined",
+      badge: "Declined",
+      headline: "Declined.",
+      facts,
+      finality:
+        "A decline ends the amendment for both roles — the other slot is not asked, and the change has to be requested again.",
+    };
+  }
+
+  if (row.status === "executed" || row.executedAt) {
+    const facts = [];
+    for (const [slot, label] of [
+      [row.adminApproval, "Employer's signatory"],
+      [row.payrollApproval, "Remote payroll specialist"],
+    ]) {
+      const who = String(slot?.approver ?? "").trim();
+      const at = humanTime(slot?.at);
+      facts.push({ label, value: who ? `${who}${at ? ` on ${at}` : ""}` : "no signature recorded" });
+    }
+    const when = humanTime(row.executedAt);
+    if (when) facts.push({ label: "Applied on", value: when });
+    facts.push({ label: "Sent to Remote", value: remoteWriteFact(row.remoteResult) });
+    return {
+      state: "executed",
+      badge: "Applied — both signatures recorded",
+      headline: "Applied.",
+      facts,
+      finality: "Both signatures are recorded and the amendment was filed. It cannot be approved or declined again.",
+    };
+  }
+
+  return null;
+}
+
+/** The one line that answers "did the write land?", from what Remote returned. */
+function remoteWriteFact(remoteResult) {
+  if (!remoteResult) {
+    return "No Remote write is recorded against this amendment — check the audit trail before assuming the amended contract exists.";
+  }
+  const amendment = remoteResult.contract_amendment ?? remoteResult.data?.contract_amendment ?? null;
+  if (amendment?.id) {
+    return `Filed at Remote as contract amendment ${amendment.id}${amendment.status ? ` (status ${amendment.status})` : ""}.`;
+  }
+  return "Remote answered the write, but its response carried no contract-amendment id — read the audit row before relying on it.";
+}
+
+function roleLabel(role) {
+  return role === "customer_admin"
+    ? "employer's signatory"
+    : role === "payroll_specialist"
+      ? "Remote payroll specialist"
+      : String(role);
+}
+
 /** One approval slot as a phrase — never a name this file invented. */
 function describeSlot(label, slot) {
   if (!slot) return `${label} (no signature recorded)`;
   const who = String(slot.approver ?? "").trim() || "an unnamed approver";
-  return `${label} ${who}${slot.at ? ` on ${slot.at}` : ""}`;
+  // humanTime(), not the raw value: `executedAt` two words earlier is already
+  // humanised by attribution(), and a raw ISO string beside it put three
+  // timestamp formats for one minute on one line (2026-09-02, local seeded row
+  // 3001). One formatter, one place, same as UC-04.
+  const at = humanTime(slot.at);
+  return `${label} ${who}${at ? ` on ${at}` : ""}`;
 }
 
 /** @param {keyof REFUSALS} code */

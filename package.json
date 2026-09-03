@@ -52,7 +52,8 @@
     "outbox": "NODE_USE_ENV_PROXY=1 node src/outbox/cli.js",
     "eval-fallback": "node evals/uc01/run-fallback-dataset.js",
     "eval-classifier": "node evals/uc01/run-classifier-dataset.js",
-    "verify-webhook-auth": "node scripts/verify-webhook-auth.mjs"
+    "verify-webhook-auth": "node scripts/verify-webhook-auth.mjs",
+    "build-citation-corpus": "node scripts/build-citation-corpus.mjs"
   },
   "engines": {
     "node": ">=20"

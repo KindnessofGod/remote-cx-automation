@@ -54,8 +54,26 @@ const STATUS_MAP = Object.freeze({
     settled: ["auto_approved", "approved", "declined", "released", "blocked"],
   },
   "UC-04": {
-    awaiting: { pending_specialist_approval: "approval", escalated: "handling" },
-    settled: ["executed", "declined", "blocked"],
+    // THE THREE-STAGE MODEL, IN THE QUEUE'S OWN VOCABULARY (2026-08-31, UC-04.md
+    // §1a). `approved_by_manager` is Remote's own enum value and it is NOT a
+    // settled state: it means the customer's manager approved and Remote's
+    // mobility review — stage 3 — has not happened. An employee holding it is
+    // not yet cleared to travel, so a queue that called it settled would drop
+    // the one item still genuinely waiting on a Remote human. `declined_by_manager`
+    // IS settled: stage 2 declining ends the request, and there is no stage 3
+    // to reach.
+    //
+    // BOTH WERE FALLING THROUGH TO `unknown` until this entry existed, because
+    // the employer surface began writing them before this map knew them — the
+    // exact "a status added to a store later" failure the header above warns
+    // about, arriving three weeks after the warning was written. It failed
+    // honestly rather than lying, which is why it was findable.
+    awaiting: {
+      pending_specialist_approval: "approval",
+      approved_by_manager: "approval",
+      escalated: "handling",
+    },
+    settled: ["executed", "declined", "declined_by_manager", "blocked"],
   },
   "UC-05": {
     awaiting: { pending_signoff: "approval", escalated: "handling" },

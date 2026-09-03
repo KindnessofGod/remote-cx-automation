@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Remote CX Review",
+    "name": "Gatehouse CX Review",
     "short_description": "Review and approve automated CX decisions on the current ticket",
     "long_description": "Shows what the CX automation decided about this ticket, the flags that drove the decision, and — for cases routed to human review — one-click approve or decline. Every decision is written to the append-only audit log.",
     "installation_instructions": "Set 'apiBaseUrl' to a URL where the review API (src/review/server.js) is reachable. The other 'ucNNApiBaseUrl' settings are optional — set them only if those use cases' APIs are also deployed. Set 'cxSharedSecret' to the same value as ZAF_SHARED_SECRET on those APIs to have approve/decline requests cryptographically signed; leave it blank only for a local demo.",

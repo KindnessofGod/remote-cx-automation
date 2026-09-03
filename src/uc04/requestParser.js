@@ -72,7 +72,14 @@ export function extractedFactorsCaveat(extraction) {
  * in shape: a one-sentence statement of the five factors, the
  * risk-matrix's level, and the trip's start/end.
  */
-function draftSummaryTemplate({ factors, riskLevel, tripDays, approvalRoute, reason, extraction = null }) {
+/* EXPORTED FOR ONE REASON: so a test can compare the STAGE SENTENCE in this
+   copy against the one in `workflows/nodes-uc04/workationGates.js` without
+   standing up an LLM seam. The two templates are deliberately NOT
+   byte-identical — this one writes prose ("The travel document the requester
+   stated is …") where the port writes fields ("Visa type: …") — so the pin is
+   the sentence that names WHO DECIDES AND WHERE, which is the one that was
+   wrong on real tickets and the one no other test compares across the two. */
+export function draftSummaryTemplate({ factors, riskLevel, tripDays, approvalRoute, reason, extraction = null }) {
   // Defensive reads, not decoration. A request whose factors are INCOMPLETE is
   // exactly the case that reaches `blocked / factors_invalid` — and it still has
   // to produce a summary for the human who has to read the decision. Dereferencing
@@ -156,11 +163,67 @@ function draftSummaryTemplate({ factors, riskLevel, tripDays, approvalRoute, rea
   }
   parts.push(`Risk-matrix level: ${riskLevel}.`);
   if (approvalRoute === "specialist_approval") {
-    parts.push("Awaiting one mobility specialist's approval before the authorization is issued.");
+    /* THIS SENTENCE WAS FALSE AND IT WAS ON REAL TICKETS (corrected 2026-08-31).
+       It read "Awaiting one mobility specialist's approval before the
+       authorization is issued." A `ready_for_approval` request waits on the
+       CUSTOMER'S OWN MANAGER, in Remote's own product — that is the only
+       work-authorization decision Remote's API accepts (UC-04.md §1a). A Remote
+       CX specialist reading that line was being told to make a decision
+       `src/uc04/approvalPolicy.js` refuses them, on a panel that offers no
+       approve. It survived the 2026-08-30 three-stage correction because it is
+       PROSE: no test compares it, and it changes no decision.
+
+       KEPT WORD-FOR-WORD IN STEP WITH THE n8n PORT, which carries the same
+       sentence in `workflows/nodes-uc04/workationGates.js`. `test/n8nUc04Parity.test.js`
+       compares DECISIONS and does not compare summaries, so these two copies can
+       disagree indefinitely with nothing going red — which is exactly what
+       happened for the day between the port being fixed and this line. If you
+       edit one, edit both, and read that file's note before assuming the parity
+       suite will catch you. */
+    parts.push(
+      "Awaiting the customer's own manager, who approves or declines this trip in Remote's own product " +
+        "(the /remoteui work-authorizations screen). That is the only work-authorization decision Remote's API " +
+        "accepts, and no Zendesk agent can make it. Remote's Mobility Team reviews it afterwards, and that " +
+        "review is recorded in this system, never sent to Remote."
+    );
   } else if (approvalRoute === "blocked") {
-    parts.push("Blocked by the risk matrix — not open to approval here.");
+    /* CORRECTED 2026-08-31, and it is the same misattribution the sanctions
+       branch above fixed, one step more general.
+
+       "Blocked by the risk matrix" is accurate for 5 of the 12 reachable
+       blocked reasons. It is FALSE for `factors_invalid`, where `risk` is
+       literally null — the matrix never ran, nothing was scored, and nothing
+       was refused on its merits. GATE_SEQUENCE's own `means` for that rung says
+       so: "a request to be completed, not one that was refused on its merits."
+       The old line rendered "Risk-matrix level: unknown. Blocked by the risk
+       matrix" — contradicting itself inside one sentence, on a real ticket.
+
+       The discriminator is `riskLevel === "unknown"`, which is precisely what
+       the caller passes when `risk` is null, so the sentence can never claim a
+       computation that did not happen. The reason is NAMED either way: a future
+       blocked reason cannot inherit a wrong attribution just by existing, which
+       is how this defect survived — the sentence described the gate that
+       usually fires rather than the one that did. */
+    parts.push(
+      riskLevel === "unknown"
+        ? `Blocked (${reason}) — the risk matrix did not run on this request, so nothing was scored and nothing was refused on its merits; not open to approval here.`
+        : `Blocked by the risk matrix (${reason}) — not open to approval here.`
+    );
   } else if (approvalRoute === "escalate") {
-    parts.push("Escalated to Mobility Legal Tier-2; not open to 1-click approval here.");
+    /* "not open to 1-click approval here" was true and misleading: it contrasts
+       against a slower approval that exists NOWHERE in Zendesk. No agent can
+       approve a UC-04 request on any decision — approvalPolicy.js 403s
+       `not_awaiting_approval`, the ZAF UC-04 panel renders no approve control at
+       all, and /remoteui refuses an escalated row. This is approvalPolicy.js's
+       own wording, which says "no approve/decline path" and not "no one-click
+       path". Also drops "Mobility Legal Tier-2", which is not a group name: the
+       live group is `Mobility & Legal (Tier-2)` and the routing sentence
+       appended after this one already spells it correctly, so naming it twice
+       in two spellings only made one of them unsearchable
+       (docs/ESCALATION-DESTINATIONS.md §2.2). */
+    parts.push(
+      `Escalated (${reason}) to Mobility & Legal (Tier-2). It has no approve/decline path here; the escalation is worked on its own ticket.`
+    );
   } else {
     parts.push("Awaiting review.");
   }

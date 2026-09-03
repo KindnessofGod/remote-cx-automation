@@ -96,7 +96,7 @@ export const CAVEAT_FRAMING =
 
 /** How the citations got here. Stated because the alternative is assumed. */
 export const RETRIEVAL_METHOD =
-  "Hand-curated: each document below is listed against this finding, for this country, in src/uc05/decisionSources.js, by someone who read it. There is no search, no ranking and no similarity score, so no figure of confidence is quoted. A finding with no entry gets no citation rather than a nearest match.";
+  "Hand-curated: each document below is listed against this finding, for this country, by a person who had read it. There is no search, no ranking and no similarity score, so no figure of confidence is quoted. A finding with no entry gets no citation rather than a nearest match.";
 
 /** Rendered once above the handling options. The load-bearing sentence in the file. */
 export const HANDLING_FRAMING =
@@ -140,6 +140,62 @@ export const SOURCE_LIBRARY = Object.freeze({
     bytes: null,
     evidence: "[CONFIRMED — statute, retrieved 2026-08-19]",
   },
+  // THREE STATUTES RETRIEVED 2026-09-02, and the pass that retrieved them is the
+  // reason GB, IE and PL stopped being uncited. Until that day this library held
+  // NL, PT and US only, and every other row in noticePeriodTable.js rested on a
+  // short citation string nobody had checked against a source — which is how
+  // ERA 1996 s.86(1), the EMPLOYER'S sliding scale, sat in the UK row for weeks
+  // reporting up to 84 days against a statutory 7.
+  "D-41": {
+    id: "D-41",
+    title: "United Kingdom — the employee's minimum notice, and the employer's ladder beside it",
+    instrument: "Employment Rights Act 1996 (c. 18), section 86, latest available revised version",
+    publisher: "The National Archives / Statute Law Database, for the King's Printer of Acts of Parliament — legislation.gov.uk",
+    path: `${KNOWLEDGE}/D-41-uk-era-1996-s86.md`,
+    // Open Government Licence v3.0, so the retrieved page itself is committed
+    // and its hash is checkable — the same class as D-01, and a stronger
+    // position than either Portuguese source.
+    bytes: `${KNOWLEDGE}/sources/D-41-uk-era-1996-s86.html`,
+    evidence: "[CONFIRMED — statute, retrieved 2026-09-02]",
+  },
+  "D-45": {
+    id: "D-45",
+    title: "Germany — BGB § 622, as stated by the responsible federal ministry (the statute itself was not retrieved)",
+    instrument: "Bürgerliches Gesetzbuch § 622 — as described in Bundesministerium für Arbeit und Soziales, Arbeitsrecht, Best.-Nr. A 711, Stand Januar 2025, 'Gesetzliche Kündigungsfristen'",
+    publisher: "Bundesministerium für Arbeit und Soziales — bmas.de",
+    path: `${KNOWLEDGE}/D-45-de-bgb-622-notice-agency-only.md`,
+    // NO `bytes`: class (c), quote-and-cite on the publication's own terms. And
+    // deliberately NOT "[CONFIRMED — statute]": gesetze-im-internet.de was
+    // unreachable, so this is the ministry's statement of § 622, one degree
+    // weaker than the text — the same class as the US DOL pages behind D-06.
+    // Until 2026-09-02 the German basis said "No source … nothing has checked
+    // against the statute" while this document sat retrieved in the corpus.
+    evidence: "[AGENCY — federal ministry publication, retrieved 2026-09-02; the statute itself was NOT retrieved]",
+  },
+  "D-42": {
+    id: "D-42",
+    title: "Ireland — the employee's minimum notice, and the employer's ladder beside it",
+    instrument: "Minimum Notice and Terms of Employment Act 1973 (No. 4 of 1973), ss. 4 and 6",
+    publisher: "Office of the Attorney General / Law Reform Commission — irishstatutebook.ie",
+    // THE s.6 PAGE SPECIFICALLY. The retrieval committed three files — s.4, s.6
+    // and the Law Reform Commission's revised text — and this entry cites s.6,
+    // the EMPLOYEE's subsection. Naming the one a reader should open beats
+    // naming a bundle and leaving them to find the right half.
+    bytes: `${KNOWLEDGE}/sources/D-42-ie-minimum-notice-1973-s6.html`,
+    path: `${KNOWLEDGE}/D-42-ie-minimum-notice-1973.md`,
+    evidence: "[CONFIRMED — statute, retrieved 2026-09-02]",
+  },
+  "D-43": {
+    id: "D-43",
+    title: "Poland — notice periods, whose they are, and the day a notice period ends on",
+    instrument: "Kodeks pracy (Dz.U. 1974 nr 24 poz. 141), arts. 30 §2¹, 32, 34 and 36",
+    publisher: "Kancelaria Sejmu, via the Sejm's own ELI API (api.sejm.gov.pl)",
+    // Text only: the consolidated PDF is 2.0 MB and the sidecar records why it
+    // is quoted rather than committed.
+    bytes: null,
+    path: `${KNOWLEDGE}/D-43-pl-kodeks-pracy-notice.md`,
+    evidence: "[CONFIRMED — statute, retrieved 2026-09-02]",
+  },
   "D-03": {
     id: "D-03",
     title: "Portugal — the probationary period, and who owes notice during it",
@@ -166,6 +222,45 @@ export const SOURCE_LIBRARY = Object.freeze({
     // everywhere it is rendered.
     evidence: "[INFERRED — argument from scope; agency publication retrieved 2026-08-19]",
   },
+  // THREE CANADIAN SOURCES, THREE DIFFERENT ANSWERS — added 2026-09-02 with the
+  // Québec variant of the Canadian refusal. Until this pass the CA row was the
+  // one row in the notice table whose `evidence` field was deliberately EMPTY,
+  // because nobody had read Canada's statutes. Two provinces have now been read
+  // and they answer in OPPOSITE directions, which is the finding (C-35) and is
+  // why the row is still a refusal rather than a table.
+  "D-04": {
+    id: "D-04",
+    title: "Canada (federal) — the notice provisions bind the employer, not the resigning employee",
+    instrument: "Canada Labour Code (R.S.C. 1985, c. L-2), Part III, s. 230",
+    publisher: "Department of Justice Canada, via the Justice Laws Website",
+    path: `${KNOWLEDGE}/D-04-ca-canada-labour-code-part-iii.md`,
+    bytes: `${KNOWLEDGE}/sources/D-04-ca-canada-labour-code-s230.html`,
+    evidence: "[CONFIRMED — statute, retrieved 2026-08-19]",
+  },
+  "D-05": {
+    id: "D-05",
+    title: "Canada (Ontario) — every notice obligation in Part XV is the employer's",
+    instrument: "Employment Standards Act, 2000, S.O. 2000, c. 41, Part XV (ss. 53.2–67), with s. 5",
+    publisher: "King's Printer for Ontario, via e-Laws",
+    path: `${KNOWLEDGE}/D-05-ca-on-employment-standards-act.md`,
+    // The e-Laws JSON the site's own bundle fetches — the HTML page is a React
+    // app and was catalogued as unretrievable for two weeks on that basis.
+    bytes: `${KNOWLEDGE}/sources/D-05-ca-on-esa-2000.json`,
+    evidence: "[CONFIRMED — statute, retrieved 2026-09-02]",
+  },
+  "D-44": {
+    id: "D-44",
+    title: "Canada (Québec) — the resigning employee's notice is statutory, mutual, and not a number",
+    instrument: "Code civil du Québec, RLRQ c. CCQ-1991, arts. 2091 and 2092",
+    publisher: "Éditeur officiel du Québec, via Légis Québec — the page carries « Ce document a valeur officielle »",
+    path: `${KNOWLEDGE}/D-44-ca-qc-ccq-art-2091.md`,
+    // Class (c), quote and cite: Légis Québec publishes no readable reuse terms,
+    // and the whole Code is served as one 5.8 MB document with no per-article
+    // endpoint. The byte counts and both checksums are in the sidecar, so the
+    // decision is reversible.
+    bytes: null,
+    evidence: "[CONFIRMED — statute, retrieved 2026-09-02]",
+  },
   "D-40": {
     id: "D-40",
     title: "Netherlands — the on-call carve-out from the employee's notice period",
@@ -189,6 +284,41 @@ export const SOURCE_LIBRARY = Object.freeze({
 
 /** @type {Readonly<Record<string, {id:string,section:string,path:string,weight:string,headline:string,detail:string}>>} */
 export const CAVEAT_LIBRARY = Object.freeze({
+  // C-31 / C-32 / C-33 — THE THREE THE 2026-09-02 PASS ADDED TO byCountry AND
+  // NOT TO THIS LIBRARY. Every GB, IE and PL basis then published
+  // `caveats: [null]`, and the sidebar dereferenced the null (`caveat.weight`,
+  // main.js) and stopped rendering before the Sign off button — a specialist
+  // opening a UK resignation saw the identity box and nothing under it while
+  // the API said `actionable: true`. Found by an agent driving the real bundle.
+  // The resolver below now drops an unresolved id and a test asserts none is
+  // unresolved, so this cannot recur silently; these entries are the content.
+  "C-31": {
+    id: "C-31",
+    section: "C-31",
+    path: CONTRADICTIONS,
+    weight: "disputed",
+    headline: "The UK row used to encode the EMPLOYER's sliding scale (s. 86(1)) and report it as the employee's duty — the employee's is one flat week, s. 86(2).",
+    detail:
+      "ERA 1996 s. 86 holds the two obligations in adjacent subsections: s. 86(1) is the employer's — one week under two years, a week per year from two to twelve, twelve weeks from twelve — and s. 86(2) is the employee's — not less than ONE WEEK once continuously employed for a month or more, with no tenure ladder. The table now applies s. 86(2); s. 86(1) is quoted beside it so a reader can see which duty is whose. A contract may set a longer period and this system holds no contract.",
+  },
+  "C-32": {
+    id: "C-32",
+    section: "C-32",
+    path: CONTRADICTIONS,
+    weight: "disputed",
+    headline: "Ireland's row printed the right number under the wrong section, and its qualifying period was off by one.",
+    detail:
+      "The Minimum Notice and Terms of Employment Act 1973 s. 4 is the EMPLOYER's 1/2/4/6/8-week ladder; the employee's obligation is s. 6 — not less than one week from THIRTEEN WEEKS' continuous service, which is 91 days and not three months. The row cited s. 4 while applying s. 6's number: a right answer under a wrong citation is a right answer nobody can check. Now cited to s. 6 with s. 4 beside it; the qualifying period is 91 days.",
+  },
+  "C-33": {
+    id: "C-33",
+    section: "C-33",
+    path: CONTRADICTIONS,
+    weight: "disputed",
+    headline: "Poland's anchor pointed at the wrong end of the month, and two of its three periods were months encoded as days.",
+    detail:
+      "Kodeks pracy art. 30 § 2¹: a notice period of a week or a month, or a multiple of either, ENDS respectively on a Saturday or on the last day of the month. The table said month_1st — the opposite side of the boundary — and held the 1- and 3-month periods as 30 and 90 days. Now: months are months, anchored to month end; the two-week period is anchored to a Saturday.",
+  },
   "C-13": {
     id: "C-13",
     section: "C-13",
@@ -220,10 +350,42 @@ export const CAVEAT_LIBRARY = Object.freeze({
     id: "C-18",
     section: "C-18",
     path: CONTRADICTIONS,
+    // BOTH BOUNDARY DEFECTS ARE NOW CLOSED, AND THE CAVEAT SAYS SO RATHER THAN
+    // VANISHING (2026-09-02).
+    //
+    // A caveat that describes a FIXED defect is worse than no caveat: an HR Ops
+    // specialist reading this on a sign-off screen checked 24 months, found it
+    // correct, marked the caveat closed — and never looked at 24 months and
+    // fifteen days, which was wrong at the time by half. That is exactly how a
+    // stale disclosure launders a live defect.
+    //
+    // WEIGHT STAYS `disputed`, AND THAT IS A COMPROMISE WORTH NAMING. The
+    // article and the code now agree at every point on this boundary, so the
+    // honest weight is a confirmation — but CAVEAT_LIBRARY is three-valued by
+    // design (`disputed` / `unsupported` / `incomplete`, asserted in
+    // test/uc05DecisionSources.test.js) and UC-05 has no CONFIRMATION_LIBRARY,
+    // which UC-04 does. Adding one is its own unit of work. Until then the
+    // headline and detail carry the resolution, so a reader is not left
+    // believing a live dispute.
     weight: "disputed",
-    headline: "At exactly two years' service the table gives 60 days and the statute gives 30.",
+    headline: "The two-year boundary had TWO defects on it in succession. Both are now closed.",
     detail:
-      "Art. 400.º(1) splits on \"até dois anos ou mais de dois anos\" — up to two years INCLUSIVE against more than two. The bracket here splits at 23 months, so a resignation at exactly 24 months is told it owes twice the notice it owes. Away from that one boundary the 30/60 figures are the article's own.",
+      "Art. 400.º(1) splits on \"até dois anos ou mais de dois anos\" — up to two years INCLUSIVE against more than two. TWO defects sat on that split. The bracket first divided at 23 months, so exactly two years was told it owed 60 days where the statute gives 30; moving it to 24 fixed that and created the second, because tenure was floored to whole months and every upper bound is inclusive — so two years and fifteen days also matched \"up to two years\" and was told it owed 30 where the article gives 60. Half the notice owed, against the employee, with art. 401.º's indemnity behind it. Bracket selection now uses an exact month value while everything a person reads keeps the whole number, and both directions are pinned by test: 24m 0d is 30 days, 24m 1d is 60. Away from that boundary the 30/60 figures were always the article's own.",
+  },
+  "C-35": {
+    id: "C-35",
+    section: "C-35",
+    path: CONTRADICTIONS,
+    // `disputed` rather than `incomplete`: the finding does not merely limit the
+    // Canadian row, it CONTRADICTS the sentence the row used to carry. "The
+    // notice owed comes from the contract" is false in Québec, where art. 2092
+    // makes the remedy non-renounceable — i.e. it is not a term the contract may
+    // bargain away at all.
+    weight: "disputed",
+    headline:
+      "In Québec the resigning employee's notice is statutory and mutual — and deliberately not a number.",
+    detail:
+      "Code civil du Québec art. 2091 binds either party to give a délai de congé in reasonable time, weighed on the nature of the employment, its circumstances and the duration of service; art. 2092 makes the employee's remedy for insufficient notice non-renounceable. So for one of the two provinces this repository has read, \"the notice owed comes from the contract\" is wrong three ways: Québec is civil law rather than common law, the obligation is enacted rather than customary, and it runs against the employee as well as the employer. What art. 2091 does NOT do is state a quantity — which is why the correct rendering is still a refusal to compute rather than a bracket, and why the invented 0/7/14 figures this row carried until 2026-09-02 were wrong in the one way the article specifically forecloses. Ten provinces and territories remain unread; two read, two opposite answers.",
   },
   "C-19": {
     id: "C-19",
@@ -381,6 +543,49 @@ export const FINDING_SOURCES = Object.freeze({
         ],
         caveats: ["C-28", "C-14"],
       },
+      GB: {
+        cite: [
+          {
+            source: "D-41",
+            locator: "s. 86(2), with s. 86(1) quoted beside it",
+            citedFor:
+              "the employee's notice — not less than ONE WEEK, flat, from one month's continuous employment, and it does not rise with service. s. 86(1)'s week-per-year ladder is quoted immediately beside it for the same reason the Dutch entry quotes lid 2: this row encoded that ladder and reported it as the employee's duty, so an employee at ten years was told they owed twelve weeks against a statutory one.",
+          },
+        ],
+        caveats: ["C-31"],
+      },
+      DE: {
+        cite: [
+          {
+            source: "D-45",
+            locator: "§ 622(1), with § 622(2) quoted beside it — as stated under 'Gesetzliche Kündigungsfristen'",
+            citedFor:
+              "the employee's basic notice — FOUR WEEKS to the fifteenth or to the end of a calendar month, § 622(1), which does not rise with service. § 622(2)'s ladder (one to seven months by tenure) is the EMPLOYER's and is quoted beside it for the same reason the Dutch and UK entries quote lid 2 and s. 86(1). Agency strength only: the ministry's statement of the section, not the section.",
+          },
+        ],
+      },
+      IE: {
+        cite: [
+          {
+            source: "D-42",
+            locator: "s. 6, with s. 4 beside it",
+            citedFor:
+              "the employee's notice — one week, from THIRTEEN WEEKS' continuous service, which is 91 days and is not three months. s. 4 is the employer's 1/2/4/6/8-week ladder and is quoted beside it because this row cited s. 4 while applying s. 6's number: a right answer under a wrong citation is a right answer nobody can check.",
+          },
+        ],
+        caveats: ["C-32"],
+      },
+      PL: {
+        cite: [
+          {
+            source: "D-43",
+            locator: "art. 36 §1, art. 32 §1 and art. 30 §2¹",
+            citedFor:
+              "the two-week / one-month / three-month periods and their service boundaries; art. 32 §1, which makes them MUTUAL rather than the employer's alone; and art. 30 §2¹, which ends a notice period stated in months on the LAST DAY of a calendar month and one stated in weeks on a Saturday. The anchor here was the first of the FOLLOWING month until 2026-09-02 — a date that cannot be a last working day under the rule it claimed to implement.",
+          },
+        ],
+        caveats: ["C-33"],
+      },
       PT: {
         cite: [
           {
@@ -454,6 +659,35 @@ export const FINDING_SOURCES = Object.freeze({
         ],
         caveats: ["C-13"],
       },
+      // CANADA READS DIFFERENTLY FROM THE UNITED STATES, and until 2026-09-02
+      // this key held only the US — so a Canadian refusal rendered the "we hold
+      // no statute for this country" sentence over a country whose statutes this
+      // repository had just retrieved twice. Three documents are cited because
+      // the answer differs by province and no single one of them supports the
+      // refusal on its own.
+      CA: {
+        cite: [
+          {
+            source: "D-05",
+            locator: "Employment Standards Act, 2000, ss. 54, 57 and 63(1)(e)",
+            citedFor:
+              "that Ontario's notice provisions run against the EMPLOYER — s. 54 is \"No employer shall terminate\" — and that the single period of employee notice in the whole Act, s. 63(1)(e), is a condition an employee may CHOOSE to satisfy to preserve severance pay while leaving during the employer's notice period, not a duty. Nothing in the Act sanctions an employee who ignores it.",
+          },
+          {
+            source: "D-04",
+            locator: "Canada Labour Code, Part III, s. 230",
+            citedFor:
+              "the same finding at the federal level: the notice obligation is the employer's on termination, and no federal provision imposes one on a resigning employee.",
+          },
+          {
+            source: "D-44",
+            locator: "Code civil du Québec, arts. 2091 and 2092",
+            citedFor:
+              "the province where the opposite is true. Art. 2091 binds CHACUNE DES PARTIES — either party — to give a délai de congé in reasonable time, judged on the nature of the employment, the circumstances and the duration of service; art. 2092 makes the employee's remedy for insufficient notice non-renounceable. It is enacted law and it binds the resigning employee, and it states NO number of days — which is why the right rendering is a refusal to compute rather than a figure.",
+          },
+        ],
+        caveats: ["C-35", "C-13"],
+      },
     },
   },
 
@@ -526,7 +760,19 @@ export const UNCITED_FINDINGS = Object.freeze({
  * The country codes for which this file holds a notice statute at all.
  * Exported so a caller can say "one of nine" honestly rather than counting.
  */
-export const SOURCED_COUNTRIES = Object.freeze(["NL", "PT", "US"]);
+// GB, IE and PL JOINED ON 2026-09-02 — the retrieval pass that found the UK row
+// was encoding the employer's obligation. A country is in this list when this
+// repository holds a statute for it that a reader can open, not when the table
+// has a citation string.
+//
+// CA JOINED LATER THE SAME DAY, and it is the one entry here whose statutes
+// DISAGREE WITH EACH OTHER. D-05 (Ontario) and D-04 (federal) put every notice
+// obligation on the employer; D-44 (Québec, CCQ art. 2091) binds either party.
+// Membership of this list is a claim about what a reader can OPEN, not a claim
+// that the sources agree — and the disagreement is the finding (C-35), which is
+// why Canada still refuses to compute rather than acquiring a bracket. Two
+// provinces of thirteen have been read.
+export const SOURCED_COUNTRIES = Object.freeze(["CA", "DE", "GB", "IE", "NL", "PL", "PT", "US"]);
 
 /**
  * The reading list for one finding IN ONE COUNTRY, resolved against the
@@ -571,7 +817,12 @@ export function sourcesForFinding(findingKey, countryCode = null) {
         matchedOn: `hand-curated map entry for the finding "${findingKey}" in ${country}`,
       };
     }),
-    caveats: (forCountry.caveats ?? []).map((id) => CAVEAT_LIBRARY[id]),
+    // NEVER A NULL ON THE WIRE. An id with no library entry is a data gap in this
+    // file, not a fact about the law, and the sidebar crashed on the null it
+    // produced (C-31/C-32/C-33 above). Dropped here; test/uc05DecisionSources
+    // .test.js asserts every referenced id resolves, so the gap is loud in the
+    // suite rather than silent on a specialist's screen.
+    caveats: (forCountry.caveats ?? []).map((id) => CAVEAT_LIBRARY[id]).filter(Boolean),
   };
 }
 
@@ -605,7 +856,7 @@ export function uncitedFinding(findingKey, countryCode = null) {
     why:
       `No source. This repository holds the statutory notice text for ${SOURCED_COUNTRIES.join(", ")} only, out of the nine countries in the notice table` +
       (country ? `, and ${country} is not among them` : "") +
-      ". The figure applied here rests on the short citation string carried in src/uc05/noticePeriodTable.js, which has no URL, no version and no retrieved-on date and which nothing in this repository has checked against the statute. That is worth knowing before treating the number as settled — it is not a finding that the number is wrong.",
+      ". The figure applied here rests on a short citation string carried in this system's own notice-period table, which has no URL, no version and no retrieved-on date and which nothing has checked against the statute. That is worth knowing before treating the number as settled — it is not a finding that the number is wrong.",
   };
 }
 

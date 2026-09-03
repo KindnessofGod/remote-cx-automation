@@ -137,7 +137,7 @@ test("UC-04: treaty coverage reports UNKNOWN, and says why absence is not eviden
   const { row } = uc04Row({ factors: { ...BASE_FACTORS, destination: { country: "MX" } } });
   const treaty = describeDecisionBasis({ authorizationRow: row }).dimensions[0];
   assert.equal(treaty.state, "unknown");
-  assert.match(treaty.finding, /DE → MX/);
+  assert.match(treaty.finding, /Germany → Mexico/);
   assert.match(treaty.finding, /not a record of coverage/);
   assert.ok(treaty.whatItWouldTake, "an unknown with no route to knowing is a shrug");
 });
@@ -151,7 +151,7 @@ test("UC-04: a KNOWN treaty gap is reported as a gap, with the pair named", () =
   });
   const treaty = describeDecisionBasis({ authorizationRow: row }).dimensions[0];
   assert.equal(treaty.state, "attention");
-  assert.match(treaty.finding, /IN → US/);
+  assert.match(treaty.finding, /India → United States/);
   assert.match(treaty.finding, /both countries/);
 });
 
@@ -171,7 +171,7 @@ test("UC-04: PE sensitivity names WHICH trigger fired, not just that one did", (
   // The evidence carries both raw values, so the specialist can check the
   // sentence rather than take it.
   const labels = role.evidence.map((e) => e.label);
-  assert.ok(labels.includes("Job duties"));
+  assert.ok(labels.includes("Job duties, as stated on the request"));
   assert.ok(labels.includes("Contract-signing authority"));
 });
 
@@ -190,7 +190,7 @@ test("UC-04: an empty travel history is UNKNOWN, never 'zero days, well under th
   const basis = describeDecisionBasis({ authorizationRow: row });
   const presence = basis.dimensions[2];
   assert.equal(presence.state, "unknown");
-  assert.match(presence.finding, /FLOOR, not a measurement/);
+  assert.match(presence.finding, /floor, not a measurement/);
   assert.ok(presence.whatItWouldTake);
   // And no threshold row is emitted at all — a measured-vs-limit row built on
   // an uncounted zero is exactly the "threshold with no measured value" the
@@ -230,11 +230,31 @@ test("UC-04: the immigration document is reported as NEVER CONFIRMED, and the vi
   const { row } = uc04Row({ factors: { ...BASE_FACTORS, destination: { country: "MX" } } });
   const doc = describeDecisionBasis({ authorizationRow: row }).dimensions[3];
   assert.equal(doc.state, "unavailable");
-  assert.match(doc.finding, /SELECTED/);
-  assert.match(doc.finding, /No immigration document was read from Remote/);
-  assert.deepEqual(
-    doc.evidence.find((e) => e.label === "Document read from Remote").value,
-    "none"
+  assert.match(doc.finding, /a type the requester selected, not a document/);
+  // WHAT THIS ASSERTION USED TO SAY, AND WHY IT MOVED (2026-08-31). It read
+  // `/No immigration document was read from Remote/` and checked an evidence
+  // row hard-coded to the string "none" — both of which were true of the code
+  // and describe a defect: the panel asserted an absence on a record it had
+  // already fetched, having never looked at the documented `files[]` array.
+  // The dimension now reads it (src/uc04/identityDocuments.js). The claim being
+  // pinned here is unchanged and is the one §5/§9 actually make — the visa type
+  // is a CLAIM and nothing confirms entitlement at the DESTINATION — so it is
+  // asserted directly instead of via a sentence that happened to imply it.
+  assert.match(doc.finding, /Obtain the destination's authorization before approving/);
+  // "NEVER INFERRED" IS NOW PINNED STRUCTURALLY RATHER THAN AS A SENTENCE
+  // (W-5b). It used to be asserted by matching the finding's closing clause,
+  // which was 96 characters of the panel explaining its own reasoning to a
+  // specialist who wanted a fact. The clause is gone; the guarantee is not, and
+  // it is stronger stated this way — no value of `identityDocuments` and no
+  // destination can reach a `cleared` state on this dimension, which is what
+  // UC-04.md §9 forbids by name. test/uc04ImmigrationDocuments.test.js sweeps
+  // every document state for the same property.
+  assert.notEqual(doc.state, "cleared");
+  // No employment record is passed on this path, and that is its own state:
+  // "nobody looked" must never render as "the employee has none".
+  assert.equal(
+    doc.evidence.find((e) => e.label === "Identity documents on the employment record").value,
+    "not read"
   );
   assert.match(doc.whatItWouldTake, /travel_document_number/);
 });
@@ -437,15 +457,21 @@ test("UC-05: a statutory discrepancy names BOTH dates and the shortfall in days"
   // THE C-27 SHAPE ITSELF. `statutory_discrepancy` was the whole message while
   // the proposed date, the statutory date and the gap between them all sat on
   // `notice`.
-  const { row, result } = uc05Row({ proposedEndDate: "2026-09-01" });
+  // 2026-08-04, NOT 2026-09-01 (changed 2026-09-02). This fixture is a UK
+  // employment, and the UK notice fell from a service-scaled 21+ days to ERA
+  // 1996 s.86(2)'s flat ONE WEEK — so a proposed date in September is now LATER
+  // than the statutory end and the case passes every gate instead of showing a
+  // shortfall. The subject of this test is the SHAPE of a discrepancy, not the
+  // size of the UK notice period, so the proposed date moves inside the window.
+  const { row, result } = uc05Row({ proposedEndDate: "2026-08-04" });
   assert.equal(result.reason, "statutory_discrepancy");
 
   const d = describeSignoffBasis({ resignationRow: row }).discrepancy;
   assert.equal(d.direction, "earlier_than_statutory");
-  assert.equal(d.proposedEndDate, "2026-09-01");
+  assert.equal(d.proposedEndDate, "2026-08-04");
   assert.equal(d.statutoryEndDate, row.notice.noticeEndDate);
   assert.equal(d.deltaDays, row.notice.discrepancyDays);
-  assert.match(d.sentence, /2026-09-01/);
+  assert.match(d.sentence, /2026-08-04/);
   assert.match(d.sentence, new RegExp(row.notice.noticeEndDate));
   assert.match(d.sentence, new RegExp(`${Math.abs(row.notice.discrepancyDays)} days SHORT`));
 });
@@ -468,6 +494,8 @@ test("UC-05: money is rendered in human units with its currency, never as the ×
   const payout = describeSignoffBasis({ resignationRow: row }).payout;
   assert.equal(payout.stated, true);
   assert.equal(payout.total, "3,072.00 GBP");
+  assert.equal(payout.figure, "stated");
+  assert.equal(payout.shortLabel, "3,072.00 GBP", "the one-cell rendering IS the figure when there is one");
   assert.equal(payout.lines[0].payout, "3,072.00 GBP");
   assert.equal(payout.lines[0].daysAvailable, 8);
   // The scaled integer must not appear anywhere a person reads.
@@ -488,6 +516,8 @@ test("UC-05: an uncomputable payout names the missing fields — and shows no to
   const payout = describeSignoffBasis({ resignationRow: row }).payout;
   assert.equal(payout.computable, false);
   assert.equal(payout.total, null);
+  assert.equal(payout.figure, "not_worked_out");
+  assert.equal(payout.shortLabel, "not worked out");
   assert.match(payout.sentence, /could NOT be worked out/);
   assert.match(payout.sentence, /hourlyRateInRemoteInteger/);
   assert.match(payout.sentence, /absence of a figure, not a figure of zero/);
@@ -503,6 +533,11 @@ test("UC-05: no time-off records supplied is reported as unknown, never as a pay
   const basis = describeSignoffBasis({ resignationRow: row });
   assert.equal(basis.payout.stated, false);
   assert.equal(basis.payout.total, null);
+  // THE CELL, not just the sentence. The sidebar's row rendered this record's
+  // arithmetic 0 as "0.00 EUR" for weeks while the sentence beneath it said
+  // "not a finding that nothing is owed" — so the short form is pinned too.
+  assert.equal(basis.payout.figure, "not_known");
+  assert.equal(basis.payout.shortLabel, "not known");
   assert.match(basis.payout.sentence, /not a finding that nothing is owed/);
   assert.ok(basis.unknowns.some((u) => /accrued time-off balance/i.test(u.what)));
 });
@@ -869,4 +904,90 @@ test("the API views actually serve the basis — a describer nothing renders is 
   const uc06 = readFileSync(new URL("../src/uc06/server.js", import.meta.url), "utf8");
   assert.match(uc06, /decidedBy: describeDecidingGate/);
   assert.match(uc06, /gateLadder: describeGateLadder/);
+});
+
+// ---------------------------------------------------------------------------
+// NO MEASUREMENT, NO CLEARANCE — every early exit, not two of them
+// ---------------------------------------------------------------------------
+// Found 2026-09-02 by a global mobility specialist reading the reassembled
+// UC-04 panel, who named it the one finding that would stop them signing a
+// Schengen case.
+//
+// `classifyRisk()` returns early with `schengen: null` whenever ANY prior gate
+// raised a reason. The describer's refusal test caught two of those causes —
+// `travel_history_unreadable` and `NOT_EVALUATED` — so a visitor visa, a US/CA
+// work permit, a same-country trip or an invalid date all fell through to the
+// `within_limit` branch. On a decision taken seconds earlier the panel rendered,
+// in green:
+//
+//     Schengen days across a rolling 180 days
+//     not measured on this run      ✓ Within the limit
+//
+// The value and the state mark contradicting each other on one line, over a
+// 180-day window synthesised across a period nothing was measured over, filed
+// under the summary "Each of these ran and found nothing against the request.
+// None of them is a gate that never ran."
+//
+// The test is now the ABSENCE OF A MEASUREMENT rather than a list of causes, so
+// an early exit added tomorrow is covered by construction.
+// ---------------------------------------------------------------------------
+
+test("UC-04: a Schengen row whose count never ran is NOT_ASSESSED, whatever stopped it", () => {
+  // A visitor visa blocks at the document gate, well before the day count. It
+  // sets neither `travel_history_unreadable` nor `NOT_EVALUATED`, which is
+  // exactly why it used to clear.
+  const { row, result } = uc04Row({
+    factors: {
+      ...BASE_FACTORS,
+      destination: { country: "ES" },
+      visaType: "tourist_visa",
+      startDate: "2026-09-01",
+      endDate: "2026-09-20",
+    },
+  });
+  assert.notEqual(result.decision, "ready_for_approval", "the fixture stopped blocking — pick another early exit");
+
+  const schengen = describeDecisionBasis({ authorizationRow: row }).measurements.find(
+    (m) => m.key === "schengen_90_180"
+  );
+  assert.ok(schengen, "a Schengen destination produced no Schengen row at all");
+
+  assert.equal(schengen.state, "not_assessed", "an unmeasured allowance is being reported as cleared");
+  assert.equal(schengen.measured, null);
+  assert.equal(schengen.headroom, null, "headroom on a count that never ran is a manufactured number");
+  assert.equal(schengen.breached, false);
+
+  // NO WINDOW. `trailingWindow()` would compute a plausible one, and a window
+  // nothing measured over is the same false statement in a smaller font.
+  assert.equal(schengen.window, null, "a window was synthesised for a count that never happened");
+
+  // And the sentence must not contain the clearing phrase in any form.
+  assert.doesNotMatch(schengen.note, /within the (limit|allowance)/i);
+  assert.doesNotMatch(schengen.note, /predates the matrix/i, "an early exit is being described as an old record");
+  assert.match(schengen.note, /not cleared/i);
+});
+
+test("UC-04: a MEASURED within-limit case still clears — the fix must not refuse everything", () => {
+  // The control. Without this the change above would pass just as well against
+  // a describer that reported every Schengen row as unassessed, which is
+  // failing closed by never working.
+  const { row, result } = uc04Row({
+    factors: {
+      ...BASE_FACTORS,
+      destination: { country: "ES" },
+      visaType: "schengen_short_stay",
+      startDate: "2026-09-01",
+      endDate: "2026-09-20",
+    },
+    travelHistory: [],
+  });
+  assert.equal(result.decision, "ready_for_approval");
+
+  const schengen = describeDecisionBasis({ authorizationRow: row }).measurements.find(
+    (m) => m.key === "schengen_90_180"
+  );
+  assert.equal(schengen.state, "within_limit");
+  assert.ok(Number.isFinite(schengen.measured), "a cleared row must carry the figure it cleared on");
+  assert.ok(schengen.window, "a real measurement must name the window it measured over");
+  assert.match(schengen.note, /Within the allowance/);
 });

@@ -145,7 +145,18 @@ test("§8 TH-05: the per-day window CLEARS a trip the per-trip window blocked �
   assert.equal(r.schengen.peakDate, "2026-09-01");
   assert.equal(r.schengen.window.from, "2026-03-06");
   assert.equal(r.schengen.breached, false);
-  assert.equal(r.riskLevel, "low");
+  /* THE VERDICT UNDER TEST IS THE SCHENGEN ONE, and W-3 is why that now has to
+     be said out loud. This asserted `riskLevel === "low"`, which was a proxy
+     for "the per-day window cleared it" and stopped being one the moment a
+     second soft flag could move the level for an unrelated reason: BASE's `now`
+     is 2026-08-20 and this case overrides the start to 2026-09-01, which is 12
+     days' notice. So the level is `medium` on lead time alone. Asserted as the
+     absence of a Schengen refusal plus an exact flag set, which is stricter
+     than the old line — it would still fail if the per-day window started
+     blocking this trip, and it now also fails if any OTHER flag appears. */
+  assert.ok(!r.reasons.includes("schengen_90_180_exceeded"));
+  assert.notEqual(r.riskLevel, "blocked");
+  assert.deepEqual(r.flags, ["lead_time_short"]);
 
   // The old per-trip window, reconstructed: one trailing 180 days anchored at
   // the trip start, prior days plus the whole trip against 90.

@@ -30,7 +30,7 @@ import { PERSONAS } from "../src/portal/personas.js";
 
 import { ExpenseStore } from "../src/uc02/expenseStore.js";
 import { CaseStore } from "../src/shared/caseStore.js";
-import { AuthorizationStore } from "../src/uc04/authorizationStore.js";
+import { AuthorizationStore, EMPLOYER_DECISION_STATUSES } from "../src/uc04/authorizationStore.js";
 import { ResignationStore } from "../src/uc05/resignationStore.js";
 import { DossierStore as RelocationDossierStore } from "../src/uc07/dossierStore.js";
 import { DossierStore as TaxDossierStore } from "../src/uc08/dossierStore.js";
@@ -460,6 +460,42 @@ test("an admin's list is scoped by the admin id the record carries, not by an em
   assert.deepEqual(emma.body.requests.filter((r) => r.useCase === "UC-04"), []);
 });
 
+test("an employee who files their OWN workation request can see it, and nobody else's", async () => {
+  // The other half of the 2026-08-30 change: an employee may file a
+  // work-authorization request about their own trip (src/uc04/
+  // submissionIdentity.js), and a request you can file and then cannot find is
+  // a request that vanished. Scoped on BOTH `requester` and `employment_id` —
+  // filed by me, about me — which is deliberately the TIGHTER of the two
+  // readings available; see ownership.js's SELF_OR_ON_BEHALF_OF header for why
+  // "everything about me" was not taken.
+  const filed = await callApi({
+    method: "POST",
+    path: "/api/requests/uc04",
+    body: {
+      persona: "chris",
+      employmentId: PERSONAS.chris.employmentId,
+      homeCountry: "DE",
+      nationality: "DE",
+      destinationCountry: "ES",
+      startDate: "2026-09-01",
+      endDate: "2026-09-10",
+      visaType: "schengen_short_stay",
+      jobDuties: "engineering",
+      hasContractSigningAuthority: false,
+      now: "2026-08-15",
+    },
+  });
+  assert.equal(filed.status, 200, `the employee's own request was refused: ${filed.body.code ?? filed.body.reason}`);
+
+  const chris = await myRequests("chris");
+  const mine = chris.body.requests.filter((r) => r.useCase === "UC-04");
+  assert.equal(mine.length, 1, "the employee filed it and cannot see it");
+
+  // And it is not on anybody else's page.
+  const emma = await myRequests("emma");
+  assert.deepEqual(emma.body.requests.filter((r) => r.useCase === "UC-04"), []);
+});
+
 test("a pairing that cannot be scoped from the session is REPORTED, never silently empty", async () => {
   const admin = await myRequests("admin");
   const reasons = Object.fromEntries(admin.body.notListed.map((n) => [n.type, n.reason]));
@@ -476,13 +512,23 @@ test("a pairing that cannot be scoped from the session is REPORTED, never silent
     assert.match(reasons[type], /nothing about who asked/i);
   }
 
-  // The mirror image: an employee is told why the on-behalf-of types are not
+  // The mirror image: an employee is told why the on-behalf-of type is not
   // theirs, rather than being shown an unexplained gap.
+  //
+  // UC-04 IS NO LONGER ONE OF THEM, and that is the point of the change on
+  // 2026-08-30: a work-authorization request may be filed by the employee about
+  // their own trip, so an employee session DOES own those rows and the type is
+  // scoped rather than reported as unscopable. UC-09 — the 🔴-framed money path
+  // — is untouched, and the assertion below is what stops that widening leaking
+  // one type over.
   const chris = await myRequests("chris");
   const employeeReasons = Object.fromEntries(chris.body.notListed.map((n) => [n.type, n.reason]));
-  for (const type of ["uc04", "uc09"]) {
-    assert.match(employeeReasons[type], /company admin/i);
-  }
+  assert.match(employeeReasons.uc09, /company admin/i);
+  assert.equal(
+    employeeReasons.uc04,
+    undefined,
+    "UC-04 is reported as unscopable for an employee, but an employee may now file one"
+  );
 });
 
 test("only requests filed HERE are listed — the stores are shared with the nine APIs and with n8n", async () => {
@@ -646,4 +692,78 @@ test("the describer holds no policy — structurally, not by convention", () => 
   // UC-08's workflow makes by taking no write-capable parameter.
   assert.doesNotMatch(source, /^import /m);
   assert.doesNotMatch(source, /actionable/);
+});
+
+// ---------------------------------------------------------------------------
+// THE EMPLOYER'S VERDICT, AS THE STORE ACTUALLY WRITES IT
+// ---------------------------------------------------------------------------
+// Found on the live deployment, 2026-09-01, by reading it rather than by
+// reasoning: two real UC-04 records that a manager had approved reported
+// `state: "unknown"`, `decidedBy: null`, label "Unknown" — beside a `stages`
+// block ON THE SAME ROW naming the approver and the minute. describeStatus()
+// knew `executed` and did not know `approved_by_manager`, which is what
+// AuthorizationStore.recordEmployerDecision() writes. The decline half had the
+// identical hole and no row had reached it yet.
+//
+// THE GUARD IS DERIVED, NOT RESTATED. It reads the store's own frozen map, so
+// a third employer verdict added there fails here until this page learns the
+// word. A literal list would have been a second copy of the vocabulary the
+// original defect already proves nobody keeps in step.
+
+test("every status the store can write for an employer verdict is one this page knows", () => {
+  for (const [action, status] of Object.entries(EMPLOYER_DECISION_STATUSES)) {
+    const described = describeStatus("uc04", { status });
+    assert.notEqual(
+      described.state,
+      STATES.UNKNOWN,
+      `recordEmployerDecision("${action}") writes "${status}", and "My requests" renders it as Unknown — `
+        + "the requester is told nothing happened on a request a named human decided."
+    );
+    assert.equal(described.storeStatus, status, "the raw status must survive for anyone tracing the row");
+  }
+});
+
+test("an approved work authorization names the manager, the minute and their note", () => {
+  // All three come off the approval slot recordEmployerDecision() writes:
+  // `approver`, `approved_at`, `approval_note`. Reporting the approval without
+  // them is what the live rows did, and "approved" with no approver is the one
+  // shape a requester cannot act on.
+  const described = describeStatus("uc04", {
+    status: "approved_by_manager",
+    approver: "admin_jane",
+    approvedAt: "2026-08-31T11:25:56.667Z",
+    approvalNote: "Cleared — two weeks, no client-facing work.",
+  });
+
+  assert.equal(described.state, STATES.EXECUTED, "an employer verdict is settled, not still awaiting one");
+  assert.equal(described.label, "Approved by your manager");
+  assert.equal(described.decidedBy, "admin_jane");
+  assert.equal(described.decidedAt, "2026-08-31T11:25:56.667Z");
+  assert.equal(described.note, "Cleared — two weeks, no client-facing work.");
+  assert.equal(described.awaitingRole, null, "it is not waiting on anybody");
+});
+
+test("an approved work authorization claims nothing about Remote", () => {
+  // `executed` may say "there was no Remote work-authorisation request behind
+  // this trip to update" because its execution step ran and recorded what it
+  // found. recordEmployerDecision() writes no `remoteResult` at all, so the
+  // same sentence here would report an absence nobody looked for.
+  const detail = describeStatus("uc04", { status: "approved_by_manager", approver: "admin_jane" }).detail;
+  assert.ok(!/no Remote work-authorisation request/i.test(detail), `it claimed Remote held nothing: ${detail}`);
+  assert.ok(!/updated at Remote/i.test(detail), `it claimed a Remote update that never ran: ${detail}`);
+  assert.match(detail, /mobility review is a separate stage/i, "stage 3 must still be pointed at");
+});
+
+test("a declined work authorization reads the decline slot, not the approval slot", () => {
+  // recordEmployerDecision() writes `denied_by`/`denied_at` for a decline and
+  // leaves `approver` untouched. Reading the approval slot would report the
+  // decision as decided by nobody — or, worse, by whoever last approved.
+  const described = describeStatus("uc04", {
+    status: "declined_by_manager",
+    declinedBy: { approver: "admin_jane", at: "2026-08-31T12:00:00.000Z", note: "Not this quarter." },
+  });
+
+  assert.equal(described.state, STATES.DECLINED);
+  assert.equal(described.decidedBy, "admin_jane");
+  assert.equal(described.note, "Not this quarter.");
 });

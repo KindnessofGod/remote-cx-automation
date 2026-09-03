@@ -204,9 +204,15 @@ const MUST_SURVIVE = {
   ],
   "remote UI stand-in": [
     ["This is a stand-in, not Remote's real platform", "the honesty disclosure"],
-    ["has no public API", "why this surface exists at all"],
+    // Rewritten 2026-09-02: the old sentence claimed the amendment API "has no
+    // public API", which DRIFT-031 records as false — POST /v1/contract-
+    // amendments exists. The surface is a demonstration stand-in, and says so.
+    ["demonstration stand-in", "why this surface exists at all"],
     // Which identity you are signed in as — the form's ids must belong to it.
-    ["The employee session is Amara Okafor", "who the employee session is"],
+    // The NAME is no longer a literal in the HTML (it drifted: the markup said
+    // Amara Okafor while the server signed in Jan Willem Bakker); app.js
+    // renders the server's own answer under this caption.
+    ["The employee session is", "who the employee session is"],
     ["only amendments your signed-in role is party to", "why a valid id can return nothing"],
     ["refused server-side", "the role matrix is not a client-side claim"],
   ],

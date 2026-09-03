@@ -183,6 +183,9 @@ npm run deploy-node      # publishes ONE n8n Code node from its .js file (see §
 npm run deploy-routing   # publishes the Assign Routing node to all nine graphs
 npm run seed-vectors     # embeds the citation corpus into pgvector — READ docs/RETRIEVAL.md FIRST:
                          # it recommends NOT running this, and argues it from a measured 106 passages
+npm run build-citation-corpus  # regenerates src/knowledge/citationCorpus.js AND both n8n node bodies
+                         # from docs/knowledge/. Run it after ANY change under docs/knowledge/ —
+                         # test/citationCorpusFreshness.test.js fails if the committed copies drift
 ```
 
 Every port above is allocated in `src/shared/ports.js` — the single registry.
@@ -223,7 +226,12 @@ is a strict subset of `main`. Ignore it.)
    rules on any failure.
 2. **Risk tier selects the execution path** — it is not a label.
    - 🟢 **Low (01–03):** validate → auto-execute → resolve. Exception-gated.
-   - 🟡 **Medium (04–06):** AI prepares + risk-scores → human approves in ZAF → execute. 06 needs *dual* approval.
+   - 🟡 **Medium (04–06):** AI prepares + risk-scores → a human approves → execute. 06 needs *dual* approval.
+     **The approving human is not always a Remote specialist in ZAF, and 04 is the exception** (corrected
+     2026-08-30, `qa/HUMAN-DECISIONS-REQUIRED.md` §K14): a work authorization is approved by **the customer's
+     own manager**, so that decision is made in the Remote-product stand-in (`npm run remoteui`), and Remote's
+     Mobility Team reviews it afterwards in ZAF on a panel that offers no approve — because
+     `approved_by_remote` is a status Remote publishes **no endpoint** to set. `UC-04.md` §1a has the table.
    - 🔴 **High (07–09):** AI compiles a dossier → escalate. **No execution path may exist** — assert this with a test. 09 is the dual-approval money path.
 3. **Identity comes from an authenticated signal, never a claim.** Fails closed:
    any missing piece means unverified.
@@ -283,6 +291,502 @@ is a strict subset of `main`. Ignore it.)
 ---
 
 ## 4. Current status
+
+> **2026-09-02 (LATEST, ~22:00Z) — UC-07 AND UC-08 UI E2E ROUNDS STARTED AND
+> PAUSED MID-RUN ON THE OWNER'S INSTRUCTION. UC-09 NOT STARTED. Nothing under
+> `src/`, `test/`, `workflows/`, `zaf-app/` or the deployment changed.** Six
+> persona agents were dispatched (the UC-06 method); one finished — the UC-08
+> sidebar specialist, 12 defects in
+> `qa/evidence/UC-08/2026-09-02-uc08-e2e/specialist/FINDINGS.md` — and five
+> were stopped with partial evidence committed under `qa/evidence/UC-07/` and
+> `qa/evidence/UC-08/` (tickets 292–307, executions 12145–12183, all
+> `pinData: null`). **Pick up from `docs/HANDOFF-2026-09-02.md` §4b**: what
+> each agent left, the UC-08 defect list, the planned fix list, and how to
+> resume. Two evidence facts to know first: the webhook token in eight
+> execution exports is redacted, and the duplicate `*.expanded.png` files live
+> only in `~/archive/`, never in git.
+
+> **2026-09-02 (latest) — UC-06 DRIVEN END TO END BY THREE PERSONAS ON THE
+> LIVE SURFACES, TWENTY-ODD DEFECTS FIXED, DEPLOYED AND RE-PROVEN THE SAME
+> AFTERNOON. `npm test` 5,620 · 0 fail · `verify-deployed` 86/0 · ZAF 1.11.4.**
+> Commits `a30f2a0` and the one after it. Full account:
+> `docs/HANDOFF-2026-09-02.md` §4a and `workflows/nodes-uc06/DEPLOY-2026-09-02.md`.
+>
+> **THE ONE THAT MATTERS: the sidebar told both signatories the employee did not
+> exist**, on ten of ten live cases, in a headed card above a live Approve
+> button. A row filed through `/remoteui` is decided against the in-process
+> mock; the by-ticket read asked the gateway Sandbox, and
+> `sourceAwareRemote()` yielded the mock for the portal's tag ONLY — so an
+> entitled approver's click would have refused every stand-in amendment at the
+> freshness re-check as well. `remoteui` now resolves to the mock world exactly
+> as `portal` does (`deploy/cx-apis/deps.js`, test 0b moved on purpose), and
+> `employeeAndRequester()` asks `remoteFor(remote, row.source)` first. Proven:
+> ticket 284 renders the person. **A row's `source` is the name of the world it
+> lives in; every later read AND write about it must ask that world.**
+>
+> Also closed: `/remoteui` had no access-code prompt (unusable in a browser);
+> the requester read "Customer Admin: not yet signed" on her own page — slot 1
+> is now *Employer's signatory* on every surface with the role id unchanged;
+> consents are read back from `audit_log`; settled facts and a badge after
+> execution/decline; the ×100 figure on the panel; the effective date as a
+> calendar day; refusals in sentences naming form fields; the decrease
+> attestations have boxes — a salary decrease reaches dual approval for the
+> first time (ticket 286); the stand-in's ticket is routed to Payroll Ops; the
+> n8n audit row discloses a projected cycle (`ddab7859`, execution 12064);
+> exactly-once proven on UC-06 for the first time (12038 / 12040).
+>
+> **Open and named** (§4a of the handoff): the deployed stand-in's calendar
+> ends August 2026, so a real-clock demo submission escalates honestly — use
+> the quick-fills or the visible "Evaluate as at" field; part-time amendments
+> cannot be filed from the page and say so; no UC-06 row has ever executed on
+> the deployment — the probe is refused `approver_not_entitled` and the real
+> two-person signature is the owner's live step.
+
+> **2026-09-01 (latest) — THE SYSTEM IS CALLED **GATEHOUSE**, A MANAGER'S
+> APPROVAL NO LONGER READS "UNKNOWN", AND THE LAST DRIFTED n8n NODE IS
+> DEPLOYED. `npm test` 5,458 · 0 fail.** Commits `cbc8498`, `b4092a8`,
+> `6b4bc14`, `d3e43b1`, `684f78f`, `2d3c5dd` — all pushed, all live.
+>
+> **THE RENAME IS THE NAME ONLY, AND THE DISTINCTION IS THE WHOLE POINT.** The
+> owner: *"there's so many mention of remote… is that a good thing?"* It splits
+> in two and only one half is a problem. Naming Remote as the thing this
+> integrates with is **evidence** — nearly every mention on a panel is a
+> DISCLAIMER (*"no Remote write is recorded against it"*, *"Remote publishes no
+> endpoint for this stage"*), and stripping them would make the system less
+> honest, not more polished. Being **called** "Remote CX Review" — in a Zendesk
+> app installed in a live account, on a case-study page meant to be sent as a
+> link, on the public third-party door — is a **claim of affiliation**, and a
+> reader cannot tell an integration from an endorsement by reading a product
+> name. `src/shared/productName.js` is now the one authority and
+> `test/productName.test.js` reads every literal back against it, because a ZAF
+> manifest, two translation files and three HTML titles **import nothing** and
+> so cannot be held in step any other way. **The suite's negative control is
+> the point of it**: it asserts the Remote citations are STILL THERE, because
+> the obvious way to answer "too many mentions" is a find-and-replace that
+> deletes the disclaimers. Manifest `1.10.25` → `1.11.0`; **an installed ZAF app
+> is a static upload, so Zendesk shows the old name until it is re-uploaded**
+> (the owner is doing that). The deployment host stays `remote-cx-apis.vercel.app`
+> — scoped out, since moving it invalidates every URL in the docs and needs nine
+> n8n graphs re-pointed with live webhooks in the path.
+>
+> **A MANAGER'S APPROVAL RENDERED AS "Unknown" IN "My requests", FOUND BY
+> READING THE DEPLOYMENT RATHER THAN THE CODE.** Two real UC-04 records reported
+> `state: "unknown"`, `decidedBy: null` — beside a `stages` block ON THE SAME
+> ROW naming `approver: "admin_jane"` and the minute. `recordEmployerDecision()`
+> writes Remote's own enum members verbatim (`approved_by_manager` /
+> `declined_by_manager`) and `requestStatus.js` knew only `executed`. The
+> decline half had the identical hole with no row yet in it. NOT folded into the
+> `executed` branch: that one is entitled to say *"there was no Remote
+> work-authorisation request behind this trip to update"* because its execution
+> step ran and recorded what it found, and reusing the test would turn "this
+> path never attempted an update" into "there was nothing to update". Fixed,
+> pushed, and **re-read live**: both rows now say *"Approved by your manager |
+> admin_jane"*.
+>
+> **THE PORTAL ASKED NOTHING AND THE SIDEBAR SHOWED IT.** W-2's four activity
+> boxes shipped on the UC-04 card with nothing filling them — not one of the
+> fifteen quick-fills, neither continuation completion. The owner's objection is
+> the right one: a panel naming what somebody will be doing there, above a form
+> that never asked, reads as invented. All fifteen scenarios now name all four,
+> blanks included. The continuation offers them on a **separate channel**:
+> `fields` may only write boxes the server confirmed are still needed, which is
+> what makes "Fill the rest" unable to destroy typed input, and the activity
+> boxes are not required inputs — so `suggestIfEmpty` lands only in a box that
+> is blank when the button is pressed, read from the box itself. **Identical on
+> both completions on purpose**: the pair differs only in the two structured
+> boxes, so the same four sentences produce a clean approval and a high-risk
+> escalation, which is the demonstration that the prose is scored by nothing.
+>
+> **The demo trip moved to next month** — every UC-04 date shifted UNIFORMLY by
+> 30 days (69 in the scenario block, 5 in the continuation), because three
+> scenarios are tuned to land exactly on a boundary and a rolling window
+> measures distances rather than dates. A green suite is the evidence, not the
+> intent. `now` is a pinned demo clock and is now slightly in the FUTURE
+> (2026-09-14) — visible and editable in "Evaluate as at", and the reason to
+> re-run the shift rather than let the pin drift far from the day of the demo.
+>
+> **TWO THINGS TRIED AND BACKED OUT, both because a guard was right.** Cutting
+> the triple-stated *"never sent to Remote"* from the UC-04 panel summary failed
+> **four independent guards**, one saying *"UC-04 lost the claim its summary
+> existed to make"* — that repetition was put there on purpose after the claim
+> went missing once, and the replacement was also wrong on its own terms
+> (it pointed at a form that is not rendered until the employer has approved).
+> And unifying `/remoteui`'s "Work location" with the sidebar's wording was
+> refused by `test/remoteUiActivityPrefill.test.js`: the browser may not author
+> a question label, because a label it writes is a second copy of the server's
+> words free to drift — which already happened on that block, to an
+> "(optional)". Both are **product decisions, open, and the owner's**.
+>
+> **One false claim removed** (`d3e43b1`): the panel said *"this system does not
+> carry out that step either"* on a screen carrying a **Record clearance** button
+> for exactly that step. True when written, false since stage 3 shipped
+> 2026-08-31. No test and no n8n twin carried the string.
+
+> **2026-09-01 (later) — "MY REQUESTS" HID THE STAGE THE EMPLOYEE CAME TO SEE,
+> AND THE ROW'S LAST WORD SAID THE MANAGER HAD FINISHED IT. `npm test` 5,468 ·
+> 0 fail.**
+>
+> Found by the owner reading their OWN approved trip on the deployment: *"I was
+> expecting to see that the Mobility Specialists have approved the work
+> authorization. I checked. I didn't see anything. And the page makes you look
+> as if approval by the manager is the final approval."* Both halves were true
+> and both had **one cause**. A UC-04 row's status badge is derived from the
+> store row, which records stages 1 and 2 and **structurally cannot see stage
+> 3** — Remote's mobility review has no column and lives in `audit_log`. So a
+> trip the employer had approved AND Remote's mobility team had cleared showed
+> exactly one badge, *"Approved by your manager"*, over a settled line ending
+> *"This is final"*. **The clearance was on the row the whole time**, as prose at
+> the bottom of a tall cell, below the fold. A fact a reader cannot find is not
+> a fact the page has told them.
+>
+> Stage 3 now has its own badge **in the Status column**, in
+> `MOBILITY_REVIEW_SHORT_LABELS`' words — *"Remote's mobility review: cleared /
+> declined / still to do / not reached"*. Three properties are pinned by test
+> rather than intended: the label is stamped in a **wrapper** so no future
+> branch can ship without one (six returns each composing their own would be six
+> chances to forget, and the forgotten one renders as an empty badge); it is a
+> **state and never a summary of `MOBILITY_REVIEW_NOTICE`**, which is still
+> rendered verbatim beside it, because every paraphrase of *"this is not sent to
+> Remote"* anybody writes is shorter and more reassuring than the original; and
+> it is drawn in **exactly one place**, the badge having MOVED out of the prose
+> block rather than been copied — the copy nobody scrolls to is the one that
+> reads as the answer.
+>
+> **The finality sentence now names whose decision is final.** *"This is final —
+> an approved request cannot be approved or declined again"* is true and was
+> routinely misread as the whole request being done. It is now *"The employer's
+> decision is final — …"*. The **decline** branch keeps the unqualified
+> sentence on purpose and the asymmetry is asserted: stage 3 reviews what the
+> employer APPROVED, so on a declined request it is `not_reached` and there is
+> no later decider to be mistaken for.
+>
+> **The banner is a TALLY, not a truncation.** *"18 of your 85 requests have been
+> decided by a person"* then enumerated all eighteen — `UC-04 — approved by your
+> manager` **eight times in a row**, wrapping to four lines, the longest thing on
+> the page and the least informative. It now groups: *"UC-04 — approved by your
+> manager (×8); UC-02 — approved (×7); UC-02 — declined (×3)."* Capping at the
+> first N would have been shorter too and would have **quietly stopped
+> mentioning outcomes**; the invariant that separates the two is asserted
+> directly — the counts SUM to the number decided and every distinct outcome
+> survives. Composition moved out of the route into `describeDecided()`, so it
+> is testable on eighteen fabricated rows instead of needing eighteen real ones.
+
+> **2026-09-01 (latest) — UC-04'S SIDEBAR NOW CARRIES WHAT A MOBILITY
+> SPECIALIST ACTUALLY NEEDS. Four gaps closed, five commits, `npm test` 5,428 ·
+> 0 fail.** Full write-up: `docs/BUILD-LOG.md` §3.119. Scope:
+> `docs/UC04-DECISION-SURFACE.md`. Evidence: `docs/UC04-RESEARCH-FINDINGS.md`.
+>
+> The owner asked whether everything needed to authorize a work authorization
+> was on the panel. It was not. Now on it: **Notice before departure** (against
+> Remote's own published 14-day floor and 3-8 week recommendation, article
+> `37802834593805`); **the request the employee raised in Remote**, read live —
+> including the `travel_document_number` the panel used to say did not exist;
+> **what they will be doing there** — the three questions Remote's own RWA form
+> asks; and **where the customer has companies**, which answers art. 15(2)(b),
+> the treaty condition the 183-day row had been printing a caveat about. Plus
+> W-5b: 20 findings rewritten from design-rationale essays into *state the fact,
+> say what it blocks, say what would clear it*, guarded by
+> `test/uc04FindingRegister.test.js`.
+>
+> **NOTHING NEW CAN DECIDE ANYTHING, and it is enforced by reading the gate
+> files rather than intended.** UC-04's blocking set stays immigration and data
+> quality only. The activity profile is additionally pinned behaviourally: the
+> same request decides identically with an empty profile and with one reading
+> *"negotiating and signing a distribution contract in a biosafety level 3
+> laboratory"*. A rule keyed on that text is one anybody can pass by rephrasing.
+>
+> **THREE TRAPS PAID FOR, all of which fail silently.** `normalizeCountryCode
+> ("NLD")` returns `"NLD"` — it does not reject alpha-3, and Remote returns
+> `CompanyLegalEntity.country_code` in alpha-3, so the obvious comparison
+> answers *"no entity there"* forever, reassuringly (F-27 one endpoint over).
+> `loadUc04()` builds its view from a WHITELIST, so two published server fields
+> reached nobody while every unit test passed. And a floor borrowing a ceiling's
+> renderer prints *"91 of 14 days · 77 days left"*, which reads as the worst row
+> on the page when it is the safest.
+>
+> **~~NOT DEPLOYED~~ — DEPLOYED AND PROVEN 2026-09-01.** `Workation Gates` on
+> `WORKFLOW_UC04_ID` was the ONE drifted node in the whole estate;
+> `verify-deployed` now reads **86 checked · 0 drifted**, draft and production
+> both `0ffee10b`. Proven by driving the production webhook three times, never
+> by the deploy's exit code — `pinData: None` on all three:
+> **`11474`** (10 days' notice) `ready_for_approval / all_gates_passed`,
+> `risk.leadTimeDays: 10`, `flags: ["lead_time_short"]`; **`11477`** (60 days,
+> the NEGATIVE CONTROL) same decision, `leadTimeDays: 60`, **`flags: []`**; and
+> **`11476`**, the redelivery, six nodes ending at `Duplicate Delivery — Stop`
+> having written nothing. The control is the load-bearing one: it shows the flag
+> DISCRIMINATES rather than always firing, and that a short-notice trip still
+> reaches `ready_for_approval` — advice, not a threshold.
+>
+> Both non-duplicate runs are marked `error` at the terminal Zendesk node only,
+> the documented shape for a descriptive `externalRef` where Zendesk wants a
+> numeric ticket id, downstream of every durable write. Read node status, never
+> run status.
+>
+> **TWO PAYLOAD SHAPES COST THREE ATTEMPTS AND BOTH READ AS SOMETHING ELSE.**
+> The structured webhook builds identity from `session.authenticatedEmploymentId`
+> (or `companyId` + `authenticatedAdminId`); the **Zendesk** path is the one that
+> uses an email. Send `authenticatedEmail` to the structured path and `session`
+> arrives **null**, which decides `escalate / identity_not_verified` — a refusal
+> that reads like a credential or a stale-record problem and is neither. And the
+> destination is nested: `factors.destination.country`, never
+> `factors.destinationCountry`, which flat yields `missing_destination_country`.
+> Both refused correctly and loudly; the gates were right all three times.
+
+> **2026-08-31 (latest) — TWENTY-SIX TERMINAL ZENDESK NODES DEPLOYED AND PROVEN
+> ON REAL TICKETS, AND UC-01 WAS FOUND DEAD IN PRODUCTION WHILE DOING IT.**
+> Full write-up: `docs/BUILD-LOG.md` §3.110.
+>
+> A Zendesk *update ticket* node carries no `jsCode`, so `MAPPINGS` is
+> structurally blind to it and the parity tests compare DECISIONS — which is how
+> UC-09's payroll notes said `AI drafted` and `HIGH RISK` on a graph with **zero
+> LLM nodes**, UC-05's sign-off asserted *"No Remote write exists"* after
+> `resignation:write` shipped, UC-06 printed *"Payroll cycle: none identified"*
+> where the calendar was never consulted, and UC-03 told a customer to *"reply
+> to this ticket"* on a graph whose own idempotency claim makes a reply a
+> no-op. All corrected, published **Code nodes first, Zendesk parameters
+> second** (the other order renders an empty public reply on a fully green
+> run), and verified from the read-back: `verify-deployed` **86 nodes checked ·
+> 0 drifted · 0 unpublished**, baseline 111 → 99, `npm test` **5,304 tests, 0
+> fail** on this tree. `workflows/nodes/terminalZendeskDeployTargets.js` is now
+> the ONE table both `deploy-terminal-nodes.mjs` and `STRUCTURAL_MAPPINGS` read,
+> and it **throws at import** if a prose edit would revert rca-iih7 / D-14.
+>
+> **Proven by reading real tickets back off Zendesk, not by deploy exit
+> codes.** Ticket **91** is the strongest: UC-03 `auto_resolve`, **solved**, and
+> the customer received the replacement paragraph naming Remote's Request Hub.
+>
+> **THE OUTAGE, and it was found by DRIVING rather than by reading.** Five real
+> `uc01_test` tickets (88, 92, 93, 94, 95 → executions `11174`, `11179`–`11182`)
+> all reported **`success`**, all decided correctly at `Identity + Policy
+> Gates`, and **all five stopped at `Duplicate Delivery — Stop`** having written
+> nothing. `workflow_claims` keys `(use_case, external_ref)` where
+> `external_ref` is a BARE TICKET NUMBER: `your-subdomain` reached #143,
+> `your-subdomainhelp` restarted at #1, so a brand-new ticket is refused as a
+> redelivery of an unrelated one. **UC-01 answers no new ticket at all**, and
+> five green runs said otherwise. The other eight graphs completed because the
+> key includes the use case and UC-01's claimed range is the dense one — the
+> sample that worked was the larger one. This is the write-side twin of §7 item
+> 23, whose fix does not touch the ledger. **FIXED the same day on the owner's
+> instruction**: the claim key is now qualified with the account that minted the
+> ticket (`your-subdomainhelp:100`, never `100`) — additive, no row migrated or
+> deleted, one rule shared by both execution paths, published to all nine graphs
+> and proven in BOTH directions on real ticket **100** (execution `11198` wrote
+> case, audit, trace and queue; the redelivery `11200` stopped at
+> `Duplicate Delivery — Stop` having written nothing). Full account: §7
+> honest-gaps **item 24**.
+
+> **2026-08-29 (latest) — UC-02'S GREEN AUTO-APPROVE PATH FIRED FOR THE FIRST
+> TIME, THROUGH ZENDESK. Ticket 27 → execution `10292`.** 25/25 nodes, FIRED FOR THE FIRST
+> TIME, THROUGH ZENDESK. Ticket 27 → execution `10292`.** 25/25 nodes,
+> `pinData: None`, `auto_approve / all_gates_passed` — and the destination was
+> checked, not the run flag: Sandbox expense `a30e1ba2` really moved
+> `pending` → `approved` (read back off Remote), `audit_log a9f2cdb1`,
+> `uc02_expenses 8f1359ff`, ticket **solved**, tagged `uc02_auto_approved`,
+> with a public reply to the customer. The duplicate delivery (`10291`)
+> stopped at the NoOp having written nothing.
+>
+> **THE REASON IT HAD NEVER FIRED WAS NOT THE ONE THIS FILE RECORDED.** The
+> standing claim was "the Sandbox cannot mint a *pending* expense, so gate 5
+> stops everything". Half true and not the blocker: 34 pending expenses exist.
+> The real cause was the **cap corpus covering 8 of the 32 selectable
+> categories** the live USA account offers, so gate 12 answered
+> `policy_cap_unknown` for almost everything. Measured, not estimated: all
+> twelve remaining pending USD claims were classified on 2026-08-29 and **not
+> one** could reach `auto_approve` — each over the single $150 office-supplies
+> cap or in an uncapped category. Nearest miss: **$153.72 against $150.**
+> **A 🟢 use case whose green path is unreachable is an expensive human-review
+> router**, and every status row here called it the former, because "no cap
+> defined" and "cap not exceeded" both look like the gate working.
+>
+> The corpus is now **26 of 32**. The figures are `[PROPOSED]` — a plausible
+> company policy, not Remote's and not a statute — and **six categories stay
+> uncapped on purpose** (relocation, visa/immigration, office rental,
+> long-term car lease, equipment shipping/customs, "additional travel
+> services"), asserted by `test/uc02PolicyCapCoverage.test.js`. `getPolicyCap()`'s
+> fail-closed contract is unchanged. It is a **product call, recorded in
+> `qa/HUMAN-DECISIONS-REQUIRED.md` §K13** so it can be overruled — including
+> the uncomfortable part, that the figures were chosen knowing which Sandbox
+> claims they admit.
+>
+> **What is STILL true**: no pending expense can be created (`POST /v1/expenses`
+> always yields `approved`), `PATCH` back to pending is refused, and `PATCH`
+> accepts **only** `status` so an amount cannot be edited either — all four
+> re-tested this day rather than quoted. So the demo set is whatever pending
+> claims the Sandbox holds, and **each gives ONE clean run** (gate 6 blocks the
+> repeat). `scripts/make-demo-receipt.mjs --total <minor> --date <iso>` tunes a
+> receipt to one.
+
+> **2026-08-29 (latest) — E-1, THE ZENDESK RECEIPT PATH, IS PROVEN END TO END.
+> Ticket 24 → execution `10162`.** A real PDF receipt attached to a real
+> Zendesk ticket was read by the deployed API and compared with the Remote
+> claim by gate 8b. `pinData: None`, **23 of 23 nodes `success`**. The reading
+> was exact — merchant `Lakeside Conference Center`, date `2026-05-15`, total
+> `25805` minor units, `USD`, confidence 0.95 — against a claim of 25805 USD on
+> 2026-05-15, so **gate 8b passed** and the decision moved past it to gate 12,
+> `human_review / policy_cap_unknown`. Durable rows with server-generated ids:
+> `uc02_expenses 75323796`, `audit_log f20d124b`, `audit_trace 8e25f94e`, plus
+> a `workflow_claims` row on ref 24. Ticket 24 is `pending` in **Finance Ops**
+> (`99900000000009`), tagged `queue_finance_ops` + `uc02_human_review`, with an
+> internal note naming the decision. The redelivery (`10163`) stopped at
+> `Duplicate Delivery — Stop` after 14 nodes.
+>
+> **IT TOOK FOUR TICKETS, AND THE THREE FAILURES IN BETWEEN ARE THE VALUABLE
+> PART — every one of them reported success at every layer.** Same path, three
+> different 4xx, none visible without opening an execution:
+> - **401 — the node had never authenticated once.** `Read Receipt (API)`
+>   carried `X-YOUR-WEBHOOK-TOKEN: ={{ $env.N8N_WEBHOOK_TOKEN }}`. **n8n blocks
+>   `$env` inside nodes by default** and the variable was not set on the host
+>   either, so the header went out EMPTY. Execution `10153` reported `success`
+>   with all 23 nodes green having read nothing, because
+>   `onError: continueRegularOutput` — which is correct and must stay, since an
+>   outage of the receipt reader must never become an outage of UC-02 — means a
+>   401 does not fail the node. **The guard passed it** because it asked whether
+>   the header was PRESENT. It was. `readReceiptNodeSpec.js` now requires the
+>   secret to come from an `httpHeaderAuth` CREDENTIAL: an expression can
+>   resolve to an empty string and still look configured, while a missing
+>   credential stops the node and says so. Live node now uses `CRED_WEBHOOK_HEADER_AUTH`,
+>   the same credential the inbound webhook verifies the same secret with.
+> - **200 — an unauthenticated attachment download returns a SIGN-IN PAGE.**
+>   This account requires agent sign-in for attachments:
+>   *unauthenticated → HTTP 200, `text/html`, 57346 bytes; authenticated → HTTP
+>   200, `application/pdf`, 20508 bytes.* **Both 200**, so `if (!res.ok) throw`
+>   cannot tell them apart — the login page was handed to the extractor and a
+>   paid vision call was spent reading it. What surfaced it was the MODEL
+>   declining to invent a total (`total: null, confidence: 0`, *"Document
+>   appears to be a sign-in page"*), and a guard that relies on a model choosing
+>   to be honest is not a guard. `src/uc02/attachmentDownload.js` now refuses an
+>   HTML/XML body by content-type AND by sniffing the bytes.
+> - **403 — authenticated on the wrong scope.** The attachment file path is not
+>   a ticket API endpoint. Measured live, one URL, three scopes:
+>   `tickets:read tickets:write` → **403**, `read` → 200, `read write` → 200.
+>   The downloader now has its own client on **`read`** — a tightening, since
+>   this is the one credential here that fetches an unvalidated third-party
+>   document and it cannot write to Zendesk at all.
+>
+> **The transferable lesson is the same one three times: a success code is not
+> a success.** A 200 that is a login page, a green node that never
+> authenticated, a swallowed 403 — each was found only by opening the execution
+> and reading the node's OUTPUT, never its status. Two of the three had a check
+> pointed straight at them that reported clean.
+>
+> `/__cx/health` now carries a **`receiptReader`** block reporting the three
+> preconditions separately, because "which of them is missing?" cost an
+> afternoon and the route's only caller is a machine that nobody watches.
+>
+> **Still true and unchanged: UC-02's live GREEN tier remains structurally
+> undemonstrable.** `POST /v1/expenses` refuses anything but an already-approved
+> expense, so no *pending* claim can be minted, and gate 5 stops a decided one
+> before gate 8b. Every live demonstration of the receipt gate therefore rides
+> on whichever pending claims the Sandbox happens to hold —
+> `scripts/make-demo-receipt.mjs --total <minor> --date <iso>` re-tunes a
+> fixture to one after a reseed.
+
+> **2026-08-29 (later) — THE ZENDESK ACCOUNT MOVED AGAIN: `your-subdomain` →
+> `your-subdomainhelp`.** The old account expired. Read this before believing any
+> Zendesk id anywhere below it — **every account-scoped id in this file is now
+> the retired one.** `scripts/migrate-zendesk-account.mjs` recreated all 28
+> objects on the new account and read every one back: the **Remote Employment
+> ID** field is now **`9990000000001`** (was `9990000000001`, itself replacing
+> `99900000000006` on `your-subdomain` — three accounts, three ids), nine groups,
+> nine webhooks all carrying `X-YOUR-WEBHOOK-TOKEN`, nine intake triggers. The
+> ZAF app is **`1288211`, manifest 1.10.10, enabled**, installed via the REST
+> apps API rather than `zcli` (whose login is interactive) and verified against
+> `GET /api/v2/apps/installations.json`. OAuth client `remote-ikan`
+> (`99900000000009`) is **confidential** and carries BOTH n8n redirect URLs.
+>
+> **All nine n8n graphs were republished with the new field id and read back
+> live** — 9/9 `active`, `versionId === activeVersionId`, `verify-deployed`
+> 0 drifted. `npm run sync-groups` moved the nine group ids and
+> `assignRouting` was redeployed to all nine.
+>
+> **Three traps this migration paid for, all of which fail SILENTLY:**
+> - **A trigger holds the field id three times in three syntaxes** —
+>   `custom_fields_<id>` in the condition, `"id":<id>` in the webhook payload,
+>   and `{{ticket.ticket_field_<id>}}` as a placeholder inside a string inside
+>   that payload. A field-by-field walk fixes the first and misses the other
+>   two, and Zendesk discards an unknown field id without erroring, so the
+>   ticket simply arrives with no employment id and every layer reports 200.
+>   The migration script serialises the whole condition/action blob and
+>   refuses to proceed if the old id survives.
+> - **`N8N_BASE_URL` carried a trailing dot**, which made the n8n REST API
+>   return **HTTP 200 with a zero-byte body**. Not an error, not a timeout — a
+>   success code with nothing in it, which every JSON parser reports as a
+>   parse failure rather than a connectivity one. Fixed in `.env`.
+> - **A second copy of the group ids** lived in `src/approvalqueue/demoSeed.js`
+>   and in `test/approvalQueue.test.js`. `sync-groups` updated the registry and
+>   the copies kept the retired numbers, so the seeded queue called every
+>   owning-team ticket `elsewhere` — the queue's own headline claim, "nobody
+>   can reach this", manufactured by a stale constant. Both now read
+>   `ESCALATION_GROUP_IDS`.
+>
+> **ALL THREE OF THE ITEMS BELOW ARE NOW CLOSED, and the chain is PROVEN GREEN
+> END TO END on the new account — see the block after them.** Kept unstruck
+> because each names a real hazard that recurs on the next account move.
+>
+> **NOT DONE, and the live path is broken until they are** — all three need a
+> browser or a Vercel session, so no coding session can close them:
+> 1. **Four Vercel variables** on project `remote-cx-apis`: `ZENDESK_SUBDOMAIN`
+>    = `your-subdomainhelp`, the new `ZENDESK_OAUTH_CLIENT_ID`/`_SECRET`, and
+>    `ZENDESK_EMPLOYMENT_ID_FIELD_ID` = `9990000000001`. Live `/__cx/health`
+>    still reports the retired `9990000000001`. Remember §6: an env-var change
+>    does not alter the git diff, so `ignoreCommand` will SKIP a redeploy of an
+>    unchanged commit — land a commit touching a watched path.
+> 2. **The n8n Zendesk credential `CRED_ZENDESK_OAUTH` still points at
+>    `your-subdomain`**, and this is the one with a real hazard rather than just a
+>    failure: ticket ids on the fresh account start at 1 while the old account
+>    reached 143, so a UC run driven before this is re-consented would attempt
+>    its final write against a DIFFERENT, UNRELATED ticket on the old account.
+>    **Do not drive a live test ticket until this is re-pointed.**
+> 3. **`cxSharedSecret` on the new app install is unset.** It is a ZAF SECURE
+>    setting — never returned by the API, which is why it does not appear in the
+>    installation JSON — so it cannot be copied programmatically. It must be set
+>    by hand to the same value as `ZAF_SHARED_SECRET` on Vercel, or every
+>    signed write refuses (fail-closed, by design).
+>
+> `~/zendesk-migration/id-map.json` holds every new id. `ZENDESK_OLD_*` in
+> `.env` keeps the retired account reachable until it lapses.
+>
+> **What did NOT move: the Supabase history.** Every stored ticket reference
+> from before today names a ticket on the RETIRED account, and the new
+> account has started renumbering from 1 — so some of those references would
+> resolve to a real but unrelated ticket instead of 404ing. **FIXED the same
+> day** by deriving the account from each row's own timestamp
+> (`src/shared/zendeskAccounts.js`) rather than migrating the database: §7's
+> honest-gaps list, **item 23**.
+>
+> **PROVEN GREEN END TO END, 2026-08-29 — execution `9941`, ticket 4.**
+> `pinData: {}`, **28 of 28 nodes `success`**, `auto_resolve / all_gates_passed`,
+> `identity: requester_matches_employment`, `classification.source: "llm"`. The
+> destination was checked rather than the run flag: real rows with
+> server-generated ids — `cases ec0f6836`, `audit_log 1309a675`,
+> `audit_trace 918798fa` (whose `parent_id` IS the audit row),
+> `documents c9c7cc78` (whose `case_id` IS the case row), and a
+> `workflow_claims` row. The letter reached the customer as rendered HTML, not
+> escaped source, and contains **no salary** — only dates — plus the disclosure
+> boundary sentence. Ticket 4 `solved`, tagged `uc01_auto_resolved`, in HR Ops.
+> Exactly-once was proven in the same pass: re-driving ticket 3 produced
+> execution `9939`, nine nodes ending at `Duplicate Delivery — Stop`.
+>
+> **THREE THINGS THIS PROOF FOUND THAT NOTHING ELSE WOULD HAVE:**
+> - **`X-YOUR-WEBHOOK-TOKEN` was broken by the migration, silently.** Zendesk
+>   never returns a webhook's auth VALUE on read, so the migration could only
+>   seed the new webhooks from `.env` — whose copy had drifted from what the n8n
+>   credential actually held. Every delivery 403'd. **A captured webhook is
+>   never a complete webhook; the secret must be rotated on any account move.**
+>   Rotated, all nine Zendesk records updated, n8n credential updated by hand.
+> - **UC-01's webhook took one 403 and was dead.** Per `docs/WEBHOOK-AUTH.md` a
+>   failed Zendesk webhook circuit-breaks and cannot be repaired. Replaced by
+>   `UC-01 n8n verification v5` (`01ZENDESKWEBHOOKIDGENERIC0`) with trigger
+>   `99900000000009` repointed and read back. The other eight had never been
+>   invoked, so they were safe to update in place.
+> - **A group with no members cannot solve a ticket.** The nine new groups were
+>   created empty, and `assign_tickets_upon_solve` assigns the SOLVING USER —
+>   who must be a member of the ticket's group. So the final Zendesk write
+>   failed `422 RecordInvalid — Assignee: is required when solving a ticket`,
+>   an error that names the assignee and not the membership. Both admins were
+>   added to all nine groups (18 memberships). Worth noting the account-level
+>   settings were IDENTICAL on both accounts — the difference was membership,
+>   which is why comparing settings first was the step that ruled it out.
 
 > **2026-08-29 — what landed today, before pointing a public audience at the
 > deployment.** Six changes, all committed, all with tests. Named here because
@@ -432,17 +936,17 @@ is a strict subset of `main`. Ignore it.)
 | **Approver role entitlement** | ✅ Built (`src/review/approverEntitlement.js`, `APPROVER_ROLES`), wired into UC-04/05/06/09. Prime directive #3 was applied to the requester and never to the approver: the four-eyes floor genuinely required two different *people*, and nothing required either of them to be an *entitled* person — two support agents could clear a payroll amendment as `customer_admin` + `payroll_specialist`. Three properties are pinned by test rather than argued: it is **consulted last** (after every refusal the policy already had, so it cannot mask the real reason), it **can only ever refuse** (`check()` returns a refusal or `null`; there is no value meaning "approved", so no call site can be written that lets it fill a slot or lower a floor), and it is **additive**. Enforcement keys off the same discriminator signed identity uses — durable store attached ⇒ required; seeded in-memory demo ⇒ not enforced, so a fresh clone still approves. **Required-but-unconfigured refuses by its own name** (`approver_entitlement_not_configured`, deliberately NOT `approver_not_entitled` — those are two different afternoons of work). **Provisioned on the deployment as of 2026-08-20**: `/__cx/health` reads `approverEntitlementEnforced: true`, `approverEntitlementSource: "APPROVER_ROLES"`, `writes: "WORKING"`. For the days before that it read `"unconfigured"` and refused every approve by its own name — the fail-closed default working as designed, and a reminder that **built** and **provisioned** are two claims |
 | **Approval queue** (`npm run queue-ui` → :4047, `/queue` deployed) | ✅ Built (`src/approvalqueue/`, `docs/APPROVAL-QUEUE.md`). Read-only **by construction** — no POST route exists in `server.js` at all, asserted both behaviourally (a write-shaped request 404s) and structurally (the source, comments stripped, never names the method). It re-derives no policy: whether an item is waiting, where it would be actioned and whether anyone can reach it are read out of the stores, the routing table and Zendesk, and where a fact is not recorded it says so rather than computing a rival answer. **Its headline is the stuck list, not the flowing one** — see §7's honest-gaps list for what it found the first time it was pointed at production |
 | **Approval routing, analysed** | ✅ `docs/APPROVAL-ROUTING.md` — who approves each of the nine, in which screen, and where that screen does not exist. Analysis, not a change: nothing under `src/` was modified to produce it. It is the document that found the role-entitlement hole above |
-| **Statutory knowledge corpus** | ✅ `docs/knowledge/` — **35 of 39** Layer-1 statutory/agency documents retrieved from their own authorities across three passes, each with a provenance header carrying source, URL, retrieval date, SHA-256 of the retrieved bytes and licence. Four remain unretrieved for four different reasons (`RETRIEVAL-BLOCKED.md`); the class "our own network refused an authority" is now empty. **The findings are the deliverable, not the files**: `CONTRADICTIONS.md` holds **30 contradictions and 4 confirmations** against code this repo currently ships (34 findings, counted 2026-08-20). **Three have now changed code**, each as its own reviewed commit with its own tests — C-1 (`73920c9`), C-18 and C-14/C-20/C-28 (`43ae3c7`) — and the corpus is separately **cited on the 🟡/🔴 screens** without touching a gate (`src/uc04/decisionSources.js` alone references 24 findings by id). The earlier flat claim *"nothing under `src/` was changed on the strength of it, and nothing should be"* is retired: the rule was never "never act", it was **a finding is a work order with its own tests, never a number swapped inside an unrelated commit**. The rest stay unactioned by choice — see §7 item 4 |
+| **Statutory knowledge corpus** | ✅ `docs/knowledge/` — **35 of 39** Layer-1 statutory/agency documents retrieved from their own authorities across three passes, each with a provenance header carrying source, URL, retrieval date, SHA-256 of the retrieved bytes and licence. Four remain unretrieved for four different reasons (`RETRIEVAL-BLOCKED.md`); the class "our own network refused an authority" is now empty. **The findings are the deliverable, not the files**: `CONTRADICTIONS.md` holds **30 contradictions and 4 confirmations** against code this repo currently ships (34 findings, counted 2026-08-20). **Four have now changed code**, each as its own reviewed commit with its own tests — C-1 (`73920c9`), C-18 and C-14/C-20/C-28 (`43ae3c7`), and **C-9** (`26c436d`, 2026-08-31, which discharged it by reading two registers the repo already held rather than by building the table C-9 asked for — §3.105) — and the corpus is separately **cited on the 🟡/🔴 screens** without touching a gate (`src/uc04/decisionSources.js` alone references 24 findings by id). The earlier flat claim *"nothing under `src/` was changed on the strength of it, and nothing should be"* is retired: the rule was never "never act", it was **a finding is a work order with its own tests, never a number swapped inside an unrelated commit**. The rest stay unactioned by choice — see §7 item 4 |
 | **Demo scenario matrix (NL · PT · CA · US)** | ✅ `docs/DEMO-COUNTRIES.md` + `scripts/demo-countries-matrix.mjs` — 77 scenarios across all nine use cases, run against the **live** Sandbox, with an *observed* column rather than an expected one. 68 matched, **9 did not**, and §6's nine are the valuable part. Not a test and must never be imported by `npm test`: it reaches the network on purpose |
 | **Interactive playground** | ✅ Built (`src/playground/`, `npm run playground`) — one page to act as client + specialist, offline only, reuses the same workflow/policy/service code as production |
 | **Chat demo** | ✅ Built (`src/chatdemo/`, `npm run chatdemo`) — a conversational wrapper: each typed message runs through the real `handleVerificationTicket()` and renders its actual result. A demo/testing aid, not a submission deliverable — in-memory only, never touches Supabase or a real Zendesk ticket |
 | **Live demo (real Zendesk ticket)** | ✅ Built (`src/livedemo/`, `npm run livedemo`) — client-facing page that creates a REAL ticket the live n8n workflow processes. **CONFIRMED WORKING END TO END 2026-08-27**, and it never had been before: `.env` carried `ZENDESK_EMPLOYMENT_ID_FIELD_ID=9990000000007`, an id that has never existed on this account, so every submission wrote to a nonexistent field, the trigger's `custom_fields_… present` condition never matched, and the ticket sat untouched. Silent in every layer — Zendesk drops an unknown field id without erroring, so the create returned 200. `qa/evidence/UC-01/2026-08-22-uc01-e2e/FINDINGS.md` had named the wrong id five days earlier; nothing had changed the `.env`. Now: ticket 142 → execution `9302`, `pinData: {}`, **29/29 nodes success**, `auto_resolve`/`all_gates_passed`, audit row `8d96de6a-…`, letter delivered, ticket solved. Also fixed: the first comment is now authored by the CUSTOMER (`findUserIdByEmail()` + `comment.author_id`) — it used to be attributed to the API account, so the customer's own words and the automated reply both appeared under the account owner's name |
 | **UC-06** (Contract Amendment / Payroll Cutoff) | ✅ Core logic + HTTP API + real Supabase persistence + ZAF panel + n8n workflow (`src/uc06/`, `npm run uc06-api`, `WORKFLOW_UC06_ID`) — dual-role approval controls live in the shared sidebar; n8n workflow built, credentialed, dry-run verified, parity-tested. `draftSummary()`'s LLM call now retries before falling back (issue #32) and its drafted prose gets an optional narrative-faithfulness check — informational only, never a gate (issue #27). **Plus the Remote-native entry-point stand-in** (`src/remoteui/`, `npm run remoteui`) — submits the webhook-shaped amendment event, runs the REAL gates, then creates the pre-tagged Zendesk ticket (issue #17's trigger-source model). **Submissions are role-gated server-side** (issue #34): company admin requests, employee/employer consent, everything else refused. **ACTIVE as of 2026-08-10** — explicit user go-ahead given for full production-ready confirmed system testing across all nine use cases (see §5's "all nine n8n workflows activated" entry); real (unpinned) execution verification is the next step, not yet done |
-| **UC-08** (Cross-Border Tax & Social Security) | ✅ Core logic + real dossier persistence + read-only API + ZAF panel + n8n workflow + a treaty retriever (**keyword in production**; the embedding leg is built and unfed) (`src/uc08/`, `npm run uc08-api`, `WORKFLOW_UC08_ID`) — the 🔴 use case with **no execution path**, asserted structurally and behaviorally by test, now true of the store, API, AND n8n graph too (one write method, zero mutations; no POST route at all; no Switch/IF node in the workflow). Treaty retrieval **runs on its keyword leg in production** — the `uc08_treaty_citation_vectors` pgvector table has held zero rows since it was provisioned, so every citation any real run has shown was keyword-matched. The embedding class is built and wired to nothing (issue #29). `draftNarrative()` likewise retries before falling back (issue #32) and gets the same optional, non-gating narrative-faithfulness check (issue #27). **ACTIVE as of 2026-08-10** — same explicit go-ahead as UC-06; real (unpinned) execution verification is the next step, not yet done |
+| **UC-08** (Cross-Border Tax & Social Security) | ✅ Core logic + real dossier persistence + read-only API + ZAF panel + n8n workflow + a treaty retriever (**a country-filtered BM25 index over 57 retrieved statutory passages** as of 2026-08-30, §3.95/§3.98b; the embedding leg is built, unfed, and deliberately staying that way) (`src/uc08/`, `npm run uc08-api`, `WORKFLOW_UC08_ID`) — the 🔴 use case with **no execution path**, asserted structurally and behaviorally by test, now true of the store, API, AND n8n graph too (one write method, zero mutations; no POST route at all; no Switch/IF node in the workflow). Treaty retrieval runs on a **lexical index over the real corpus** as of 2026-08-30 (§3.95) — `docs/knowledge/`'s 57 admitted passages from 14 documents, country-filtered, with a bilateral instrument requiring BOTH its parties and an instrument always outranking the OECD Model paraphrases, which are now reachable only when nothing statutory matched and say so when they are. **A BUNDLED bilateral document is narrowed per PASSAGE as of §3.98b**: `D-27+D-28+D-29` is three conventions in one file, and a passage whose heading names one of the document's own pairs serves only that pair — because a treaty's operative clause never names its parties, so no scoring change could tell the three apart. Before that, a US/PT dossier displayed the **US–Netherlands** article. **The ZAF panel now renders the publisher, the retrieval date and whether a passage is the instrument in force or the paraphrase it was drafted from (§3.98)** — until then it printed a bare title, above a `citationCoverage.scope` sentence that still described the three-paraphrase corpus and said *"Nothing in the corpus matched this request at all"* over three real instruments. Before that date every citation any real run had ever shown came from **three hand-written sentences**, and a US–Portugal treaty question returned nothing at all while the IRS's own US–Portugal convention sat in the repository. The `uc08_treaty_citation_vectors` pgvector table has held zero rows since it was provisioned and **must stay empty** (`docs/RETRIEVAL.md`); the embedding class is built and wired to nothing (issue #29). `draftNarrative()` likewise retries before falling back (issue #32) and gets the same optional, non-gating narrative-faithfulness check (issue #27). **ACTIVE as of 2026-08-10** — same explicit go-ahead as UC-06; real (unpinned) execution verification is the next step, not yet done |
 | Demo video + case-study page | 🟡 Script + page **built** (`docs/DEMO-SCRIPT.md`, `docs/case-study.html`) — the video itself is **not yet recorded** and the page is **not yet published/sent**; see §7 Stage 4 |
-| **UC-02** (Expense & Receipt Validation, 🟢) | ✅ Core logic + HTTP API (`src/uc02/`, `npm run uc02-api`, port 4050) — 12 ordered deterministic gates, LLM category-classification seam (retried, source-tagged, never trusted for money/math), the one write (`PATCH /v1/expenses/:id`) durably audited before it fires. No ZAF panel/n8n/PDF yet |
+| **UC-02** (Expense & Receipt Validation, 🟢) | ✅ Core logic + HTTP API (`src/uc02/`, `npm run uc02-api`, port 4050) — **16 ordered deterministic gates** (`GATE_SEQUENCE`, positions 0–15; the "12" this row carried for weeks was never right), LLM category-classification seam (retried, source-tagged, never trusted for money/math), the one write (`PATCH /v1/expenses/:id`) durably audited before it fires. **A ZAF panel and an n8n graph both exist** — `WORKFLOW_UC02_ID`, active, 23 nodes — which this row denied until 2026-08-29. **[E-1] gate 8b reads the RECEIPT**: a PDF attached to the ticket is fetched from Zendesk and transcribed by a vision model, and `receiptContradictions()` compares currency, total and date with the claim — returning field NAMES, never amounts. Vendor is deliberately not compared: the record has no merchant field, and `title` is a purpose ("Team lunch") rather than a trading name. Proven live on ticket 24 / execution `10162` on both paths — portal and Zendesk. **The GREEN tier is still structurally undemonstrable live** (`POST /v1/expenses` mints only already-approved expenses, so no pending claim can be created and gate 5 stops a decided one), which is a Sandbox limit rather than a gate defect |
 | **UC-03** (Travel Support Letter / Workation router, 🟢) | ✅ Core logic + HTTP API (`src/uc03/`, `npm run uc03-api`, port 4051) — thin router only (auto_resolve/human_review/escalate/route_to_uc04), deliberately no Schengen/183-day compliance logic of its own. **NOT read-only** — `c295ef1` added three sign-off write routes; only UC-07 and UC-08 have no POST route at all. ZAF panel and n8n graph both exist |
-| **UC-04** (Work Authorization / Workation, 🟡) | ✅ Core logic + HTTP API (`src/uc04/`, `npm run uc04-api`, port 4052) — deterministic origin→destination risk matrix (PE risk, Schengen/US-CA hard blocks), single-specialist approval (not dual — UC-04.md names one mobility specialist). No ZAF panel/n8n yet |
+| **UC-04** (Work Authorization / Workation, 🟡) | ✅ Core logic + HTTP API (`src/uc04/`, `npm run uc04-api`, port 4052) — deterministic origin→destination risk matrix (PE risk, Schengen/US-CA hard blocks). **2026-08-30 (§3.94): THREE parties decide, and two of the three stages had the wrong owner until this date.** Remote's API is four endpoints — no `POST`, and `PATCH` accepts only `approved_by_manager`/`declined_by_manager` — so the **customer's own manager** makes the only work-authorization decision any client can write, in `/remoteui`; Remote's Mobility Team reviews it afterwards in ZAF **on a panel that offers no approve**, because `approved_by_remote` is a status no endpoint can set. The employee may now file their own request (`submissionIdentity.js` — party to the record, present-and-equal on both sides). Owner's product call, with the API evidence: `qa/HUMAN-DECISIONS-REQUIRED.md` §K14; three-stage table: `UC-04.md` §1a. **Also fixed the same day: `npm run uc04-api` had NEVER seeded a decidable case** — its six demo cases name a mock employment id and were built through the server's client, so on any machine holding a real `REMOTE_API_TOKEN` the Sandbox 404'd it and all six came up `escalate / identity_not_verified`. Invisible to `npm test`, which has no token. No n8n republish yet — `workflows/nodes-uc04/workationGates.js` is ahead of the live graph |
 | **UC-05** (Resignation Notice Calculation, 🟡) | ✅ Core logic + HTTP API (`src/uc05/`, `npm run uc05-api`, port 4053) — 9-country statutory notice table, PTO payout reconciliation, single HR Ops sign-off. No real write endpoint exists (spec-confirmed), so the signed-off report is the durable artifact, not an execution. No ZAF panel/n8n yet |
 | **UC-07** (Global Mobility / Permanent Relocation, 🔴) | ✅ Core logic + read-only dossier API (`src/uc07/`, `npm run uc07-api`, port 4054) — the second no-execution-path reference build alongside UC-08: `handleRelocationReview()` takes no remote/zendesk dependency at all, dossierStore has one write method and zero mutations, no POST route exists. No ZAF panel/n8n yet |
 | **UC-09** (Off-Cycle Payroll / Adjustment, 🔴-framed but WITH execution) | ✅ Core logic + HTTP API (`src/uc09/`, `npm run uc09-api`, port 4055) — the one 🔴-framed use case with a real execution path, gated behind a floor-of-2 multi-role approval (requester+approver, +payment_releaser for high-risk) that `Math.max(2, ...)` guarantees can never drop below 2 regardless of risk score. No ZAF panel/n8n yet |
@@ -493,7 +997,17 @@ is a strict subset of `main`. Ignore it.)
   `GET /__cx/routes` now lists three browser surfaces alongside the nine
   prefixes: **`/portal`** (intake), **`/audit`** (the audit-trail viewer) and
   **`/queue`** (the approval queue) — all three read-only or intake-only, all
-  three behind `PORTAL_ACCESS_KEY`. `/__cx/health` reports reads WORKING and
+  three behind `PORTAL_ACCESS_KEY`.
+
+  **`/remoteui` joined them 2026-08-30 and it is the first DECIDING surface on
+  this deployment** (§3.94) — the Remote-product stand-in, where the customer's
+  own manager approves or declines a work authorization. Same `PORTAL_ACCESS_KEY`
+  gate, same fail-closed posture, and its Remote reads are the in-process mock
+  for the same reason the portal's are: a public page must not write into a real
+  Remote account. Verified live the day it shipped — `/remoteui` and
+  `/remoteui/work-authorizations` 200, `10 of 11` employments in scope, probe
+  `asked: true / answered`, and `401 portal_access_key_required` without the
+  key. `/__cx/health` reports reads WORKING and
   writes WORKING.
 
   **~~One thing on it is switched off~~ — CLOSED 2026-08-20.** For two days this
@@ -798,6 +1312,17 @@ is a strict subset of `main`. Ignore it.)
   claim that none ever had was true when written and is superseded.
 - **Webhook (production):**
   `https://n8n.your-host.example/webhook/00000000-0000-4000-8000-00000000n8n0/uc-01-verification`
+- **THE LIVE ZENDESK ACCOUNT NOW HAS ITS OWN REGISTER: `docs/ZENDESK-ACCOUNT.md`.**
+  Account, the user the automation acts as, the employment custom field, all ten
+  group ids, all eighteen triggers and the agent views — every one read from the
+  API on 2026-08-30 rather than copied. Go there instead of trusting an id in
+  this file: this project has moved account twice and every id is
+  account-scoped, so a stale number here looks exactly like a live one.
+  It also records **trigger `38746828978973`**, which since 2026-08-30
+  auto-assigns every automation-raised ticket to Sammy Zen on create — live
+  config that exists in no other file, and the reason every ticket now shows an
+  owner. Routing is untouched (`group_id` is not in its actions); the demo trade
+  and how to switch it off are in that file's §5.
 - **ALL NINE PRODUCTION WEBHOOKS NOW REQUIRE A SHARED SECRET HEADER (2026-08-27).**
   `X-YOUR-WEBHOOK-TOKEN`, one 64-hex secret held in nine Zendesk webhook records
   (`authentication.type: api_key`) and one n8n credential
@@ -813,6 +1338,10 @@ is a strict subset of `main`. Ignore it.)
   reverse produces failed deliveries, and a Zendesk webhook that fails once
   circuit-breaks and can only be replaced. Full record, and three traps that
   each cost real time: `docs/WEBHOOK-AUTH.md`.
+- **SUPERSEDED 2026-08-29 — the account moved again, to `your-subdomainhelp`; see
+  the migration box at the top of §4. Every id in the bullet below is now
+  RETIRED, and it is kept only because its reasoning about what does and does
+  not carry over between accounts is what made the second migration quick.**
 - **Zendesk account CHANGED.** The project now points at **`your-subdomain`**
   (employment-id custom field **`9990000000001`** — NOT `9990000000007`, which
   has never existed on this account and is corrected further down this list),
@@ -1084,6 +1613,13 @@ read those, each one cost a real afternoon) and §7 (what is still open).
   `X-Standin-Enriched` header and a `_standin` body block. UC-04 needs
   `custom_fields.workation_permission` and UC-05 needs
   `basic_information.start_date`; the raw Sandbox returns `undefined` for both.
+  **STALE FOR UC-05 AS OF 2026-09-02, on BOTH paths.** The raw Sandbox returns
+  `provisional_start_date` (and a `seniority_date` key), and both
+  `normalizeEmployment()` and — since `26988cc` — the n8n twin read it. Until
+  that commit the deployed UC-05 graph refused every employee outside the
+  stand-in's two hard-coded ids as `missing_seniority_date` (executions 11936,
+  11939), which every earlier live proof had missed by using an enriched id.
+  UC-04's `custom_fields` need is unchanged and still real.
   On gateway data UC-04 would block **every** request with
   `employer_permission_not_granted` (`policyEngine.js:120`) and UC-05's tenure
   arithmetic would have no start date to compute from. `enrichment.js` names
@@ -1260,6 +1796,27 @@ read those, each one cost a real afternoon) and §7 (what is still open).
   and one printed *"Escape was only exercised on"* above a list of all eight.
   Both now compare against `REQUEST_TYPES`, which is stricter and says what they
   meant: every type the portal serves must be demonstrable.
+- **Zendesk's `client_credentials` error strings tell you about the CLIENT, not
+  the SECRET, and the two failures that matter are one word apart.** Measured
+  2026-08-29 as a four-way control, because guessing here wasted an hour:
+
+  | request | response |
+  |---|---|
+  | client id that does not exist | `invalid_client` |
+  | real client + **real** secret | `unauthorized_client` |
+  | real client + deliberately **wrong** secret | `unauthorized_client` |
+  | known-good client on another account | token issued |
+
+  The middle two are the point: **a wrong secret and a right secret produce the
+  IDENTICAL error**, so `unauthorized_client` says nothing whatever about the
+  secret and cannot be used to validate one. It means the client is not
+  permitted to use this grant — in practice, the client is **public** and
+  `client_credentials` requires **confidential**. `invalid_client` is the only
+  response that means "no such client". Fix it in Admin Center → Apps and
+  integrations → APIs → OAuth clients; a confidential client also needs its
+  **Allowed scopes** populated (`read`, `write`), because an empty list there is
+  the separate trap already recorded further down this file — a token that is
+  issued successfully and then 403s every endpoint.
 - **`support.remote.com` is a Zendesk Help Center, so Remote's own help
   articles are fetchable as JSON from this container** —
   `curl -s "https://support.remote.com/api/v2/help_center/en-us/articles/<id>.json"`,
@@ -1485,7 +2042,25 @@ argument for keeping one.
    this table falling into the identical trap once already for Portugal. Separately
    and without touching a gate, the corpus is now **cited on the screens**:
    `src/uc04/decisionSources.js` references 24 findings by id, and
-   `src/uc05/`, `src/uc07/`, `src/uc08/` reference their own. The remaining
+   `src/uc05/`, `src/uc07/`, `src/uc08/` reference their own.
+
+   **A FOURTH was actioned on 2026-08-31 — C-9 (`26c436d`, §3.105) — and how it
+   closed is the transferable part.** Its closing line asks for a table of
+   `(pair, authority, effective date, certificate form, max detachment)`. That
+   table did not have to be built: it already existed twice, one use case over
+   each — `SOCIAL_SECURITY_COVERAGE` (`src/uc08/decisionSources.js`) and
+   `TAX_CONVENTION_BY_PAIR` (`src/uc07/decisionSources.js`), holding the same six
+   pairs, which is every pair of the four demo countries. UC-04's treaty
+   dimension read neither, so it reported `Unknown` for United States →
+   Netherlands **directly above a citation to D-20, the table that carries that
+   row, and above C-9 itself**. So the work order was not "retrieve a document"
+   but "read the one already retrieved" — and the finding sat open for eleven
+   days because nobody asked whether the answer was in the repository. **C-8 and
+   C-24 did NOT retire with it**: both dispute the detachment column the finding
+   now *prints*, and a caveat retires when the claim it disputes stops being
+   made, never when the finding it sits under turns green.
+
+   The remaining
    findings stay unactioned **by choice** — a residence-permit exclusion the
    regulation states and `DNV_COUNTRIES` implements as an undocumented blanket
    skip (C-2/C-15), six treaties with six different 183-day windows and none of
@@ -1565,6 +2140,75 @@ argument for keeping one.
     rows and zero `travel_support_letter` rows**: nobody has yet got a letter out
     of this system, which is exactly the premise `cc551b4`'s letter-offer was
     built on, and it has not been exercised in production either.
+    **RE-MEASURED 2026-08-30 BY DRIVING IT, and two of this entry's three
+    factual claims are now FALSE.** Run against the live deployment through the
+    portal's own routes, as the browser calls them:
+    - *"`documents` still holds 3 `travel_informational_response` rows and zero
+      `travel_support_letter` rows: nobody has yet got a letter out of this
+      system"* — **closed.** A letter request now decides
+      `auto_resolve / standard_letter_issued`, and the document is real and
+      collectable: case `48463aab`, `POST api/requests/uc03/letter` returns
+      `travel_support_letter`, 1,837 bytes, on Remote US EOR Inc. letterhead,
+      naming Chris Lee, Staff Engineer, active, PT 2026-09-14→21. The 🟢 letter
+      rung issues it with no signature, which is `UC-03.md` §23's decision
+      working, not a gate being skipped.
+    - *"Those need the continuation into UC-04"* — **the continuation works end
+      to end.** A workation request decided `route_to_uc04 /
+      work_authorization_requested` (ticket 34), the employee's continuation
+      recorded a durable `CONTINUATION_REQUESTED` audit row and returned five
+      prefilled values plus four inputs UC-03 has no source for, and the UC-04
+      request built from it decided `ready_for_approval / all_gates_passed`
+      (ticket 36, record `24839102`). Both tickets resolve in the ZAF sidebar
+      by ticket id, each with a 14-rung gate ladder.
+
+    ~~**WHAT IS STILL TRUE, and it is a persona trap worth naming.**~~
+    **CLOSED 2026-08-30 by `submissionIdentity.js`, and this paragraph was
+    STALE FOR FOUR DAYS — struck rather than deleted, per this list's own
+    rule.** It recorded that `POST /api/requests/uc04` **refuses an employee**
+    (*"filed by the company admin on the employee's behalf"*), that the
+    UC-03→UC-04 hand-off was therefore *"a dead end for every persona"*, and
+    that `app.js` swapped the picker to a company admin as part of applying a
+    continuation. **None of the three is true today**, and the entry's own last
+    sentence — "the RULE is load-bearing; its stated REASON should be
+    rewritten" — got the remedy exactly backwards: the **rule** was the defect
+    and the reason was merely its excuse.
+    **The rule was removed, not re-explained.** UC-04's identity gate compared
+    `session.companyId` to the employment's company, only an admin persona
+    carries a `companyId`, so an employee filing their own trip failed a check
+    about *who represents the company* — the employer's test applied to the
+    employee's act. `src/uc04/submissionIdentity.js` now admits either **party
+    to the record** (the employee who IS the subject, or a company admin whose
+    company matches), and widening submission widened approval by nothing:
+    nothing there can fill an approval slot or lower a floor.
+    **Re-measured live 2026-09-03** against the deployment, as Chris Lee filing
+    his own fortnight in Amsterdam: `ready_for_approval / all_gates_passed`, no
+    403. `app.js`'s swap is gone too, and its replacement comment says why
+    (*"THE SESSION NO LONGER MOVES, BECAUSE THE ACTOR NEVER CHANGED"*) — the
+    first fix for that swap was a SENTENCE explaining it, which was right while
+    the swap was right and became the worse of the two once it was not.
+    **What genuinely IS still true**: `POST /api/requests/uc03/continue` refuses
+    a company admin, *"a work authorization is raised by the travelling
+    employee"* — and that refusal is now **consistent with** the model rather
+    than one half of a trap. The correct actor chain is the one `UC-04.md` line
+    32 states and Remote's own object carries: **employee files → the customer's
+    employer-side approver decides → Remote's Mobility Team reviews**, with the
+    employee (`user`) and the manager (`employer_approver`) as two named parties
+    on the record.
+    **The transferable lesson is the shape, not the sentence.** A refusal
+    produced by our own plumbing was written down as a rule about the business,
+    the rule was then cited as a constraint by later work, and it survived four
+    days past its own fix in the one file every agent reads first. When a
+    refusal surprises you, ask whether it describes the domain or the code
+    before you write it into a register as policy.
+
+    **The one thing that blocks the COMPLETE story is downstream of UC-03**:
+    approving that UC-04 request refuses `approver_not_entitled`.
+    `/__cx/health` reports `approverEntitlementCoverage {"UC-04": 1}`, so the
+    roster has an entitled specialist — it is simply not the Zendesk agent the
+    demo signs in as, and the sidebar's approver identity is that agent's email.
+    One `APPROVER_ROLES` entry on the Vercel project fixes it; it cannot be done
+    from a coding session (no `VERCEL_TOKEN`, no CLI).
+
 11. **STANDS, and is now argued in the code rather than only in a doc.**
     `src/portal/ticketing.js` names UC-07 and UC-08 as deliberately absent from
     the ticketable set and says why: linking a ticket means writing an id back
@@ -1632,7 +2276,37 @@ argument for keeping one.
 
 *Found by this audit, 2026-08-20:*
 
-17. **Two pgvector tables have held zero rows since the day they were
+17. **~~Two pgvector tables have held zero rows since the day they were
+    provisioned~~ — THE OVERCLAIM AND THE OUTPUT ARE BOTH CLOSED, 2026-08-30
+    (`docs/BUILD-LOG.md` §3.95). The tables are still empty and still must stay
+    empty; what changed is that the retrievers no longer search nine
+    hand-written sentences.** `src/knowledge/` now holds a generated corpus of
+    **57 passages from 14 documents** (55 at §3.95; §3.98b re-chunked the three US conventions apart), and UC-07/UC-08 search it with a
+    country-filtered BM25 index. The item's own urgent half — *"the keyword leg
+    can hand a specialist 'OECD Model Article 4' on a DE/ES question"* — is
+    fixed at the root: a model paraphrase is now reachable only when the
+    statutory index returns nothing, and says so when it is. Measured before and
+    after on the four demo pairs: US→PT returned **nothing** and now returns the
+    three US income tax conventions; NL→PT returned the **OECD Model** and now
+    returns the Netherlands–Portugal convention. **BOTH GRAPHS ARE NOW
+    REPUBLISHED AND PROVEN, 2026-08-30** — `Build Dossier` on `WORKFLOW_UC08_ID`
+    and `Relocation Gates` on `WORKFLOW_UC07_ID`, read back byte-identical to
+    their files with `versionId === activeVersionId`, `verify-deployed` **0
+    drifted**, and driven through their production webhooks with **`pinData:
+    None`**. UC-08 execution `10708`: a US/PT dual-residency question produced
+    `uc08_dossiers` row `1c39305b` citing the US substantial presence test,
+    Portugal's CIRS art. 16 and the three US income tax conventions, each with
+    its real publisher. UC-07 execution `10710`: US → NL returned Remote's
+    process guidance FIRST and then D-17/D-20. **Both runs are marked `error`
+    and both are proof** — the single failing node is the final Zendesk write,
+    on a descriptive `externalRef` where Zendesk wants a numeric ticket id, and
+    it sits downstream of every durable write. Read node status, never run
+    status. **One thing stays open and it is not a defect**:
+    `DOWNLOAD-MANIFEST.md` feeds the bilateral conventions to UC-04 and UC-08
+    only, so UC-07's statutory feed is six passages — a curated routing
+    decision, its own work order. The original entry follows, unchanged:
+
+    **Two pgvector tables have held zero rows since the day they were
     provisioned.** `uc07_mobility_citation_vectors` and
     `uc08_treaty_citation_vectors` are both `count(*) = 0`, queried live against
     project `your-project-ref` on 2026-08-20. So UC-07's and UC-08's
@@ -1721,10 +2395,21 @@ argument for keeping one.
     ~~**Fix is a project setting, not code**: set
     `ZENDESK_EMPLOYMENT_ID_FIELD_ID=9990000000001` on the Vercel project and
     redeploy. Not doable from this container — no `VERCEL_TOKEN`, no CLI.~~
-    **Applied.** The verification instruction it ends on is NOT struck, because
-    it is the half that has not been done: verify by raising one portal request
-    and reading the field back, NOT by reading the env var or the health block
-    — the whole failure mode is that writing it looks successful.
+    **Applied — and now VERIFIED THE ONLY WAY THAT COUNTS, 2026-08-29.** This
+    entry insisted the check be a real portal request read back off the ticket,
+    NOT a reading of the env var or the health block, because the whole failure
+    mode is that writing it looks successful. That check has now been run, on
+    the migrated `your-subdomainhelp` account and against the live deployment:
+    a UC-05 request submitted to `/portal/api/requests/uc05` returned
+    `prepared_for_signoff / all_gates_passed`, `ticketId 2`, and **ticket 2 read
+    back from the Zendesk API carries field `9990000000001` =
+    `d73cff71-ced7-4bcf-b764-b9899abc6340`** — Emma Thompson's employment id,
+    populated, not null. The same read confirms `group_id 99900000000009`
+    (HR Ops on the NEW account) and tags `portal_request, queue_hr_ops, uc05,
+    uc05_hr_ops_signoff`, so the group-id sync reached the deployment too.
+    No n8n execution fired, correctly: all nine intake triggers gate on a
+    `uc0N_test` tag and a portal ticket carries plain `uc05`.
+    **The item is closed in both halves for the first time since 2026-08-27.**
 
 22. **The DEPLOYED classifier runs a different model from the one this
     repository documents, evaluates and prices — found 2026-08-29.** The live
@@ -1754,10 +2439,20 @@ argument for keeping one.
       dollar total declared a floor; no rate was invented, because money is
       never fabricated (§3's ladder). `docs/METRICS.md` has the detail.
     **What is NOT fixed:** nothing was changed under `workflows/` or on the live
-    graphs (owned elsewhere), so the divergence itself stands; and
-    `src/metrics/dashboard.js` still renders the dollar figure without the new
-    verdict, so the screen shows `$0.0000` on production data where the report
-    says `unpriced`.
+    graphs (owned elsewhere), so **the model divergence itself stands**.
+    ~~`src/metrics/dashboard.js` still renders the dollar figure without the new
+    verdict~~ — **CLOSED 2026-08-30.** The tile now consults `costVerdict()`:
+    `unpriced` renders `≥ $x` with *"FLOOR, not the bill"* and names the model
+    with no rate, and `insufficient_data` renders an em dash rather than a
+    zero, because the seeded run drives the rule-based classifier on purpose
+    and `$0.00` is a measurement claim nobody made. No rate is invented — money
+    is the one thing the ladder forbids fabricating outright.
+    `test/metricsSpendTile.test.js`, negative-controlled against the pre-fix
+    file (3 of 4 fail there). **One thing that episode is worth keeping:** the
+    first draft of that test asserted the page did not contain `$0.0000`, and
+    **the bug would have survived it** — `humanUsd()` renders the tile to 2dp,
+    so the defect printed `$0.00`. A guard that names the wrong spelling is not
+    a guard; it now reads the tile's own value and rejects any dollar figure.
 
 20. **Two documents in `docs/` both number their findings `C-N`, and code cites
     both.** `docs/knowledge/layer-1-statutory/CONTRADICTIONS.md` runs `C-1`…`C-30`
@@ -1768,6 +2463,241 @@ argument for keeping one.
     read a confident, specific, entirely unrelated finding. Cheap to fix by
     prefixing one register; not fixed here because renaming a citation scheme
     touches files this pass does not own.
+
+23. ~~**EVERY STORED ZENDESK TICKET REFERENCE FROM BEFORE 2026-08-29 NOW POINTS
+    AT THE WRONG TICKET — and some of them RESOLVE, which is worse than a
+    404.**~~ **FIXED the same day; the entry is kept in full below because the
+    failure mode is the transferable part.**
+
+    **THE FIX (2026-08-29):** `src/shared/zendeskAccounts.js` holds the three
+    accounts this project has used with the window during which each could
+    have been written to, and `resolveTicketAccount(writtenAt)` answers which
+    account a stored number belongs to — from the row's own `created_at`, so
+    **no schema change and no write to the production database**, which also
+    could not have been executed from this container (CLAUDE.md §6: Supabase
+    is unreachable over raw TCP here). `ticketVerdict()` gained a fifth state,
+    `foreign_account`, checked **before the lookup is believed** — because the
+    dangerous case is a lookup that SUCCEEDS against the wrong account. It
+    never links, never claims a queue, and the queue UI labels it *other
+    Zendesk account* rather than *no ticket*, which would describe a hand-off
+    that never happened.
+
+    **SECOND CONSUMER WIRED 2026-08-30, after the predicted failure was
+    OBSERVED rather than reasoned about.** The 2026-08-29 fix reached
+    `ticketVerdict.js` and the queue UI — one consumer of three — and the ZAF
+    sidebar's nine `by-ticket/:ref` routes were left resolving bare integers
+    against today's account. On 2026-08-30 a specialist opened
+    `your-subdomainhelp` ticket **#32** (Chris Lee's UC-02 expense claim, filed
+    that morning) and the sidebar rendered **Alexandre Tremblay's UC-06
+    contract amendment** — a row written `2026-08-19T02:23:07Z` against the
+    retired `your-subdomain` account, which had reached #143 while this one
+    restarted at #1. Both records answered `found: true` for "ticket 32";
+    both were telling the truth about their own account. The sidebar even
+    printed *"also matched in the UC-02 expenses API"* — it DETECTED the
+    collision and picked the wrong winner, because its probe order puts UC-06
+    second and UC-02 fourth.
+
+    `src/shared/byTicketAccountGuard.js` now sits in all nine routes
+    (`src/review/server.js` + `src/uc02..uc09/server.js`), refusing 404
+    `reference_belongs_to_another_zendesk_account` before any record is served.
+    Two design choices are deliberate and both are pinned by test:
+    it refuses **only on positive evidence of a different account** — an
+    unconfigured subdomain, the ambiguous migration window and an unreadable
+    timestamp all pass through, because this is the sidebar's ONLY route to a
+    case and hiding live work from the specialist holding the ticket is its own
+    wrong answer; and it resolves the account to **null under
+    `NODE_TEST_CONTEXT`**, because `config.js` does `import "dotenv/config"` and
+    the first version of this change made two unrelated `deployRouter` tests
+    fail on this container while they would have passed on a laptop with no
+    `ZENDESK_SUBDOMAIN`. The named cost: no test drives the refusal through a
+    live HTTP route, so the routes are covered structurally instead —
+    `test/byTicketAccountGuard.test.js` reads all nine sources and asserts each
+    calls the guard, and calls it before it serves a record.
+
+    Three properties are pinned by `test/zendeskAccountResolution.test.js`
+    (10 tests): the migration window resolves **ambiguous** rather than to
+    either side; a missing or unreadable timestamp fails to ambiguous and
+    **never to the current account** (the input most likely to occur and the
+    one where a default would reintroduce the bug); and demo data opts out via
+    an **explicit flag**, so an UNRECOGNISED REAL subdomain still fails loudly
+    — that is the signal that a fourth account was configured and nobody
+    registered it. Adding that fourth account is one line in the table.
+
+    The original entry follows, unchanged:
+
+    **EVERY STORED ZENDESK TICKET REFERENCE FROM BEFORE 2026-08-29 POINTED AT
+    THE WRONG TICKET — and some of them RESOLVED, which is worse than a 404.**
+    Found 2026-08-29, immediately after the `your-subdomain` → `your-subdomainhelp`
+    migration, by asking what did *not* move. The Zendesk CONFIGURATION was
+    migrated; the Supabase HISTORY was not, and nothing in it records which
+    account a ticket number belonged to.
+
+    `cases.external_ref`, `audit_log.details.externalRef`, `workflow_claims.
+    external_ref` and the `review_queue` rows all carry bare numeric ticket ids
+    from the old account, where numbering had reached **#143**. Ticket links are
+    built as `https://<ZENDESK_SUBDOMAIN>.zendesk.com/agent/tickets/<ref>`, and
+    `ZENDESK_SUBDOMAIN` is now the new account, which held exactly **#1–#5** when
+    this was written (`1` a Zendesk sample, `2` a UC-05 portal request, `3`/`4`
+    UC-01 verifications, `5` a UC-09 adjustment).
+
+    So there are two failure modes and the second is the dangerous one:
+    - refs **above the new account's high-water mark** 404 — the already-known
+      behaviour of item 12, no worse than before;
+    - refs **at or below it SILENTLY RESOLVE TO AN UNRELATED TICKET.** A
+      historical record pointing at "ticket 3" now opens Alexandre Tremblay's
+      verification request. Nothing errors, nothing looks wrong, and the link
+      works. **The overlap window GROWS every time the new account creates a
+      ticket**, so this gets worse with use rather than settling.
+
+    **Who reads these refs:** the audit viewer's bug-audit tab (keyed by
+    externalRef), the approval queue's reachability verdict (`owning_team` /
+    `elsewhere` / `unknown` is computed from a live ticket read), and
+    `ticketFacts.js`. A wrong-but-resolving ticket makes the queue's answer
+    confidently incorrect rather than honestly unknown, which is precisely the
+    property `docs/APPROVAL-QUEUE.md` §0 claims it does not have.
+
+    **NOT FIXED, and deliberately not fixed unilaterally** — every remedy is a
+    write to the production database, which §7b reserves for an explicit
+    go-ahead. The two candidates, and the trade between them:
+    1. **Stamp the account onto existing rows** (e.g. a `zendesk_subdomain`
+       column, backfilled to `your-subdomain` for everything before the migration
+       timestamp) and have every link builder consult it. Correct, keeps the
+       history clickable, and is the only option that stays right across a THIRD
+       account move — which this project has now had twice, so a third is not
+       hypothetical.
+    2. **Declare pre-migration refs historical and stop linking them.** Cheaper,
+       loses nothing that is currently trustworthy, and cannot mislead. It is
+       the safe default if nobody wants a migration script.
+
+    Doing nothing is also a choice, but it is the one option that degrades: the
+    silent-mis-resolve window widens with every new ticket.
+
+    **Option 1 was taken, in the form described at the top of this entry** — the
+    account is derived from each row's existing timestamp rather than stamped
+    into a new column, which reaches the same answer with no migration. Option 2
+    was rejected because it throws away history that is still perfectly
+    resolvable: everything written before 2026-08-29 has an unambiguous account.
+
+24. ~~**UC-01 CANNOT PROCESS A SINGLE NEW TICKET, AND FIVE CONSECUTIVE RUNS
+    REPORTED `success` WHILE DOING IT.**~~ **FIXED AND PROVEN LIVE THE SAME
+    DAY, 2026-08-31, on the owner's explicit instruction — option 1, the
+    account-qualified key. The entry is kept in full below because the failure
+    mode is the transferable part, and because a gaps list whose entries
+    quietly vanish teaches its reader that the list is decorative.**
+
+    **THE FIX.** `src/shared/claimRef.js` qualifies a BARE ticket number with
+    the account that minted it — `your-subdomainhelp:100`, never `100`. A qualified
+    ref can never equal a bare one, so **no row was migrated, updated or
+    deleted**: every historical claim keeps its meaning and keeps protecting the
+    ticket it was really about, and nothing had to be written to the production
+    database (unreachable from a coding session anyway, §6). Only a bare ticket
+    number is qualified — a descriptive ref, a portal id, a content-derived
+    dedupe key and UC-04's stage-3 authorization UUID are already unique and
+    name no account, so they pass through untouched and keep matching the rows
+    that already hold them.
+
+    **ONE RULE, BOTH EXECUTION PATHS.** `workflows/nodes/claimNodeSpec.js`
+    generates the n8n expression from the same `currentZendeskAccount()` the
+    Node path keys on, and `test/claimRefQualification.test.js` **evaluates the
+    published expression in a `node:vm` sandbox** against that function over a
+    shared table of inputs — the n8n-parity discipline this repo already uses
+    for Code-node bodies, applied to an expression, because a string is covered
+    by no test that imports a function. Two paths keying differently would be
+    the two-ledger failure the single shared table exists to prevent,
+    reintroduced one level down. A FOURTH account move is now one line in
+    `ZENDESK_ACCOUNTS`, after which `verify-claim-nodes` reports the live graphs
+    drifted until they are redeployed.
+
+    **PROVEN IN BOTH DIRECTIONS, ON ONE REAL TICKET, MINUTES APART.** Deployed
+    to all nine graphs and verified from the read-back (9/9 `versionId ===
+    activeVersionId`, `verify-claim-nodes` **9 checked · 0 defective · 0
+    unpublished**). Real `uc01_test` ticket **100** — deliberately INSIDE the
+    collision range, since the retired account reached #143:
+    - **First delivery, execution `11198`** — `pinData: None`, 22 nodes
+      `success`, claim node `main[0]` populated and `main[1]` EMPTY (the exact
+      inverse of the five dead runs). It ran to the end: real `cases` row
+      `57486123`, real `audit_log` row `0f73955e` at `20:33:17.153364+00`,
+      audit trace, review queue, routing, Zendesk write. Identity
+      `requester_matches_employment`; decision `human_review /
+      over_scope_request`. The claim row reads
+      **`external_ref: "your-subdomainhelp:100"`**.
+    - **Redelivery, execution `11200`** — same ref through the production
+      webhook: claim node `main[0]` EMPTY, `main[1]` populated, nine nodes,
+      `lastNodeExecuted: "Duplicate Delivery — Stop"`, nothing written.
+      Exactly-once was not traded away to get exactly-anything.
+
+    The read side was widened to match: `readStore.lookupRef()` and
+    `findClaimDecision()` search BOTH spellings, qualified first, because rows
+    written before today hold the bare form and a human typing `93` into the
+    audit viewer means "the ticket in front of me" — on that screen an absent
+    claim row is read as "the exactly-once ledger did not protect this ticket",
+    so one spelling would be a confidently wrong answer rather than a near miss.
+    The DECISION search was deliberately NOT widened: only the claim node's key
+    changed, `audit_log.details->>'externalRef'` still carries the bare number.
+
+    `npm test` on the fix's own tree: **5,318 tests, 0 fail.** The original
+    entry follows, unchanged:
+
+    **UC-01 CANNOT PROCESS A SINGLE NEW TICKET, AND FIVE CONSECUTIVE RUNS
+    REPORTED `success` WHILE DOING IT. Found 2026-08-31 by driving real
+    tickets; it is the WRITE-side twin of item 23 and item 23's fix does not
+    touch it.**
+
+    `workflow_claims` is the exactly-once ledger, keyed `(use_case,
+    external_ref)` — and `external_ref` is a BARE ZENDESK TICKET NUMBER, with
+    nothing recording which account minted it. The retired `your-subdomain` account
+    reached **#143**; `your-subdomainhelp` restarted at **#1**. So every new ticket
+    numbered at or below the old account's high-water mark whose number was
+    already claimed **for that same use case** is treated as a redelivery of a
+    ticket it has nothing to do with: the claim node's insert conflicts, the run
+    leaves by the error output and stops at `Duplicate Delivery — Stop` having
+    written nothing, and n8n reports the execution `success`.
+
+    **MEASURED, NOT REASONED ABOUT.** Five real `uc01_test` tickets created on
+    2026-08-31 — **88, 92, 93, 94, 95** — produced executions `11174`, `11179`,
+    `11180`, `11181`, `11182`. All five `success`, `pinData: null`. All five
+    reached `Identity + Policy Gates` and decided correctly (four
+    `out_of_scope`, one `blocked / engagement_not_eor_contractor`). **All five
+    then stopped at the NoOp**, `lastNodeExecuted: "Duplicate Delivery — Stop"`,
+    with `main[0]` empty and `main[1]` populated on the claim node — the error
+    branch, i.e. the primary key refused the insert. No `audit_log` row, no
+    Zendesk write, no reply. The customer is never answered and nothing anywhere
+    says so.
+
+    **Why UC-01 specifically, and why the other eight looked fine.** Eight
+    tickets driven the same afternoon (83–87, 89–91) DID complete — UC-02, 03,
+    04, 05, 06, 09 each wrote its note. The key includes the use case, so a
+    collision needs the old account to have claimed *that ref for that use
+    case*. UC-01 is by far the most-driven graph in this project's history, so
+    its claimed range is dense and the others' are sparse. **That is what makes
+    this so easy to misread as healthy**: the sample that works is the larger
+    one, and the one use case that is completely dead is the flagship.
+
+    It also retires a standing "[UNKNOWN]" honestly: item 15 says UC-01's own
+    chain has been unverified since the Sandbox reseed. This is why. It was
+    never unverified for lack of trying — it cannot complete.
+
+    **NOT FIXED at the time of writing, and deliberately not fixed
+    unilaterally** — every remedy rewrites how a production ledger is keyed, and
+    §7b reserves that. The owner chose option 1 within the hour; the two
+    candidates, and the trade between them:
+    1. **Qualify the ref with the account** — `your-subdomainhelp:93` rather than
+       `93` — in the claim node on all nine graphs and in
+       `src/shared/workflowClaims.js`. Additive and non-destructive: a
+       qualified ref can never equal a bare one, so old rows keep their meaning
+       and stop blocking new work, with no migration and no deletion. It is the
+       same reasoning `src/shared/zendeskAccounts.js` used on the read side —
+       derive the account, do not migrate the database. **Cost, and it is
+       real:** `external_ref` is read by the audit viewer's bug-audit tab, and
+       every consumer must then handle both shapes.
+    2. **Delete the pre-2026-08-29 claim rows.** One statement, instantly
+       correct, and it throws away the exactly-once history of every ticket the
+       retired account ever processed — so a genuine old redelivery would be
+       re-processed. Cheaper and strictly worse.
+
+    **Doing nothing is NOT neutral here.** Unlike item 23, which degrades as
+    tickets accumulate, this one is already total for UC-01 and stays total
+    until the new account passes #143. Option 1 is the recommendation.
 
 **Newly required, and cheap — finish proving exactly-once** (§4's idempotency
 row, `docs/BUILD-LOG.md` §3.24). The claim node is deployed on all nine graphs
@@ -1796,6 +2726,24 @@ nearby alerts). Being built as `src/auditview/` + `npm run audit-ui` + `/audit`
 on the Vercel function, gated by the same `PORTAL_ACCESS_KEY`; requirement
 recorded in `docs/PRODUCTION-READINESS-PLAN.md` §3 and `docs/E2E-TEST-PLAN.md`
 Phase 6. Read-only in the UC-08 structural sense: no POST route exists.
+
+**Newly required (2026-08-31) — UC-04's decision surface, scoped but NOT built.**
+A seven-strand research pass asked what a global mobility specialist actually
+needs in front of them to authorize a work authorization.
+`docs/UC04-RESEARCH-FINDINGS.md` is the evidence (Remote's own published RWA
+form and Mobility-Team criteria; the confirmed absence of any `POST` on
+`/v1/work-authorization-requests`; OECD art. 15(2)'s three cumulative
+conditions, of which UC-04 measures only the first; *Dusek* and *Cassley* on
+what makes an approval record a defence). `docs/UC04-DECISION-SURFACE.md` is
+the scope: five units of work — keep `travel_document_number`, collect the
+three intake fields Remote's own form collects, a lead-time gate, the
+employer's activity statement at approval, and a panel that shows provenance
+as a mark rather than arguing it in prose. **Nothing under `src/`, `test/` or
+`workflows/` was changed to produce either document.** Three findings vindicate
+the existing design and are why this is not a redesign: the blocking/notifying
+split is already correct, `schengenPeakDays()` is stricter than the commercial
+tools, and `hasContractSigningAuthority` matches Remote's own
+`will_negotiate_or_sign_contracts`.
 
 **Newly required (2026-08-21) — the requirements register in `qa/`, and the
 first build queue.** A body of work this file has never mentioned: nine canonical

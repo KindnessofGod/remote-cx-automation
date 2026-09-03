@@ -29,6 +29,23 @@
 //   "none"        the reference is not a ticket id and no audit row records
 //                 one, so no ticket was ever raised for this record. Nobody was
 //                 told. STUCK.
+//   "foreign_account"  the reference was stored against a DIFFERENT Zendesk
+//                 account than the one just read — or it cannot be told which.
+//                 Added 2026-08-29 (honest-gaps item 23). Zendesk numbers
+//                 tickets from 1 per account, this project has moved account
+//                 twice, and the history never recorded which account a number
+//                 belonged to. So an old "3" does not 404 against the new
+//                 account, it opens somebody else's ticket, and the four states
+//                 above would have called that `confirmed` and named a group.
+//                 It is checked BEFORE the lookup is believed, because a
+//                 successful lookup is exactly the dangerous case.
+//
+//                 Ambiguous and definitely-foreign share this one state on
+//                 purpose, unlike `elsewhere`/`owner_absent` further down which
+//                 were split. The test there is whether the REMEDY differs; here
+//                 it does not — in both cases the lookup that was just made
+//                 asked the wrong account, so its answer means nothing and no
+//                 link may be rendered.
 //
 // THE GROUP HALF IS THE ONE THAT CAUGHT THE REAL DEFECT. A ticket can exist,
 // carry the right routing tag, and still be in nobody's queue: Zendesk drops a
@@ -66,6 +83,7 @@
 // ---------------------------------------------------------------------------
 
 import { groupIdFor } from "../shared/escalationGroupIds.js";
+import { resolveTicketAccount } from "../shared/zendeskAccounts.js";
 
 /** A reference that could be a Zendesk ticket id. Shape only — see the header. */
 export function looksLikeTicketId(ref) {
@@ -85,11 +103,33 @@ export function looksLikeTicketId(ref) {
  *   URL is composed HERE and never in the browser — same rule as the portal's.
  * @param {string|null} [args.owningGroup]  the team that owns this hand-off
  */
-export function ticketVerdict({ reference, recordedTicketId = null, lookup = null, subdomain = null, owningGroup = null }) {
+export function ticketVerdict({
+  reference,
+  recordedTicketId = null,
+  lookup = null,
+  subdomain = null,
+  owningGroup = null,
+  recordWrittenAt = null,
+  demo = false,
+}) {
   const candidate = recordedTicketId ?? (looksLikeTicketId(reference) ? String(reference).trim() : null);
   const evidence = recordedTicketId
     ? "an audit row records this ticket id against the record"
     : "the record's own reference is shaped like a ticket id";
+
+  // WHICH ACCOUNT IS THIS NUMBER FROM? Asked before `lookup` is consulted,
+  // because the failure being prevented is a lookup that SUCCEEDS against the
+  // wrong account. `recordWrittenAt` is the record's own created_at; a null one
+  // resolves to `ambiguous`, never to the current account.
+  // `demo` is an EXPLICIT opt-out rather than an implicit one. The seeded
+  // dataset is self-consistent by construction and belongs to no real account,
+  // so it has no migration history to be wrong about. It is a flag and not
+  // "subdomain we do not recognise" on purpose: an UNRECOGNISED REAL subdomain
+  // must fail LOUDLY as foreign — that is the signal that a fourth account was
+  // configured and nobody added it to ZENDESK_ACCOUNTS, which is precisely the
+  // omission this check exists to survive.
+  const account = candidate && !demo ? resolveTicketAccount(recordWrittenAt) : null;
+  const foreign = Boolean(account) && Boolean(subdomain) && (account.ambiguous || account.subdomain !== subdomain);
 
   if (!candidate) {
     return {
@@ -101,6 +141,24 @@ export function ticketVerdict({ reference, recordedTicketId = null, lookup = nul
         `The record's reference is "${reference ?? "(none)"}", which is not a Zendesk ticket id, and no audit row records one against it. ` +
         "Nothing in Zendesk represents this request, so nobody has been told about it.",
       group: noGroup("There is no ticket, so there is no queue."),
+    };
+  }
+
+  if (foreign) {
+    const where = account.ambiguous
+      ? `it cannot be established which Zendesk account this number belongs to — ${account.reason}`
+      : `it was stored against the "${account.subdomain}" Zendesk account, and this view reads "${subdomain}"`;
+    return {
+      state: "foreign_account",
+      ticketId: candidate,
+      url: null, // NEVER a link: it would open a real, unrelated ticket
+      account,
+      headline: `Reference ${candidate} is not a ticket in this account`,
+      detail:
+        `${capitalise(evidence)}, but ${where}. Zendesk numbers tickets from 1 in every account, so this number ` +
+        "almost certainly exists here and belongs to somebody else — following it would open the wrong ticket rather than fail. " +
+        "Whatever was read against the current account has been discarded.",
+      group: noGroup("The ticket belongs to another Zendesk account, so its queue here is meaningless."),
     };
   }
 

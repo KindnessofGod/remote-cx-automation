@@ -143,14 +143,18 @@ test("GET /api/resignations/:id on an escalated resignation is not actionable he
   // was true of every escalated resignation and told a reader nothing about
   // this one.
   const reason = res.body.actionableReason;
-  // Gate 7, not 6, since 2026-08-20: `no_statutory_notice_period` was inserted
-  // into GATE_SEQUENCE between `unsupported_country` and
-  // `no_matching_notice_bracket`, so every rung below it moved down one. The
+  // Gate 8, not 7, since 2026-09-02, and it was 7 rather than 6 from 2026-08-20:
+  // each move is one rung inserted ABOVE this one. 2026-08-20 added
+  // `no_statutory_notice_period` between `unsupported_country` and
+  // `no_matching_notice_bracket`; 2026-09-02 added
+  // `no_statutory_notice_during_probation` beside it, for the country whose
+  // statute gives a resigning probationer no notice period at all (Código do
+  // Trabalho art. 114.º(1)). This rung's own meaning has not changed. The
   // number is pinned as a literal rather than derived from GATE_SEQUENCE on
   // purpose — deriving it would make this assertion tautological, and the
   // position IS the claim: this prose tells a human WHICH gate decided, and a
   // silently drifting number would misattribute the decision to its neighbour.
-  assert.match(reason, /ESCALATED at gate 7 \(discrepancy\)/);
+  assert.match(reason, /ESCALATED at gate 8 \(discrepancy\)/);
   assert.match(reason, /EARLIER than the statutory minimum notice allows/);
   // And the generic must NOT be what got rendered — the fallback still exists
   // for a row that cannot say which outcome it got, and it has to stay rare.
@@ -272,7 +276,17 @@ test("the resignation view names the deciding gate in plain words, and the whole
 
   assert.equal(res.body.gateLadder.length, res.body.decidedBy.total);
   assert.equal(res.body.gateLadder.at(-1).status, "decided");
-  assert.ok(res.body.gateLadder.slice(0, -1).every((r) => r.status === "passed"));
+  // EVERY RUNG ABOVE THE DECIDING ONE PASSED — EXCEPT THE ONE THAT COULD NOT
+  // RUN. This fixture never reads Remote's own days_of_notice, so gate 9's
+  // comparison happened against nothing; the ladder used to call that
+  // "passed" beneath prose saying it "has NOT been checked". It is now
+  // `not_evaluated`, with the reason on the rung (qualifyGateLadder()).
+  const above = res.body.gateLadder.slice(0, -1);
+  const reconciliation = above.find((r) => r.gate === "notice_reconciliation");
+  assert.ok(reconciliation, "the ladder lost its reconciliation rung");
+  assert.equal(reconciliation.status, "not_evaluated");
+  assert.match(reconciliation.qualification, /was not read/);
+  assert.ok(above.filter((r) => r !== reconciliation).every((r) => r.status === "passed"));
 });
 
 test("CORS does not advertise any verb the API does not actually accept", async () => {

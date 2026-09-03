@@ -37,17 +37,34 @@
 // confirmed, missing and misqueued tickets side by side.
 // ---------------------------------------------------------------------------
 
+import { ESCALATION_GROUP_IDS } from "../shared/escalationGroupIds.js";
+
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
-/** Real group ids from this account's sync, so the demo exercises the real map. */
+/**
+ * Real group ids, READ FROM THE REGISTRY rather than copied out of it.
+ *
+ * These were literals until 2026-08-29, when the Zendesk account was migrated
+ * and every group id changed. `npm run sync-groups` updated the registry and
+ * this second copy silently kept the retired numbers, so the seeded demo
+ * classified every owning-team ticket as `elsewhere` — the queue's own
+ * headline claim, "nobody can reach this", produced by nothing but a stale
+ * constant. A demo that says the routing is broken when it is not is worse
+ * than no demo. There is now one source for these ids.
+ *
+ * `support_default` stays a literal on purpose: it is the account's catch-all
+ * Support group and its whole role in this fixture is to be a group that is
+ * NOT an owning team, so it must not track the registry. Any id absent from
+ * ESCALATION_GROUP_IDS would do.
+ */
 const GROUP = Object.freeze({
   support_default: 6151578998431,
-  finance_ops: 6168404929055,
-  hr_ops: 6168404929823,
-  travel_support: 6168404930335,
-  mobility_legal_t3: 6168424846751,
-  payroll_ops: 6168442797343,
+  finance_ops: ESCALATION_GROUP_IDS["Finance Ops"],
+  hr_ops: ESCALATION_GROUP_IDS["HR Ops"],
+  travel_support: ESCALATION_GROUP_IDS["Travel & Mobility Support"],
+  mobility_legal_t3: ESCALATION_GROUP_IDS["Mobility Legal (Tier-3)"],
+  payroll_ops: ESCALATION_GROUP_IDS["Payroll Ops"],
 });
 
 export function buildQueueDemoDataset(now = Date.now()) {

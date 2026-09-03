@@ -126,6 +126,12 @@ export async function buildQueue({ store, ticketFacts, now = Date.now() }) {
       lookup: candidate ? (lookups.get(candidate) ?? null) : null,
       subdomain: ticketFacts.subdomain,
       owningGroup: item.owningGroup,
+      // The record's own timestamp decides WHICH Zendesk account its ticket
+      // number refers to. Without it every pre-migration reference resolves
+      // against today's account and silently opens an unrelated ticket
+      // (honest-gaps item 23).
+      recordWrittenAt: item.createdAt ?? null,
+      demo: ticketFacts.demo === true,
     });
     return {
       ...item,

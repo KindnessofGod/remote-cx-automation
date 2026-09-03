@@ -92,7 +92,7 @@ export const APPROVAL_ROUTES = Object.freeze({
     useCase: "UC-01",
     tier: "low",
     control: "exists",
-    surface: "Zendesk — the Remote CX Review sidebar, UC-01 panel",
+    surface: "Zendesk — the Gatehouse CX Review sidebar, UC-01 panel",
     endpoint: "POST /uc01/api/review/ticket/:ticket/:action",
     // src/review/reviewPolicy.js:72 REVIEW_ACTIONS. `deny` is still ROUTED as a legacy spelling for the installed ZAF bundle; the canonical verb is the one printed.
     verbs: ["approve", "decline"],
@@ -105,7 +105,7 @@ export const APPROVAL_ROUTES = Object.freeze({
     useCase: "UC-02",
     tier: "low",
     control: "exists",
-    surface: "Zendesk — the Remote CX Review sidebar, UC-02 panel",
+    surface: "Zendesk — the Gatehouse CX Review sidebar, UC-02 panel",
     endpoint: "POST /uc02/api/expenses/:id/:action",
     // src/uc02/reviewPolicy.js:87 ACTIONS. `release` is the legacy spelling of `approve`, normalised before anything reads it.
     verbs: ["approve", "decline", "hold"],
@@ -124,7 +124,7 @@ export const APPROVAL_ROUTES = Object.freeze({
     // view counted as stuck got no button, because a handoff is not an
     // approval — see `note` below and UC-03.md §15.2.
     control: "exists",
-    surface: "Zendesk — the Remote CX Review sidebar, UC-03 panel",
+    surface: "Zendesk — the Gatehouse CX Review sidebar, UC-03 panel",
     endpoint: "POST /uc03/api/cases/:id/signoff|decline",
     // src/uc03/signoffPolicy.js:40 ACTIONS. NOT approve/decline — what is recorded is the release of a drafted letter.
     verbs: ["signoff", "decline"],
@@ -137,24 +137,73 @@ export const APPROVAL_ROUTES = Object.freeze({
       "employee files in Remote's Request Hub), an escalation is worked on its own ticket, and an auto-resolved " +
       "inquiry has no artifact at all.",
   },
+  // UC-04 IS THE ONE ROW WHERE ONE SURFACE IS NOT THE WHOLE ANSWER (2026-08-31).
+  // Three parties decide (UC-04.md §1a) and TWO of them have a control here:
+  //
+  //   stage 2  the CUSTOMER'S OWN MANAGER approves or declines, in the
+  //            Remote-product stand-in. This is the only work-authorization
+  //            decision Remote's API accepts, and it is not a Remote CX act at
+  //            all — no agent in Zendesk can make it, and this file used to say
+  //            a mobility specialist did.
+  //   stage 3  REMOTE'S MOBILITY TEAM records its own review, in the sidebar,
+  //            on a request the employer has ALREADY approved.
+  //
+  // WHY THE ROW STILL NAMES STAGE 3 IN `surface`/`endpoint`/`verbs`. This queue
+  // and ./handoffDirections.js exist to tell a REMOTE human where their work is
+  // done, and stage 3 is the only part of UC-04 that is theirs. Naming the
+  // employer's screen in those fields would send a Zendesk agent to a control
+  // they cannot reach.
+  //
+  // AND THE HOLE THAT LEAVES, NAMED RATHER THAN SMOOTHED OVER: this registry is
+  // one row per use case, so an item waiting at `pending_specialist_approval`
+  // (stage 2, the employer's) and one waiting at `approved_by_manager` (stage 3,
+  // Remote's) resolve to the SAME row and therefore the same directions. A
+  // stage-2 item is genuinely waiting on somebody outside Zendesk, and the note
+  // below is currently the only thing that says so. Making the route
+  // status-dependent is the real fix and it is a shape change to this file's
+  // key, which is why it is written down here instead of half-done.
   "UC-04": {
     useCase: "UC-04",
     tier: "medium",
     control: "exists",
-    surface: "Zendesk — the Remote CX Review sidebar, UC-04 panel",
-    endpoint: "POST /uc04/api/authorizations/:id/:action",
-    // src/uc04/approvalPolicy.js:35 ACTIONS.
-    verbs: ["approve", "decline"],
+    surface: "Zendesk — the Gatehouse CX Review sidebar, UC-04 panel",
+    endpoint: "POST /uc04/api/authorizations/:id/mobility-review",
+    // src/uc04/mobilityReview.js. The verbs are `clear`/`decline` and NOT
+    // `approve`: the employer already used that word on this same record at
+    // stage 2, and one record carrying two people's "approved" is how a reader
+    // comes to believe one of them settled the other.
+    verbs: ["clear", "decline"],
     hasPostRoute: true,
     roles: [{ key: "mobility_specialist", label: "Mobility specialist" }],
     slotsRequired: 1,
-    note: "One mobility specialist approves or declines, once. The role is named in UC-04.md §1 and in the queue tag; the approval code itself asks only for an approver identity.",
+    stages: [
+      {
+        stage: 2,
+        actor: "The customer's own manager",
+        surface: "The Remote product stand-in — /remoteui/work-authorizations",
+        endpoint: "POST /remoteui/api/work-authorizations/:id/decision",
+        verbs: ["approve", "decline"],
+        writesToRemote: true,
+      },
+      {
+        stage: 3,
+        actor: "Remote's Mobility Team",
+        surface: "Zendesk — the Gatehouse CX Review sidebar, UC-04 panel",
+        endpoint: "POST /uc04/api/authorizations/:id/mobility-review",
+        verbs: ["clear", "decline"],
+        // The whole reason stage 3 is recorded rather than transmitted: Remote
+        // publishes NO endpoint that sets `approved_by_remote`.
+        writesToRemote: false,
+      },
+    ],
+    note:
+      "TWO surfaces, not one. The employer's approval belongs to the customer's own manager and is made in Remote's own product (/remoteui/work-authorizations) — no Zendesk agent can make it, and a request still waiting for it is waiting outside this queue's reach. Remote's Mobility Team then records its own review here, on a request the employer has already approved; that review is recorded in this system and is NOT sent to Remote, because Remote publishes no endpoint for it.",
   },
   "UC-05": {
     useCase: "UC-05",
     tier: "medium",
     control: "exists",
-    surface: "Zendesk — the Remote CX Review sidebar, UC-05 panel",
+    surface: "Zendesk — the Gatehouse CX Review sidebar, UC-05 panel",
     endpoint: "POST /uc05/api/resignations/:id/:action",
     // src/uc05/signoffPolicy.js:40 ACTIONS. A sign-off, not an approval: the signed report IS the artifact.
     verbs: ["signoff", "decline"],
@@ -167,14 +216,14 @@ export const APPROVAL_ROUTES = Object.freeze({
     useCase: "UC-06",
     tier: "medium",
     control: "exists",
-    surface: "Zendesk — the Remote CX Review sidebar, UC-06 panel (two role blocks)",
+    surface: "Zendesk — the Gatehouse CX Review sidebar, UC-06 panel (two role blocks)",
     endpoint: "POST /uc06/api/amendments/:id/:action",
     // src/uc06/dualApprovalPolicy.js:47 ACTIONS, per role slot.
     verbs: ["approve", "decline"],
     hasPostRoute: true,
     roles: [
-      { key: "customer_admin", label: "Customer admin" },
-      { key: "payroll_specialist", label: "Payroll specialist" },
+      { key: "customer_admin", label: "Employer's signatory" },
+      { key: "payroll_specialist", label: "Remote payroll specialist" },
     ],
     slotsRequired: 2,
     note: "Two named slots, two different people. One identity cannot fill both — the same-person check folds case, whitespace and confusable characters before comparing.",
@@ -207,7 +256,7 @@ export const APPROVAL_ROUTES = Object.freeze({
     useCase: "UC-09",
     tier: "high",
     control: "exists",
-    surface: "Zendesk — the Remote CX Review sidebar, UC-09 panel (2–3 role blocks)",
+    surface: "Zendesk — the Gatehouse CX Review sidebar, UC-09 panel (2–3 role blocks)",
     endpoint: "POST /uc09/api/adjustments/:id/:action",
     // src/uc09/multiApprovalPolicy.js:94. `deny`, not `decline` — the one row that spells the refusal differently, and a note offering the wrong word sends a specialist hunting for a button that is not there.
     verbs: ["approve", "deny"],

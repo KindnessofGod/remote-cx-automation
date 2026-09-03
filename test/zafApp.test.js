@@ -635,6 +635,151 @@ test("UC-06 and UC-08 panels return data, not markup, and tolerate a sparse case
   }
 });
 
+test("the dossier panels tell an instrument apart from the paraphrase it was drafted from", () => {
+  // WHY THIS EXISTS (2026-08-30). Both dossier panels rendered a retrieved
+  // citation as a bare title, which was fine while every passage in the corpus
+  // was an OECD Model paraphrase and they all carried the same weight: none.
+  // The statutory corpus (BUILD-LOG §3.95) put the IRS's own text and that
+  // paraphrase side by side in the SAME list, rendered identically — so the
+  // sidebar could not answer the first question a citation has to answer.
+  const context = { window: {} };
+  vm.createContext(context);
+  new vm.Script(read(ASSETS, "panels.js"), { filename: "panels.js" }).runInContext(context);
+  const panels = context.window.CXPanels;
+
+  const instrument = {
+    id: "D-35#0001",
+    title: "United States — the substantial presence test",
+    summary: "You will be considered a United States resident for tax purposes if …",
+    matchedOn: ['statutory corpus (lexical) — matched on "united", "states"'],
+    publisher: "Internal Revenue Service",
+    retrievedOn: "2026-08-19",
+    authority: "instrument",
+    instrument: true,
+  };
+  const model = {
+    id: "oecd-model-art-4",
+    title: "OECD Model Article 4 — Resident",
+    summary: "Where an individual is a resident of both Contracting States …",
+    matchedOn: ["resident", "tie-break"],
+    authority: "model",
+    instrument: false,
+  };
+
+  const rows = panels["UC-08"].rows({
+    case: {
+      useCase: "UC-08",
+      employmentId: "emp-1",
+      jurisdictions: ["US", "PT"],
+      dossier: { narrative: "n/a", citations: [instrument, model] },
+    },
+    citationCoverage: { scope: "The reference corpus is 55 passage(s) …" },
+  });
+
+  const labels = rows.map((r) => r.label);
+  assert.ok(
+    labels.some((l) => /^Source · instrument in force · /.test(l)),
+    "a retrieved instrument must say so in its own label, not sit under a generic heading",
+  );
+  assert.ok(
+    labels.some((l) => /^Source · general principle · /.test(l)),
+    "and the paraphrase it was drafted from must be marked as what it is",
+  );
+
+  const instrumentRow = rows.find((r) => /instrument in force/.test(r.label));
+  assert.match(instrumentRow.value, /published by Internal Revenue Service/, "the publisher is what makes it checkable");
+  assert.match(
+    instrumentRow.value,
+    /retrieved 2026-08-19/,
+    "and the retrieval date is the one caveat that applies to a correctly-retrieved instrument",
+  );
+
+  // TWO SHAPES OF `matchedOn`, AND ONLY ONE CARRIES ITS OWN FRAMING. The
+  // statutory leg emits a whole sentence; the older legs emit bare stems, which
+  // a plain join turns into "(resident; tie-break)" — a parenthesis of word
+  // fragments with nothing saying it is a retrieval signal.
+  assert.match(rows.find((r) => /general principle/.test(r.label)).value, /matched on: resident, tie-break/);
+  assert.match(instrumentRow.value, /statutory corpus \(lexical\) — matched on/);
+
+  // THE SCOPE SENTENCE LEADS. The API has computed "what this material is and
+  // is not" for months and no surface rendered it; a specialist saw the
+  // material with no statement of its weight at all.
+  const scopeRow = rows.find((r) => r.label === "What this material is");
+  assert.ok(scopeRow, "citationCoverage.scope must reach the screen");
+  assert.match(scopeRow.value, /55 passage/);
+
+  // And a dossier that carries no coverage block renders no empty claim.
+  const noCoverage = panels["UC-08"].rows({ case: { useCase: "UC-08", dossier: { citations: [] } } });
+  assert.ok(!noCoverage.some((r) => r.label === "What this material is"));
+  assert.ok(noCoverage.some((r) => /Nothing in the reference corpus matched/.test(r.value)));
+});
+
+test("every authority the corpus declares gets its own label, not the catch-all", () => {
+  // WHY (2026-08-30, hours after citationLabel shipped with two arms). The
+  // corpus declares THREE authority values — documentCountries.js's
+  // AUTHORITY_RANK is {instrument, administrative, model} — and the helper
+  // handled two, so `administrative` fell to the "Guidance" catch-all, which is
+  // also what MOBILITY_CORPUS gets: this project's own hand-written internal
+  // notes, no publisher, no retrieval date. 14 of the 57 corpus passages are
+  // administrative and THREE OF UC-07'S SIX ARE, so half that use case's
+  // statutory feed read as an internal note.
+  const context = { window: {} };
+  vm.createContext(context);
+  new vm.Script(read(ASSETS, "panels.js"), { filename: "panels.js" }).runInContext(context);
+
+  const cite = (authority) => ({
+    id: "x", title: "T", summary: "S", matchedOn: ["a"],
+    publisher: "U.S. Social Security Administration", retrievedOn: "2026-08-19", authority,
+  });
+  const labelsFor = (authority) =>
+    context.window.CXPanels["UC-08"]
+      .rows({ case: { useCase: "UC-08", dossier: { citations: [cite(authority)] } } })
+      .map((r) => r.label);
+
+  assert.ok(labelsFor("administrative").some((l) => /^Source · agency guidance · /.test(l)));
+  assert.ok(labelsFor("instrument").some((l) => /^Source · instrument in force · /.test(l)));
+  assert.ok(labelsFor("model").some((l) => /^Source · general principle · /.test(l)));
+
+  // Nothing may fall to the catch-all merely for HAVING an authority. The
+  // catch-all is for entries that carry none at all — the process-guidance
+  // corpora, which are correctly labelled "Guidance".
+  for (const authority of ["instrument", "administrative", "model"]) {
+    assert.ok(
+      !labelsFor(authority).some((l) => /^Guidance · /.test(l)),
+      `authority "${authority}" fell through to the catch-all`,
+    );
+  }
+  const none = context.window.CXPanels["UC-08"].rows({
+    case: { useCase: "UC-08", dossier: { citations: [{ id: "x", title: "T", summary: "S", matchedOn: ["a"] }] } },
+  });
+  assert.ok(none.some((r) => /^Guidance · /.test(r.label)), "an entry with no authority stays generic");
+});
+
+test("UC-07's PTO row reports an uncounted balance as uncounted, never as zero", () => {
+  // src/uc07/transitionGate.js states this rule at the default it defends:
+  // "null, NOT 0. 'Nobody told us the balance' and 'the balance is zero' are
+  // different facts, and defaulting the first to the second is how a dossier
+  // came to state a confident 0.00 payout on a balance nobody had counted
+  // (F-29)." The gate refused the unknown; this panel re-invented it with
+  // show(x, "0") one layer up.
+  const context = { window: {} };
+  vm.createContext(context);
+  new vm.Script(read(ASSETS, "panels.js"), { filename: "panels.js" }).runInContext(context);
+  const rowsFor = (pto) =>
+    context.window.CXPanels["UC-07"].rows({ case: { useCase: "UC-07", dossier: { pto } } });
+
+  const unknown = rowsFor({ decision: "liquidate", destinationOpeningBalance: null, liquidatedDays: null })
+    .find((r) => r.label === "PTO").value;
+  assert.doesNotMatch(unknown, /\b0 day\(s\)/, "an uncounted balance rendered as a counted zero: " + unknown);
+  assert.doesNotMatch(unknown, /\b0 liquidated/, unknown);
+  assert.match(unknown, /not recorded/);
+
+  // NEGATIVE CONTROL: a real zero is a measurement and must still print as one.
+  const real = rowsFor({ decision: "liquidate", destinationOpeningBalance: 0, liquidatedDays: 0 })
+    .find((r) => r.label === "PTO").value;
+  assert.match(real, /opening balance 0 day\(s\), 0 liquidated/);
+});
+
 test("a panel returns data, not markup, and tolerates a sparse case", () => {
   const context = { window: {} };
   vm.createContext(context);
@@ -700,12 +845,49 @@ test("the six newly-registered panels (UC-02/03/04/05/07/09) offer renderActions
     "UC-07 must render no controls — there is no write route for main.js's actionable gate to unlock"
   );
 
-  // UC-04 (single specialist), UC-05 (single HR Ops sign-off), UC-02 (single
-  // Finance Ops reviewer) and UC-03 (single Travel & Mobility Support
-  // signature) each have exactly one decision-maker — a real renderActions,
-  // not UC-06/09's multi-role shape. UC-02's is the only one with three verbs
-  // rather than two; see its panel for why `hold` exists.
-  for (const uc of ["UC-02", "UC-03", "UC-04", "UC-05"]) {
+  /* UC-04 MOVED ONTO THIS LIST ON 2026-08-30, AND FOR A DIFFERENT REASON FROM
+     UC-07's, which is worth stating so nobody "restores" it.
+
+     UC-07 has no write route at all. UC-04 has one, and it works — but it
+     performs `approved_by_manager`, which Remote's schema defines as THE
+     CUSTOMER'S MANAGER'S decision (`employer_approver`,
+     `employer_special_instructions`). A Remote CX specialist clicking Approve
+     in Zendesk was making the customer's decision under their own name. That
+     approval belongs on the customer-facing surface and has moved there.
+
+     The stage this sidebar really belongs to is Remote's own mobility review,
+     `approved_by_remote` — and there is no endpoint for it anywhere: Remote's
+     whole work-authorization surface is two GETs and two PATCHes, and neither
+     PATCH accepts that value. So the panel could not be given a different
+     button either; one would report success having written nothing.
+
+     UC-04 CAME BACK OFF THIS LIST ON 2026-08-31, and only halfway. Its controls
+     are not the employer's approval and never will be — the loader is bound to
+     `POST /api/authorizations/:id/mobility-review` and to nothing else, and its
+     verbs are `clear`/`decline`, never `approve`
+     (test/zafUc04EmployerDecision.test.js pins both). What it now renders is
+     STAGE 3, Remote's own mobility review of a request the employer has already
+     approved: a decision recorded in THIS system, under a named reviewer, and
+     never sent to Remote, because Remote publishes no endpoint for it
+     (src/uc04/mobilityReview.js). The panel refuses to draw the control at all
+     unless the server sends the sentence that says so.
+
+     So the row below asserts the SHAPE of the control rather than its absence,
+     and UC-07/UC-08 above keep the absence — which is the distinction this file
+     exists to hold: they have no execution path at all, UC-04 has one that is
+     simply not the employer's. */
+  assert.equal(
+    typeof CXPanelFor("UC-04").renderActions,
+    "function",
+    "UC-04 lost the mobility-review control — Remote's own reviewer has nowhere to record a decision again"
+  );
+
+  // UC-05 (single HR Ops sign-off), UC-02 (single Finance Ops reviewer) and
+  // UC-03 (single Travel & Mobility Support signature) each have exactly one
+  // decision-maker — a real renderActions, not UC-06/09's multi-role shape.
+  // UC-02's is the only one with three verbs rather than two; see its panel for
+  // why `hold` exists.
+  for (const uc of ["UC-02", "UC-03", "UC-05"]) {
     assert.equal(typeof CXPanelFor(uc).renderActions, "function", uc + " needs a single-approver control");
   }
 
@@ -730,8 +912,8 @@ test("UC-02/UC-03/UC-04/UC-05/UC-07/UC-09 panels return data, not markup, and to
   new vm.Script(read(ASSETS, "panels.js"), { filename: "panels.js" }).runInContext(context);
   const { CXPanelFor } = context.window;
 
-  function checkPanel(uc, fullCase, expectedSubstringMatchers) {
-    const fullView = { case: fullCase };
+  function checkPanel(uc, fullCase, expectedSubstringMatchers, extraView) {
+    const fullView = Object.assign({ case: fullCase }, extraView || {});
     const rows = CXPanelFor(uc).rows(fullView);
     for (const row of rows) {
       assert.equal(typeof row.label, "string");
@@ -858,7 +1040,14 @@ test("UC-02/UC-03/UC-04/UC-05/UC-07/UC-09 panels return data, not markup, and to
       createdAt: "2026-07-30T10:00:00.000Z",
     },
     // `prepared_for_signoff` was a Decision row here too; see the UC-02 note.
-    [/2026-09-01/, /1,200\.00 USD/]
+    [/2026-09-01/, /1,200\.00 USD/],
+    // THE FIGURE ARRIVES ON THE BASIS, NOT OFF THE RECORD. The row prints the
+    // server's `shortLabel` — the same string decisionFacts.js formats — and
+    // shows nothing at all without it. A record-only view (see the sparse
+    // check inside checkPanel) must therefore render "—" here, never the raw
+    // 120000 and never a 0.00. test/zafUc05PayoutRow.test.js drives the
+    // real describeSignoffBasis() through this row.
+    { basis: { payout: { stated: true, figure: "stated", shortLabel: "1,200.00 USD" } } }
   );
 
   checkPanel(
@@ -1128,11 +1317,15 @@ test("every loader whose API sends `decidedBy` passes it through to the Why card
       loader + " does not read decidedBy off the response its server already sends"
     );
   }
-  // And the card still keeps the slug beneath the prose — it is the exact
-  // string in audit_log, in the metrics exception ranking and in the n8n ports,
-  // so prose that REPLACED it would make the card readable and the system
-  // harder to trace.
-  assert.ok(/reason-slug/.test(main), "the slug must survive beside the prose");
+  // AND THE CARD NO LONGER PRINTS THE SLUG BENEATH THE PROSE (2026-08-31).
+  // This assertion was the other way round, on the grounds that the slug is the
+  // exact string in audit_log and in the n8n ports. True, and not a reason to
+  // print it HERE: this panel is shown to customers, and the prose above it
+  // already says the same thing. The traceable identifier lives on the
+  // `audit_log` row. What the loaders must still do — pass `decidedBy` through
+  // so the PROSE arrives at all — is asserted above and is the half that was
+  // ever really at risk. See test/zafNoDeveloperArtifacts.test.js.
+  assert.ok(!/reason-slug/.test(main), "the internal decision slug is back on a customer-facing panel");
 });
 
 test("loadUc04 stops hard-coding review:null, so the header badge can't contradict the DECISION block", () => {
@@ -1356,9 +1549,14 @@ test("a gate that never ran is never described as one that passed", () => {
   const main = read(ASSETS, "main.js");
   const words = objectLiteral(main, "GATE_RUNG_WORDS");
 
-  assert.deepEqual(Object.keys(words).sort(), ["decided", "not_reached", "passed"]);
-  assert.equal(new Set(Object.values(words)).size, 3, "two rung statuses share a word");
+  // FOUR, SINCE 2026-09-02. `not_evaluated` is a rung ABOVE the deciding one
+  // that was reached but could not evaluate anything — UC-05's reconciliation
+  // when Remote's figure was never read — which the position-based ladder had
+  // been calling "passed". The server marks it; the sidebar names it.
+  assert.deepEqual(Object.keys(words).sort(), ["decided", "not_evaluated", "not_reached", "passed"]);
+  assert.equal(new Set(Object.values(words)).size, 4, "two rung statuses share a word");
   assert.doesNotMatch(words.not_reached, /pass/i, "`not reached` must not read as a pass");
+  assert.doesNotMatch(words.not_evaluated, /pass/i, "`not evaluated` must not read as a pass");
 
   // And the ladder itself is rendered, from the server's statuses only.
   assert.match(main, /function renderGateLadder\(rungs\)/);
@@ -1377,6 +1575,7 @@ test("a gate that never ran is never described as one that passed", () => {
   const css = read(ASSETS, "style.css");
   assert.match(css, /\.gate-rung\.is-passed \{[^}]*--r-dot-settled/);
   assert.match(css, /\.gate-rung\.is-not_reached \{[^}]*dashed/);
+  assert.match(css, /\.gate-rung\.is-not_evaluated \{[^}]*dotted/, "a rung that evaluated nothing must not be drawn as a pass");
 });
 
 // rca-iih7 / D-31. UC-01's own GATE_SEQUENCE has 22 rows describing 13 gates
@@ -1472,7 +1671,7 @@ test("an excused check carries the provenance of whatever excused it", () => {
   // five-entry hand-written list whose own record says "[PROPOSED] —
   // illustrative, no authority" (DNV_COUNTRIES_PROVENANCE, src/uc04/riskMatrix.js).
   const main = read(ASSETS, "main.js");
-  assert.match(main, /function renderProvenance\(provenance\)/);
+  assert.match(main, /function renderProvenance\(provenance, heading\)/);
   for (const field of ["provenance.table", "provenance.status", "provenance.authority", "provenance.version", "provenance.reviewedOn", "provenance.reference"]) {
     assert.ok(main.includes(field), `the provenance block drops ${field}`);
   }
@@ -1481,9 +1680,15 @@ test("an excused check carries the provenance of whatever excused it", () => {
   // reads as one nobody thought to include.
   assert.match(main, /provenance\.authority \|\| "none named"/);
   assert.match(main, /provenance\.reviewedOn \|\| "never"/);
-  // And it is reached from the measurement that was suppressed.
+  // And it is reached from the measurement that was suppressed — under a
+  // heading that says EXCUSED, which is what a waived limit is. W-3 added a
+  // second kind of row carrying a `basis`: a limit that was applied and is
+  // merely [PROPOSED]. "The basis for excusing it" over a check that ran would
+  // be the §3.98 shape again — a caution outliving the case it was written
+  // about — so the heading is chosen by the row's own state.
   const measurement = main.slice(main.indexOf("function renderMeasurement("), main.indexOf("function renderNarrativeBlock("));
-  assert.match(measurement, /renderProvenance\(measurement\.basis\)/);
+  assert.match(measurement, /renderProvenance\(\s*measurement\.basis,/);
+  assert.match(measurement, /suppressed" \? "The basis for excusing it" : "Where this line comes from"/);
   // A limit with no measured value states which side is missing rather than
   // printing a 0 that would read as a measurement.
   assert.match(measurement, /no figure was taken on this run/);
@@ -1663,7 +1868,22 @@ test("no panel prints a money field at Remote's ×100 scale", () => {
   // really sends — `payout.amount` never existed at all, so that row printed
   // "—" for every computed payout it was meant to show.
   assert.match(panels, /label: "Amount", value: money\(adj\.amount, adj\.currency\)/);
-  assert.match(panels, /label: "PTO payout", value: money\(payout\.totalInRemoteInteger, payout\.currency\)/);
+  // The PTO payout row NO LONGER FORMATS A FIGURE ITSELF. It prints the
+  // server's `basis.payout.shortLabel` (src/uc05/decisionFacts.js), because the
+  // record's `totalInRemoteInteger` is 0 for a resignation whose balances were
+  // never supplied, and this row rendered that as "0.00 EUR" on the screen
+  // HR Ops signs from. The only figure it may format on its own is one the
+  // server has marked `stated`, and that still goes through money().
+  assert.match(panels, /label: "PTO payout", value: ptoPayoutValue\(view\)/);
+  const ptoHelper = panels.slice(panels.indexOf("function ptoPayoutValue(view)"), panels.indexOf("function ptoPayoutValue(view)") + 600);
+  assert.match(ptoHelper, /if \(!basis\) return "—"/, "no basis, no figure");
+  assert.match(ptoHelper, /if \(basis\.stated !== true\) return "—"/, "an unstated figure is never formatted");
+  assert.match(ptoHelper, /return money\(payout\.totalInRemoteInteger, payout\.currency\)/, "and a stated one still goes through the one ×100 helper");
+  assert.doesNotMatch(
+    stripComments(ptoHelper),
+    /no_time_off_records|computable/,
+    "the browser must not re-derive what the figure means from the record's own enums — that is the second copy that drifted"
+  );
 
   // And the helper still refuses to invent a figure: a non-integer renders as
   // an absence, never as a 0 that would read as "nothing is owed".

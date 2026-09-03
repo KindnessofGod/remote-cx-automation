@@ -42,6 +42,7 @@
 //                indistinguishable from live history.
 // ---------------------------------------------------------------------------
 
+import { claimRefCandidates } from "../shared/claimRef.js";
 import { buildDemoDataset } from "./demoSeed.js";
 import {
   AUDIT_LOG_DETAIL_KEYS,
@@ -807,11 +808,26 @@ export class AuditReadStore {
     this.#require();
     const ref = String(externalRef);
 
+    // BOTH SPELLINGS OF THE CLAIM KEY. Since 2026-08-31 the ledger keys a bare
+    // Zendesk ticket number under `<account>:<ref>` (src/shared/claimRef.js —
+    // the account move made `93` name two unrelated tickets). Rows written
+    // before that hold the bare form, and a human typing `93` here means "the
+    // ticket in front of me". Searching one spelling would report "never
+    // claimed" for half the ledger, which on THIS screen is not a cosmetic
+    // miss: an absent claim row is read as "the exactly-once ledger did not
+    // protect this ticket".
+    //
+    // `decisions` below is deliberately NOT widened: only the claim node's key
+    // changed. `audit_log.details->>'externalRef'` still carries the bare
+    // ticket number, and widening it would match nothing while implying the
+    // audit trail had moved too.
+    const claimKeys = claimRefCandidates(ref);
+
     let claims;
     let decisions;
     if (this.seeded) {
       claims = this.demo.workflowClaims
-        .filter((c) => c.externalRef === ref)
+        .filter((c) => claimKeys.includes(c.externalRef))
         .sort((a, b) => cmpAsc(a.claimedAt, b.claimedAt));
       decisions = this.demo.auditLog
         .filter((row) => String(row.externalRef ?? row.details?.externalRef ?? "") === ref)
@@ -819,8 +835,8 @@ export class AuditReadStore {
         .map((row) => withKind(this.#summarizeSeeded(row)));
     } else {
       const claimsResult = await this.pgPool.query(
-        `select ${CLAIM_COLUMNS} from workflow_claims where external_ref = $1 order by claimed_at asc`,
-        [ref]
+        `select ${CLAIM_COLUMNS} from workflow_claims where external_ref = any($1) order by claimed_at asc`,
+        [claimKeys]
       );
       const decisionsResult = await this.pgPool.query(
         `select ${DECISION_SUMMARY_COLUMNS}

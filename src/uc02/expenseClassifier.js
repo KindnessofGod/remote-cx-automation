@@ -135,6 +135,15 @@ function categoryHaystack(category) {
  * @param {object[]} [args.categoryList]   categories from Remote, raw
  * @returns {{categoryId: string|null, reason: string, confidence: number, source: "rule_based_fallback"}}
  */
+/**
+ * The confidence an ambiguous (tied) rule-based match is reported at.
+ *
+ * Below policyEngine.js's 0.85 gate ON PURPOSE — the whole point is that gate
+ * 13 catches it. Raising this above 0.85 silently re-enables deciding a
+ * category by list order.
+ */
+const AMBIGUOUS_MATCH_CONFIDENCE = 0.5;
+
 export function classifyExpenseRuleBased({ expense, categoryList = [] }) {
   const list = selectableCategories(categoryList);
   // The real record's text fields: `title` (schema-required, always present)
@@ -150,24 +159,50 @@ export function classifyExpenseRuleBased({ expense, categoryList = [] }) {
 
   let best = null;
   let bestScore = 0;
+  // How many categories share the winning score. A TIE IS NOT A WINNER: see
+  // AMBIGUOUS_MATCH_CONFIDENCE below.
+  let tiedAtBest = 0;
   for (const category of list) {
     const haystack = categoryHaystack(category);
     const score = tokens.filter((token) => haystack.includes(token)).length;
     if (score > bestScore) {
       best = category;
       bestScore = score;
+      tiedAtBest = 1;
+    } else if (score > 0 && score === bestScore) {
+      tiedAtBest += 1;
     }
   }
+  const ambiguous = tiedAtBest > 1;
 
   const categoryId = (bestScore > 0 ? best : null)?.code ?? null;
 
   let confidence = categoryId ? 0.9 : 0.6;
   if (NON_ENGLISH_SIGNALS.some((re) => re.test(text))) confidence = 0.5;
   if (LOW_CONF_SIGNALS.some((re) => re.test(text))) confidence = 0.4;
+  // A TIE MUST NOT SCORE AS CERTAINTY. Measured live 2026-08-29 on the Sandbox
+  // expense "Office Chair", whose recorded category is the legacy PARENT code
+  // `tech_equipment` ("Tech / Work Equipment"). The joined text therefore
+  // carries the tokens `tech`, `work` and `equipment`, which appear in BOTH
+  // `tech_and_work_equipment.equipment_shipping_and_customs` and
+  // `tech_and_work_equipment.work_equipment_employee_owned`. The scores were
+  // equal, `>` kept whichever the category list happened to yield first, and
+  // the result was reported at 0.9 — above the 0.85 gate — so a coin flip
+  // between "shipping and customs" and "buying the chair" cleared the
+  // confidence gate as a confident answer.
+  //
+  // That is the same defect this file's header already records for substring
+  // scoring: "a false category resolves a false cap, and 0.9 clears the
+  // confidence gate." Ordering is not evidence, so an unresolved tie is capped
+  // BELOW the gate and gate 13 sends it to a human. Math.min, never assignment,
+  // so this can only ever lower a confidence another signal already reduced.
+  if (ambiguous) confidence = Math.min(confidence, AMBIGUOUS_MATCH_CONFIDENCE);
 
-  const reason = categoryId
-    ? "Rule-based token overlap between the expense's title (plus its recorded category name) and this category's own text."
-    : "No category could be resolved from the expense's title or its recorded category name.";
+  const reason = !categoryId
+    ? "No category could be resolved from the expense's title or its recorded category name."
+    : ambiguous
+      ? `Rule-based token overlap tied ${tiedAtBest} categories, so the match was decided by list order rather than by evidence — reported below the confidence gate so a person chooses.`
+      : "Rule-based token overlap between the expense's title (plus its recorded category name) and this category's own text.";
 
   return { categoryId, reason, confidence, source: "rule_based_fallback" };
 }

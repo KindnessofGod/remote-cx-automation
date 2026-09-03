@@ -38,6 +38,9 @@ import { SANCTIONED_OR_RESTRICTED } from "./policyEngine.js";
 // ONE DATE RULE FOR BOTH READERS — the employee's keystroke on the request form
 // and the model's string are checked by the same function. See statedTrip.js.
 import { isIsoCalendarDate } from "./statedTrip.js";
+// THE GROUNDING RULE, SHARED WITH UC-04 RATHER THAN RESTATED. See
+// src/shared/statedDates.js for why it stopped being a UC-04-only concern.
+import { isDateGroundedInText } from "../shared/statedDates.js";
 
 const VALID_INTENTS = new Set(["business_travel", "work_authorization"]);
 
@@ -395,7 +398,17 @@ export function classifyTravelInquiryRuleBased({ text }) {
     lower
   );
 
-  const { startDate, endDate } = parseItineraryDates(text);
+  // GROUNDED, OR NOT USED (2026-08-30). `parseItineraryDates()` fills a missing
+  // year in from `new Date().getFullYear()` — deterministic, documented, and
+  // still a year the requester never wrote. It reaches an issued travel letter
+  // and the UC-04 continuation, so it is dropped here rather than carried.
+  //
+  // The helper itself is UNCHANGED and still exported: it answers "what dates
+  // does this text mention", which is a fair question with its own tests. What
+  // changed is that its answer is no longer treated as stated fact.
+  const parsed = parseItineraryDates(text);
+  const startDate = isDateGroundedInText(text, parsed.startDate) ? parsed.startDate : null;
+  const endDate = isDateGroundedInText(text, parsed.endDate) ? parsed.endDate : null;
 
   // A crude but honest confidence signal. A real LLM would return its own.
   //
@@ -490,9 +503,26 @@ Return strict JSON, no prose, no markdown fences.`;
  * @param {Array<object>} problems  appended to in place
  * @returns {string|null}
  */
-function usableLlmDate(field, value, problems) {
+function usableLlmDate(field, value, problems, text = "") {
   if (value === null || value === undefined || value === "") return null;
-  if (isIsoCalendarDate(value)) return value;
+  if (isIsoCalendarDate(value)) {
+    // GROUNDING, AFTER SHAPE. A well-formed date can still be one nobody
+    // stated: "three weeks in September" produced `2023-09-01` live on
+    // 2026-08-30, from a model whose own prompt says "never invent dates".
+    // The prompt is not a control (prime directive #1) — this is.
+    if (isDateGroundedInText(text, value)) return value;
+    problems.push({
+      field,
+      code: "date_year_not_stated",
+      received: String(value).slice(0, 60),
+      detail:
+        "The classifier returned a date whose YEAR does not appear anywhere in the request, so it was not used. " +
+        "The year is the component a reader cannot check and the one the Schengen and duration arithmetic turns " +
+        "on, and this date would otherwise have been printed on a travel letter and prefilled into the work-" +
+        "authorization form. The trip's dates are asked for instead of guessed.",
+    });
+    return null;
+  }
   problems.push({
     field,
     code: "date_not_iso",
@@ -572,8 +602,8 @@ export async function classifyTravelInquiry(
     // above for why the unusable one is dropped here rather than failing the
     // whole reading, and why it is never repaired.
     const dateProblems = [];
-    const startDate = usableLlmDate("startDate", result.startDate, dateProblems);
-    const endDate = usableLlmDate("endDate", result.endDate, dateProblems);
+    const startDate = usableLlmDate("startDate", result.startDate, dateProblems, text);
+    const endDate = usableLlmDate("endDate", result.endDate, dateProblems, text);
     return {
       intent: result.intent,
       destinationCountry: result.destinationCountry || null,

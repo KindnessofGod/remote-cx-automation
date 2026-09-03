@@ -29,6 +29,22 @@
 //                    de maand"). It had been in the anchorRule type union since
 //                    this file was written with nothing using it; the NL row
 //                    added 2026-08-20 is what it was for.
+//   "week_saturday" -> the first Saturday ON OR AFTER the raw end (PL — Kodeks
+//                    pracy art. 30 § 2¹, D-43). Built 2026-09-02. The SAME
+//                    subsection that gives `month_end` its Polish twin also
+//                    says a notice period comprising *"tydzień lub miesiąc albo
+//                    ich wielokrotność"* — a week or a month or a multiple of
+//                    either — ends *"odpowiednio w sobotę lub w ostatnim dniu
+//                    miesiąca"*: respectively on a Saturday or on the last day
+//                    of the month. Poland's two-week bracket had carried
+//                    `continuous` and a comment saying it was unanchored
+//                    BECAUSE THIS VALUE DID NOT EXIST — honest, and a missing
+//                    rule rather than a wrong one. It exists now.
+//
+//                    ON OR AFTER, never before: a notice period may be
+//                    lengthened to reach the statutory landing day and may
+//                    never be shortened to it, so a raw end that is already a
+//                    Saturday is left alone and reports `adjusted: false`.
 //
 // MONTH-DENOMINATED PERIODS
 // A bracket states its period in `noticeDays` OR in `noticeMonths`, and which
@@ -52,6 +68,15 @@
 // ---------------------------------------------------------------------------
 
 import { getNoticeRule, pickBracket, hasNoStatutoryMinimum } from "./noticePeriodTable.js";
+// REMOTE'S OWN FIGURE, HELD AGAINST OURS. See noticeReconciliation.js's header:
+// `days_of_notice` is published on every resignation record and was read by
+// nothing in this repository until 2026-09-02. It is reconciled HERE, inside the
+// calculator, rather than one layer up, for two reasons that are both about the
+// result surviving: the block then rides on the `notice` object, which is the
+// column `uc05_resignations` persists and the only thing `describeSignoffBasis()`
+// gets to read; and it is covered by test/n8nUc05Parity.test.js's field-by-field
+// comparison for free, so the n8n port cannot quietly stop reconciling.
+import { reconcileNoticeFigures } from "./noticeReconciliation.js";
 
 /**
  * @typedef {object} NoticePeriodResult
@@ -176,6 +201,38 @@ export function tenureMonthsBetween(startDate, now) {
   return Math.max(0, months);
 }
 
+/**
+ * Months between two ISO dates WITHOUT flooring — the value bracket boundaries
+ * are compared against.
+ *
+ * `tenureMonthsBetween()` above answers the question a person asks ("how many
+ * months have I been here?") and is what every rendered sentence uses. This one
+ * answers the question a statute asks ("is this more than two years?"), which a
+ * whole number cannot express: two years and fifteen days floors to 24 and lands
+ * inside an inclusive `tenureMaxMonths: 24`.
+ *
+ * The fractional part is the elapsed days over the length of the month they
+ * fall in, so the value is strictly greater than the whole count whenever ANY
+ * day has elapsed past the anniversary, and exactly equal on the anniversary
+ * itself. That equality is the load-bearing case: art. 400.º(1)'s "até dois
+ * anos" INCLUDES exactly two years, and C-18 exists because this boundary was
+ * wrong in the other direction once already.
+ */
+export function tenureMonthsExactBetween(startDate, now) {
+  const whole = tenureMonthsBetween(startDate, now);
+  const start = new Date(startDate);
+  const ref = new Date(now);
+  if (!Number.isFinite(whole)) return whole;
+  // The anniversary date of the last completed month.
+  const anniversary = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + whole, start.getUTCDate()));
+  const elapsedDays = Math.round((ref.getTime() - anniversary.getTime()) / 86400000);
+  if (!Number.isFinite(elapsedDays) || elapsedDays <= 0) return whole;
+  // Length of the month the remainder falls in, so the fraction never reaches 1.
+  const nextAnniversary = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + whole + 1, start.getUTCDate()));
+  const monthDays = Math.round((nextAnniversary.getTime() - anniversary.getTime()) / 86400000) || 30;
+  return whole + Math.min(elapsedDays / monthDays, 0.999999);
+}
+
 /** YYYY-MM-DD string for a Date (UTC). */
 function toIsoDate(d) {
   return d.toISOString().slice(0, 10);
@@ -266,7 +323,7 @@ function quantityText(bracket) {
  * the post-anchor end date. The "before" date is the start of the count
  * period; the "rawEnd" is what plain "+N days" would have given.
  * @param {string} rawEnd
- * @param {"continuous"|"month_15"|"month_1st"|"month_end"|null} anchorRule
+ * @param {"continuous"|"month_15"|"month_1st"|"month_end"|"week_saturday"|null} anchorRule
  */
 export function applyAnchor(rawEnd, anchorRule) {
   if (!anchorRule || anchorRule === "continuous") return { date: rawEnd, adjusted: false };
@@ -275,8 +332,8 @@ export function applyAnchor(rawEnd, anchorRule) {
     // BGB §622: termination on the 15th or the last day of a calendar month.
     // If rawEnd falls on day 1-14, the date is moved to day 15 of the same
     // month. Day 15 itself is already a permitted termination date, so it
-    // is left alone. Day 16-end is moved to the last day of the FOLLOWING
-    // month. (DE probationary 2-week notice is exempt from this rule; the
+    // is left alone. Day 16-end is moved to the last day of THAT SAME month —
+    // the next permitted date on or after it. (DE probationary 2-week notice is exempt from this rule; the
     // calculator handles that special case via `rawEnd`.)
     const day = d.getUTCDate();
     if (day < 15) {
@@ -285,8 +342,37 @@ export function applyAnchor(rawEnd, anchorRule) {
     if (day === 15) {
       return { date: toIsoDate(d), adjusted: false };
     }
-    const lastDayOfNextMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 2, 0));
-    return { date: toIsoDate(lastDayOfNextMonth), adjusted: true };
+    // THE END OF **THIS** MONTH, NOT THE NEXT ONE.
+    //
+    // §622(1) permits termination on the 15th OR the end of a calendar month,
+    // so the date to snap to is the NEXT PERMITTED DATE ON OR AFTER the raw
+    // end. For a raw end on day 16 or later that is this month's own last day —
+    // which is already on or after it. Going to the FOLLOWING month's end
+    // overshoots by up to thirty-one days and skips a permitted date the
+    // statute plainly allows.
+    //
+    // PROVED WITHOUT REFERENCE TO ANY STATUTE, which is what made this
+    // reportable rather than arguable. A German employee with seven years'
+    // service, resigning on five consecutive days, used to get:
+    //
+    //     filed 2026-10-01 -> last working day 2026-11-30   (60 days served)
+    //     filed 2026-10-02 -> last working day 2026-11-30   (59)
+    //     filed 2026-10-03 -> last working day 2026-11-30   (58)
+    //     filed 2026-10-04 -> last working day 2026-11-15   (42)
+    //     filed 2026-10-05 -> last working day 2026-11-15   (41)
+    //
+    // Resign one day LATER and leave sixteen days EARLIER. No notice rule in
+    // any jurisdiction produces that curve, so the defect needed no German-law
+    // argument — the discontinuity is the proof. Found 2026-09-02 by an HR
+    // operations specialist driving the calculator directly.
+    //
+    // WHY IT WAS ALSO INVISIBLE: the panel vouches for the result — "The end
+    // date was moved by that country's own permitted-termination-date rule, so
+    // it is not simply the start date plus the notice days." It had been moved,
+    // a month too far, and that sentence is the reason a reader would not
+    // question it.
+    const lastDayOfThisMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
+    return { date: toIsoDate(lastDayOfThisMonth), adjusted: toIsoDate(lastDayOfThisMonth) !== toIsoDate(d) };
   }
   if (anchorRule === "month_1st") {
     // 1st of the month FOLLOWING the raw end.
@@ -306,6 +392,30 @@ export function applyAnchor(rawEnd, anchorRule) {
     const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
     const date = toIsoDate(lastDay);
     return { date, adjusted: date !== rawEnd };
+  }
+  if (anchorRule === "week_saturday") {
+    // Kodeks pracy art. 30 § 2¹ (D-43, api.sejm.gov.pl, retrieved 2026-09-02):
+    //
+    //   "Okres wypowiedzenia umowy o pracę obejmujący TYDZIEŃ LUB MIESIĄC ALBO
+    //    ICH WIELOKROTNOŚĆ kończy się odpowiednio W SOBOTĘ lub w ostatnim dniu
+    //    miesiąca."
+    //
+    // A notice period comprising a week or a month or a multiple of either ends
+    // respectively on a Saturday or on the last day of the month. Poland's
+    // two-week bracket (art. 36 § 1 pkt 1) is a multiple of a week, so its
+    // landing day is a Saturday — the same sentence, the same statutory force
+    // and the same subsection as the `month_end` rule its sibling brackets use.
+    //
+    // FORWARD ONLY. `getUTCDay()` is 6 on Saturday, so the distance to the next
+    // one is `(6 - day + 7) % 7` — which is 0 on a Saturday and is what leaves
+    // an already-landing date untouched. Rounding BACKWARD to the nearer
+    // Saturday would shorten a statutory notice period by up to six days, which
+    // is the one direction that puts an employee in breach; over-serving by up
+    // to six is the direction the statute itself produces.
+    const daysToSaturday = (6 - d.getUTCDay() + 7) % 7;
+    if (daysToSaturday === 0) return { date: rawEnd, adjusted: false };
+    d.setUTCDate(d.getUTCDate() + daysToSaturday);
+    return { date: toIsoDate(d), adjusted: true };
   }
   return { date: rawEnd, adjusted: false };
 }
@@ -358,9 +468,38 @@ export function toCalendarDay(now) {
  * @param {string} [args.proposedEndDate]    "YYYY-MM-DD" — the employee's stated last
  *   working day; omitted when the resignation letter was unclear
  * @param {string|number|Date} args.now      submission time, explicit
+ * @param {number|null} [args.remoteDaysOfNotice]  Remote's own `days_of_notice`
+ *   off the resignation record, when one was read. Absent on every path today
+ *   that does not supply it, and its absence is REPORTED rather than assumed to
+ *   agree — see noticeReconciliation.js.
+ * @param {string|null} [args.remoteRecordRef]  the `offboarding_request_id` that
+ *   figure was read from, carried so the reader can go and look at it
  * @returns {NoticePeriodResult}
  */
-export function computeNoticePeriod({ countryCode, startDate, probationEndDate, proposedEndDate, now }) {
+export function computeNoticePeriod({
+  countryCode,
+  startDate,
+  probationEndDate,
+  proposedEndDate,
+  now,
+  remoteDaysOfNotice = null,
+  remoteRecordRef = null,
+}) {
+  // ONE CALL SITE PER RETURN PATH WOULD BE FIVE CALL SITES. This closure is what
+  // makes it impossible for a branch to return a notice object with NO
+  // reconciliation block on it — which is the shape a reader would see as "the
+  // figures agree" by absence, and the one thing §6 of the acceptance contract
+  // forbids: *"an absence is not an agreement"*.
+  const reconcile = (bracketish) =>
+    reconcileNoticeFigures({
+      statuteDays: Number.isFinite(bracketish?.noticeDays) ? bracketish.noticeDays : null,
+      statuteMonths: Number.isFinite(bracketish?.noticeMonths) ? bracketish.noticeMonths : null,
+      statuteQuantity: bracketish ? quantityText(bracketish) : null,
+      statuteCitation: bracketish?.sourceCitation ?? null,
+      remoteDaysOfNotice,
+      remoteRecordRef,
+    });
+
   const rule = getNoticeRule(countryCode);
   if (!rule) {
     return {
@@ -403,6 +542,10 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
       // (see ptoNoticeLine() in src/portal/server.js), so the 0 is inert
       // rather than displayed. Tracked in docs/BUILD-LOG.md §3.41.
       noticeDays: 0,
+      // THE DATES TENURE WAS MEASURED BETWEEN — start date as the calculation saw it, and the day it counted to.
+      // The sidebar re-reads the record when it opens; if that record's start date differs, a signer must see both.
+      tenureMeasuredFrom: startDate ?? null,
+      tenureMeasuredTo: toCalendarDay(now),
       noticeStartDate: null,
       noticeEndDate: null,
       proposedEndDate: proposedEndDate ?? null,
@@ -417,6 +560,10 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
       noticeMonths: null,
       noticeQuantity: null,
       anchorAdjusted: false,
+      // No statutory day count was produced, so the reconciliation reports which
+      // side is missing rather than a comparison. reconcile(null) is not a
+      // shortcut: it is the honest input, and it yields `no_statutory_figure`.
+      reconciliation: reconcile(null),
     };
   }
 
@@ -453,6 +600,10 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
       tenureMonths: safeTenureMonths(startDate, now),
       onProbation: false,
       noticeDays: null,
+      // THE DATES TENURE WAS MEASURED BETWEEN — start date as the calculation saw it, and the day it counted to.
+      // The sidebar re-reads the record when it opens; if that record's start date differs, a signer must see both.
+      tenureMeasuredFrom: startDate ?? null,
+      tenureMeasuredTo: toCalendarDay(now),
       noticeStartDate: null,
       noticeEndDate: null,
       proposedEndDate: proposedEndDate ?? null,
@@ -464,9 +615,33 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
       // it off.
       noticeRuleFound: true,
       statutoryMinimumExists: false,
+      // CANADA IS NOT THE UNITED STATES, AND THIS FIELD IS THE DIFFERENCE
+      // (2026-09-02, D-44). Both rows report `statutoryMinimumExists: false`,
+      // and for the US that is the whole story: no statute addresses a resigning
+      // employee, so what is owed comes from the contract. For Canada it is true
+      // only of the common-law provinces. **CCQ art. 2091 binds *chacune des
+      // parties*** — either party — so a resigning Québec employee owes a *délai
+      // de congé* under enacted law, and art. 2092 makes the remedy for an
+      // insufficient one non-renounceable. What Québec does NOT state is a
+      // NUMBER: art. 2091 gives a standard (reasonable time, on the nature of
+      // the employment, its circumstances and the duration of service).
+      //
+      // So `noStatutoryMinimum` is right in this table's own sense — there is no
+      // statutory MINIMUM QUANTITY to apply — and the sentence that used to
+      // accompany it ("the notice owed comes from the contract") is false for one
+      // of the two provinces this repository has actually read. This flag is what
+      // stops the panel and the flags saying so. It is carried from the rule
+      // rather than keyed on "CA" anywhere downstream, because the next civil-law
+      // jurisdiction added will have the same shape and no code should have to
+      // learn a country code to describe it.
+      noticeStandardWithoutNumber: rule.noticeStandardWithoutNumber === true,
       noticeMonths: null,
       noticeQuantity: null,
       anchorAdjusted: false,
+      // No statutory day count was produced, so the reconciliation reports which
+      // side is missing rather than a comparison. reconcile(null) is not a
+      // shortcut: it is the honest input, and it yields `no_statutory_figure`.
+      reconciliation: reconcile(null),
     };
   }
 
@@ -489,7 +664,109 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
   const nowIso = toCalendarDay(now);
   const tenureMonths = startDate ? tenureMonthsBetween(startDate, nowIso) : 0;
   const onProbation = Boolean(probationEndDate && new Date(probationEndDate) > new Date(nowIso));
-  const bracket = pickBracket(rule, tenureMonths, onProbation);
+
+  // -------------------------------------------------------------------------
+  // THE STATUTE SAYS ZERO DURING PROBATION — branched BEFORE pickBracket()
+  // -------------------------------------------------------------------------
+  // Built 2026-09-02. `noStatutoryProbationNotice: true` was put on the Portugal
+  // row when its 15-day probation figure was found to be the EMPLOYER'S and
+  // repealed, and NOTHING CONSUMED IT: `pickBracket()` sees `probation: null`,
+  // falls through to the ordinary bracket, and a probationer was answered with
+  // 30 days beside a citation in the same object saying they owe nothing. The
+  // row's own comment says why it shipped that way — *"a visible contradiction
+  // on the screen rather than an invisible wrong number, and that is the safer
+  // of the two failures"* — and also that it was not finished. This finishes it.
+  //
+  // Código do Trabalho art. 114.º(1) (D-03, DRE):
+  //
+  //   "Durante o período experimental, SALVO ACORDO ESCRITO EM CONTRÁRIO,
+  //    qualquer das partes pode denunciar o contrato SEM AVISO PRÉVIO e
+  //    invocação de justa causa, nem direito a indemnização."
+  //
+  // NO END DATE IS PRODUCED, AND THAT IS THE POINT rather than a shortcoming.
+  // The statutory floor is zero, so there is no date to compute and no proposed
+  // date can ever be short of it — which is exactly why running the ordinary
+  // bracket here manufactured a shortfall that does not exist in law.
+  //
+  // AND IT IS NOT `noticeDays: 0`. Two reasons, and the second is the statute's
+  // own words. First, this file and noticePeriodTable.js both refuse a zero on
+  // principle: it is a quantity a reader acts on, and rendered on a signed HR
+  // document it reads as "cleared to leave today". Second, art. 114.º(1) opens
+  // with *salvo acordo escrito em contrário* — UNLESS OTHERWISE AGREED IN
+  // WRITING — so the statutory zero is a default a written contract may displace,
+  // and this system does not hold the contract. Same shape as the US and Canadian
+  // rows: the statute is answered, the instrument that could override it has not
+  // been read, so a human is told both facts instead of being handed a number.
+  if (onProbation && rule.noStatutoryProbationNotice === true) {
+    return {
+      countryCode: rule.countryCode,
+      basis: rule.basis,
+      unit: rule.unit,
+      sourceCitation: rule.sourceCitation,
+      tenureMonths,
+      onProbation: true,
+      noticeDays: null,
+      // THE DATES TENURE WAS MEASURED BETWEEN — start date as the calculation saw it, and the day it counted to.
+      // The sidebar re-reads the record when it opens; if that record's start date differs, a signer must see both.
+      tenureMeasuredFrom: startDate ?? null,
+      tenureMeasuredTo: toCalendarDay(now),
+      noticeStartDate: null,
+      noticeEndDate: null,
+      proposedEndDate: proposedEndDate ?? null,
+      discrepancyDays: null,
+      discrepancy: unmeasuredDiscrepancy(proposedEndDate),
+      noticeRuleFound: true,
+      // TRUE, NOT FALSE. Portugal HAS a statutory notice regime — art. 400.º(1)
+      // is in this table and applies the day probation ends. `false` is reserved
+      // for a country whose law imposes none on a resigning employee at all
+      // (US, CA), and collapsing the two would send a Portuguese probationer to
+      // the desk that adds countries to the table.
+      statutoryMinimumExists: true,
+      // The field the policy engine branches on. Distinct from every other
+      // no-end-date outcome in this file, because the reason is a POSITIVE
+      // statutory finding and not an absence of one.
+      noStatutoryProbationNotice: true,
+      noticeMonths: null,
+      noticeQuantity: null,
+      anchorAdjusted: false,
+      reconciliation: reconcile(null),
+    };
+  }
+  // WHOLE MONTHS FOR THE PROSE, EXACT MONTHS FOR THE BOUNDARY — and the split
+  // is the fix (2026-09-02).
+  //
+  // Every `tenureMaxMonths` in the table is an INCLUSIVE upper bound, so a
+  // floored month count puts "two years and fifteen days" in the "up to two
+  // years" bracket. Portugal is where that lands hardest: art. 400.º(1) reads
+  // "até dois anos ou mais de dois anos", and CONTRADICTIONS.md C-18 already
+  // moved this boundary once — from 23 months to 24, so that EXACTLY two years
+  // gets 30 days. That fix was right and it created this one. Measured:
+  //
+  //     24m  0d  ->  30 days   (statute: 30)  correct
+  //     24m 15d  ->  30 days   (statute: 60)  HALF, against the employee
+  //     24m 29d  ->  30 days   (statute: 60)  HALF, against the employee
+  //     25m  0d  ->  60 days   (statute: 60)  correct
+  //
+  // An employee told they owe half the notice they owe leaves early, is in
+  // breach, and art. 401.º attaches an indemnity — and HR Ops signed it off.
+  // Under-notice is the dangerous direction; over-notice is merely annoying.
+  //
+  // AN INTEGER MONTH COUNT CANNOT EXPRESS "MORE THAN TWO YEARS". The boundary
+  // needs the day, so bracket selection gets an exact value and everything a
+  // human reads keeps the whole number — "on 24 months of service" is what a
+  // person means, and "24.5 months" on an HR document is not an improvement.
+  //
+  // WHY IT IS SAFE ACROSS THE TABLE. This can only ever move somebody from a
+  // bracket to the NEXT one at an exact boundary, and the brackets ascend with
+  // tenure — so where it changes an answer at all it lengthens the notice. It
+  // cannot shorten one below what the old arithmetic gave.
+  const tenureMonthsExact = startDate ? tenureMonthsExactBetween(startDate, nowIso) : 0;
+  // ELAPSED DAYS TOO, for a row whose statutory threshold is stated in weeks —
+  // Ireland's thirteen. See pickBracket()'s floor comment.
+  const tenureDays = startDate
+    ? Math.round((new Date(nowIso).getTime() - new Date(startDate).getTime()) / 86400000)
+    : 0;
+  const bracket = pickBracket(rule, tenureMonthsExact, onProbation, tenureDays);
   if (!bracket) {
     // WE HAVE THE COUNTRY'S RULE AND THIS TENURE FELL OUTSIDE EVERY BRACKET.
     // `noticeRuleFound: true` is what stops the policy engine reporting this as
@@ -510,6 +787,10 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
       tenureMonths,
       onProbation,
       noticeDays: 0,
+      // THE DATES TENURE WAS MEASURED BETWEEN — start date as the calculation saw it, and the day it counted to.
+      // The sidebar re-reads the record when it opens; if that record's start date differs, a signer must see both.
+      tenureMeasuredFrom: startDate ?? null,
+      tenureMeasuredTo: toCalendarDay(now),
       noticeStartDate: nowIso,
       noticeEndDate: null,
       proposedEndDate: proposedEndDate ?? null,
@@ -523,6 +804,10 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
       noticeMonths: null,
       noticeQuantity: null,
       anchorAdjusted: false,
+      // No statutory day count was produced, so the reconciliation reports which
+      // side is missing rather than a comparison. reconcile(null) is not a
+      // shortcut: it is the honest input, and it yields `no_statutory_figure`.
+      reconciliation: reconcile(null),
     };
   }
 
@@ -540,7 +825,22 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
   const rawEnd = Number.isFinite(bracket.noticeMonths)
     ? addCalendarMonths(rawStart, bracket.noticeMonths)
     : addCalendarDays(rawStart, bracket.noticeDays);
-  const { date: noticeEndDate, adjusted: anchorAdjusted } = applyAnchor(rawEnd, rule.anchorRule);
+  // A BRACKET MAY OVERRIDE ITS ROW'S ANCHOR, and Poland is why (2026-09-02).
+  //
+  // Kodeks pracy art. 30 §2¹ ends a notice period stated in MONTHS on the last
+  // day of a calendar month and one stated in WEEKS on a SATURDAY. Those are
+  // two different rules inside one country, keyed on the bracket rather than on
+  // the country — and with a single anchor per row the two-week bracket
+  // inherited `month_end`, which is the monthly rule applied to a weekly period.
+  //
+  // `week_saturday` is not built, so the two-week bracket declares `continuous`
+  // and its end date is the raw one. That is the honest state: unanchored and
+  // SAID to be unanchored, rather than anchored by a rule the statute does not
+  // give it. The alternative was a comment claiming the bracket was unanchored
+  // while the row anchored it anyway — which is the class of defect this whole
+  // pass has been closing.
+  const anchorRule = bracket.anchorRule ?? rule.anchorRule;
+  const { date: noticeEndDate, adjusted: anchorAdjusted } = applyAnchor(rawEnd, anchorRule);
 
   // Discrepancy: how does the proposed LWD compare to the statutory end?
   let discrepancyDays = null;
@@ -571,6 +871,10 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
     noticeMonths: Number.isFinite(bracket.noticeMonths) ? bracket.noticeMonths : null,
     noticeQuantity: quantityText(bracket),
     statutoryMinimumExists: true,
+    // THE DATES TENURE WAS MEASURED BETWEEN — start date as the calculation saw it, and the day it counted to.
+    // The sidebar re-reads the record when it opens; if that record's start date differs, a signer must see both.
+    tenureMeasuredFrom: startDate ?? null,
+    tenureMeasuredTo: toCalendarDay(now),
     noticeStartDate: rawStart,
     noticeEndDate,
     proposedEndDate: proposedEndDate ?? null,
@@ -578,5 +882,8 @@ export function computeNoticePeriod({ countryCode, startDate, probationEndDate, 
     discrepancy,
     noticeRuleFound: true,
     anchorAdjusted,
+    // REMOTE'S BLENDED FIGURE AGAINST THIS ONE. The citation travels with it so
+    // the two provenances are never collapsed into one number on a screen.
+    reconciliation: reconcile({ ...bracket, sourceCitation: rule.sourceCitation }),
   };
 }

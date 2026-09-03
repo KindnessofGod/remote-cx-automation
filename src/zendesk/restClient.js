@@ -107,6 +107,30 @@ export class ZendeskClient {
     };
   }
 
+  /**
+   * The `Authorization` value this client would send, exposed for callers that
+   * must authenticate a request this class does not itself make.
+   *
+   * THE ONLY SUCH CALLER TODAY is UC-02's attachment downloader: a Zendesk
+   * `content_url` is fetched directly rather than through #request(), because
+   * it returns a file rather than JSON. On an account configured to require
+   * sign-in for attachments, an unauthenticated fetch returns HTTP 200 with a
+   * LOGIN PAGE — see src/uc02/attachmentDownload.js for what that cost.
+   *
+   * It delegates to the private builder rather than duplicating it, so the
+   * token cache, the 60s-early refresh and the api-token fallback are shared.
+   * A second copy of this logic would be a second place for auth to drift.
+   *
+   * Exposing it is a deliberate, narrow widening: the value is already sent on
+   * every request this client makes, so no new secret is revealed to anything
+   * that already holds the client. The downloader is the thing responsible for
+   * not sending it to the wrong host, and it refuses any host but the
+   * configured account.
+   */
+  async authorizationHeader() {
+    return this.#authHeader();
+  }
+
   async #authHeader() {
     if (this.authMode === "token") {
       return `Basic ${Buffer.from(`${this.email}/token:${this.apiToken}`).toString("base64")}`;

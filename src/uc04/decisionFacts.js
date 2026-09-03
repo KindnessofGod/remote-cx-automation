@@ -76,6 +76,16 @@
 // ---------------------------------------------------------------------------
 
 import { normalizeCountryCode } from "../shared/countryCodes.js";
+/* NAMES IN PROSE, NOT CODES (2026-08-31). Three findings on this page
+   interpolated a raw alpha-2 code or a raw enum slug into a sentence that sat
+   directly above an evidence row rendering the SAME value in words: "PT is
+   inside the Schengen area" over "Destination: Portugal", and "Duties are
+   'engineering'" over "Job duties: Engineering". The rows get named because
+   zaf-app/assets/country.js lists their labels as country-valued; prose is not
+   eligible and never will be, so the naming has to happen here. Same argument
+   the sidebar already makes for the trip line: a reader should not decode two
+   countries before they have read a single finding. */
+import { countryLabel } from "../shared/countryNames.js";
 import { describeRequesterParties } from "../shared/requesterSubject.js";
 import {
   SCHENGEN,
@@ -84,6 +94,8 @@ import {
   JOB_DUTY_CATEGORIES,
   SCHENGEN_LIMIT_DAYS,
   SCHENGEN_WINDOW_DAYS,
+  LEAD_TIME_MINIMUM_DAYS,
+  LEAD_TIME_RECOMMENDED_DAYS,
 } from "./riskMatrix.js";
 // Pure data plus two lookups — no client, no clock, no I/O. See that file's
 // header for why it is a hand-curated map and not a retriever.
@@ -92,8 +104,26 @@ import {
   uncitedFinding,
   SOURCE_FRAMING,
   CAVEAT_FRAMING,
+  CONFIRMATION_FRAMING,
   RETRIEVAL_METHOD,
 } from "./decisionSources.js";
+import { servesRoute } from "./sourceJurisdiction.js";
+import { describeActivityProfile, normalizeActivityProfile } from "./activityProfile.js";
+/* THE TWO AGREEMENT REGISTERS, IMPORTED RATHER THAN COPIED (2026-08-31).
+   Whether an instrument is in force between two states is a property of the
+   PAIR, not of the use case asking — the same argument that makes
+   `src/uc04/policyEngine.js` import UC-03's `SANCTIONED_OR_RESTRICTED` rather
+   than restate it. Both are frozen citation data: no client, no clock, no I/O,
+   and neither is reached by a gate here. They are read ONLY to describe, never
+   to decide — see treatyDimension's own note. */
+import { SOCIAL_SECURITY_COVERAGE } from "../uc08/decisionSources.js";
+import { TAX_CONVENTION_BY_PAIR } from "../uc07/decisionSources.js";
+import {
+  summariseIdentityDocuments,
+  DOCS_ON_FILE,
+  DOCS_NONE_ON_FILE,
+  DOCS_FIELD_ABSENT,
+} from "./identityDocuments.js";
 
 /** The one human this whole file is written for. */
 export const DECIDER = Object.freeze({
@@ -207,6 +237,17 @@ function treatyDimension({ nationality, destination, flags, riskRan }) {
     question: "Is this country pair covered by a social-security or tax agreement?",
   };
   const pair = nationality && destination ? `${nationality} → ${destination}` : null;
+  /* THE PROSE SAID "US → NL" WHILE THE EVIDENCE ROW UNDER IT SAID "United
+     States → Netherlands" (2026-08-31). Both were this dimension's own output,
+     six lines apart on the rendered page: the row goes through the sidebar's
+     country registry because its LABEL is mapped, and a code interpolated into
+     a sentence is unreachable by that registry — the same defect §3.101 fixed
+     for "Days in NL". Spelling the names here is the fix that cannot drift,
+     because it happens where the codes are. */
+  const pairLabel =
+    nationality && destination
+      ? `${countryLabel(nationality, nationality)} → ${countryLabel(destination, destination)}`
+      : null;
 
   if (!riskRan) {
     return {
@@ -221,26 +262,139 @@ function treatyDimension({ nationality, destination, flags, riskRan }) {
     return {
       ...base,
       state: "attention",
-      finding: `No totalization or tax agreement is on record for ${pair ?? "this country pair"}. Contributions may fall due in both countries for the same period.`,
+      finding: `No totalization or tax agreement is on record for ${pairLabel ?? "this country pair"}. Contributions may fall due in both countries for the same period.`,
       evidence: [
-        { label: "Country pair", value: pair ?? "not stated" },
+        { label: "Nationality → destination", value: pair ?? "not stated" },
         { label: "Recorded status", value: "known gap" },
       ],
     };
   }
 
+  /* THE REGISTERS ARE NOW READ, AND THE `unknown` STATE IS NO LONGER THE ONLY
+     ANSWER (2026-08-31). Twice this branch was left deliberately frozen with
+     the note "it is the owner's call" — the second time against a page that was
+     displaying, as a caveat under this very finding, C-9's table naming the
+     pair as covered. The owner has now called it.
+
+     WHAT CHANGED IS WHERE THE ANSWER COMES FROM, NOT WHAT COUNTS AS ONE. The
+     two registers were already in this repository, one use case over each:
+     `SOCIAL_SECURITY_COVERAGE` (src/uc08/decisionSources.js) holds six pairs
+     with a network, a certificate and a maximum initial detachment;
+     `TAX_CONVENTION_BY_PAIR` (src/uc07/decisionSources.js) holds the bilateral
+     tax convention for the same six. Nothing is invented here and no figure is
+     computed — the pair is looked up, and if BOTH registers answer, the two
+     instruments they name are reported with their own columns.
+
+     BOTH LIMBS, OR NEITHER. The question this dimension asks names social
+     security AND tax, and they are different instruments settling different
+     things: Reg. 883/2004 says whose scheme applies and is silent on taxing
+     rights; a convention's art. 15/16 says the reverse. Answering one and
+     printing a settled state over both is the misreading the EU branch below
+     was written to avoid, so `cleared` requires an entry in each register. A
+     pair only one of them holds falls through to `unknown` unchanged, where the
+     sentence already tells the reader to read the corpus below.
+
+     IT STILL DECIDES NOTHING. No flag is raised or cleared here, so the risk
+     level, the gate ladder and the routing are bit-for-bit what they were: the
+     matrix's `NON_TREATY_PAIRS` remains the only country-pair rule with any
+     effect on the decision, and it is untouched. That is why this needed no n8n
+     republish — `workflows/nodes-uc04/workationGates.js` has no treaty
+     dimension to drift from. What changed is only what the specialist is told.
+
+     AND IT DOES NOT CONFIRM A CERTIFICATE. An agreement being in force is not
+     an A1 or a CPT63 having been issued for this trip. The finding says so, and
+     the certificate column names what would have to be obtained. */
+  const coverageKey =
+    nationality && destination && nationality !== destination ? [nationality, destination].sort().join("|") : null;
+  const socialSecurity = coverageKey && Object.hasOwn(SOCIAL_SECURITY_COVERAGE, coverageKey)
+    ? SOCIAL_SECURITY_COVERAGE[coverageKey]
+    : null;
+  const taxConvention = coverageKey && Object.hasOwn(TAX_CONVENTION_BY_PAIR, coverageKey)
+    ? TAX_CONVENTION_BY_PAIR[coverageKey]
+    : null;
+
+  if (socialSecurity?.covered === true && taxConvention) {
+    return {
+      ...base,
+      state: "cleared",
+      finding:
+        `Both limbs are covered for ${pairLabel}: a social-security agreement (${socialSecurity.network}) and a ` +
+        "bilateral tax convention, both cited below. No certificate of coverage is confirmed for this trip — " +
+        "obtain the one named below before the employee travels.",
+      evidence: [
+        { label: "Nationality → destination", value: pair },
+        { label: "Social-security network", value: socialSecurity.network },
+        { label: "Certificate that evidences it", value: socialSecurity.certificate },
+        { label: "Maximum initial detachment", value: socialSecurity.maximumInitialDetachment },
+        { label: "Tax convention articles", value: taxConvention.locator },
+      ],
+    };
+  }
+
+  /* THE SENTENCE BELOW USED TO END "this system holds no register of pairs that
+     ARE covered, so nothing here confirms one" UNCONDITIONALLY, and on an
+     intra-EU pair that was FALSE while the same run said so (fixed 2026-08-30,
+     §3.100). `EU_EEA_FOR_A1` IS a register of covered pairs; when it answers,
+     `a1_certificate_recommended` fires and this page cites Regulation (EC) No
+     883/2004 with its three operative articles a few inches above. Printing
+     "nothing here confirms coverage" over that citation is the §3.98 shape
+     exactly: a caution that outlived the data it was written about, and this
+     one contradicted the evidence on its own screen.
+
+     THE STATE IS DELIBERATELY UNCHANGED. Whether an EU pair should still read
+     `unknown` is a policy question — Reg 883/2004 settles which state's SOCIAL
+     SECURITY applies, and a tax treaty is a different instrument answering a
+     different question — and it is recorded as the owner's call rather than
+     decided here. What is fixed is only the false clause. */
+  const euCoordinated = flags.includes("a1_certificate_recommended");
+
   return {
     ...base,
     state: "unknown",
-    finding:
-      `${pair ?? "This country pair"} is not on the list of pairs known to LACK an agreement. ` +
-      "That is the absence of a recorded gap, not a record of coverage — this system holds no register of pairs that ARE covered, so nothing here confirms one.",
+    finding: euCoordinated
+      ? `${pairLabel ?? "This country pair"} is coordinated for social security by Regulation (EC) No 883/2004, ` +
+        "cited below, and an A1 evidences it. The tax side is a separate bilateral instrument and is not on " +
+        "record here — confirm it before approving."
+      : /* THE CLAUSE THIS REPLACES WAS FALSE, AND THE PAGE DISPROVED IT ITSELF
+           (2026-08-31). It read "this system holds no register of pairs that
+           ARE covered" — printed, on a US → PT trip, directly above a citation
+           to D-20, the SSA's own status table, which carries the US–Portugal
+           row (in force 1989-08-01, TIAS 12121). Untrue three times over:
+           src/uc08/decisionSources.js's SOCIAL_SECURITY_COVERAGE is a
+           five-column register naming six pairs; riskMatrix.js's EU_EEA_FOR_A1
+           is a coverage register too (which is what §3.100 established when it
+           fixed the EU branch above and left this one); and C-9, rendered as a
+           caveat under this very finding, names US–NL, US–PT, US–CA, CA–NL and
+           CA–PT with their authorities, dates, certificates and detachment
+           limits.
+
+           WHAT SURVIVES IS THE NARROW, TRUE CLAIM: UC-04's own matrix holds a
+           known-gap list and nothing else, so the CHECK that produced this
+           decision confirms no coverage. A citation is not a gate. Saying so
+           precisely is the difference between disclosing a limit of the check
+           and denying the existence of material this same page is displaying.
+
+           THE STATE IS DELIBERATELY UNCHANGED, for the second time. Whether a
+           pair the corpus documents should still read `unknown` flips whether
+           C-9 renders at all and contradicts UC-04.md §3's "never guess a
+           country isn't covered" — it is the owner's call, half-owned already
+           by qa/HUMAN-DECISIONS-REQUIRED.md §D2(a). Only the false clause is
+           fixed here. */
+        `${pairLabel ?? "This country pair"} is not on the known-gap list — the absence of a recorded gap, not a ` +
+        "record of coverage. Where the sources below name an instrument for this pair, read it there and confirm " +
+        "coverage before approving.",
     evidence: [
-      { label: "Country pair", value: pair ?? "not stated" },
+      /* NATIONALITY → DESTINATION, WHICH IS NOT THE TRIP. The trip line at the
+         top of the page reads home country → destination; this pair is keyed on
+         NATIONALITY (riskMatrix.js builds `${nationality}_${destinationCountry}`).
+         On a US national working in the US they are the same two words and the
+         difference is invisible; on a Portuguese national working in Germany
+         they diverge silently, under a label that says neither. */
+      { label: "Nationality → destination", value: pair ?? "not stated" },
       { label: "Recorded status", value: "no gap on record; coverage unconfirmed" },
     ],
     whatItWouldTake:
-      "The maintained totalization/treaty table UC-04.md §3 lists as [PROPOSED], sourced from ssa.gov and the EU portable-document registry, so that 'covered' and 'not on the gap list' stop being the same answer.",
+      "The maintained totalization/treaty table this use case's specification lists as [PROPOSED], sourced from ssa.gov and the EU portable-document registry, so that 'covered' and 'not on the gap list' stop being the same answer.",
   };
 }
 
@@ -394,16 +548,47 @@ function roleDimension({ factors, flags, riskRan }) {
   if (duties === JOB_DUTY_CATEGORIES.sales) triggers.push("a sales role (client negotiation)");
   if (duties === JOB_DUTY_CATEGORIES.legal) triggers.push("an in-house legal role (contract negotiation)");
 
+  /* THE PAGE SAID "DATA SCIENTIST" AND "ENGINEERING" SIX INCHES APART AND
+     EXPLAINED NEITHER (2026-08-31). Both were correct. "Job title" under "Who
+     this is about" is read live from the Remote employment record; this row is
+     a category the REQUESTER selected from a fixed list of seven, sent on the
+     request body, and `src/uc04/server.js`'s own comment says the title is
+     "the only independent evidence about the role this system holds" and that
+     "nothing here compares them; a human does."
+
+     THE HUMAN CANNOT DO THAT IF NOBODY TELLS THEM THERE ARE TWO FACTS. The
+     stated home country already carries exactly this disclosure a few inches
+     up ("It is not read from the Remote employment record and is never
+     compared to it, so a wrong country here is not caught anywhere") and the
+     duties never did — so the one row on this page where the record offers an
+     independent check read as though it WERE the record. It is the same defect
+     as the portal's persona caption, which printed the session role over
+     eleven different legal relationships: nothing false, and read as a claim
+     about a different field that happens to share a vocabulary.
+
+     THE LABEL IS THE FIX, NOT A NEW GATE. Comparing the two automatically
+     would be a rule about which of seven categories a job title implies, and
+     `src/uc04/intakeExtractor.js` already refuses that judgement by name —
+     `jobDuties` is in NEVER_EXTRACTED_FIELDS because "choosing the nearest one
+     is exactly the kind of judgement a model must not make here." A Data
+     Scientist selecting 'engineering' is a correct answer; so is 'other'. What
+     was missing was the reader being told which fact they are looking at. */
   const evidence = [
-    { label: "Job duties", value: jobDutyWords(duties) ?? "not stated" },
+    { label: "Job duties, as stated on the request", value: jobDutyWords(duties) ?? "not stated" },
     { label: "Contract-signing authority", value: signing === null ? "not stated" : signing ? "yes" : "no" },
   ];
+
+  const dutiesProvenance =
+    " Duty category is selected by the requester, not read from the job title; nothing compares the two.";
 
   if (triggers.length > 0) {
     return {
       ...base,
       state: "attention",
-      finding: `This trip carries permanent-establishment exposure because the employee has ${triggers.join(" and ")}. That escalates the request on its own, regardless of how every other dimension reads.`,
+      finding:
+        `Permanent-establishment exposure: the employee has ${triggers.join(" and ")}. That escalates this ` +
+        "request on its own, whatever the other dimensions read." +
+        dutiesProvenance,
       evidence,
     };
   }
@@ -416,7 +601,9 @@ function roleDimension({ factors, flags, riskRan }) {
       ...base,
       state: "attention",
       finding:
-        "The risk matrix raised permanent-establishment exposure on this request, but the stated duties and signing authority do not name which rule fired. Read the flags on the case.",
+        "Permanent-establishment exposure was raised, but the stated duties and signing authority do not name " +
+        "which rule fired. Read the flags on the case." +
+        dutiesProvenance,
       evidence,
     };
   }
@@ -424,7 +611,10 @@ function roleDimension({ factors, flags, riskRan }) {
   return {
     ...base,
     state: "cleared",
-    finding: `Duties are '${duties}' with no contract-signing authority, so none of the role rules that force escalation applies.`,
+    finding:
+      `Duties are '${jobDutyWords(duties) ?? duties}' with no contract-signing authority, so no role rule forcing ` +
+      "escalation applies." +
+      dutiesProvenance,
     evidence,
   };
 }
@@ -462,7 +652,7 @@ function presenceDimension({ factors, risk, tripDays, cumulativeDays, flags, ris
       ...base,
       state: "not_assessed",
       finding:
-        "Not assessed — no rolling-window count was taken, because an earlier gate decided this request (or the destination is the employee's own work country, where the question does not arise).",
+        "Not assessed — no rolling-window count was taken: an earlier gate decided this request, or the destination is the employee's own work country.",
       evidence: [],
     };
   }
@@ -485,12 +675,12 @@ function presenceDimension({ factors, risk, tripDays, cumulativeDays, flags, ris
       ...base,
       state: "unknown",
       finding:
-        `No prior trips to ${destination || "the destination"} were supplied with this request, so the count is 0 across 0 trips — a FLOOR, not a measurement. ` +
-        "Nothing was read from Remote to confirm the employee has not been there; the request simply carried no history. " +
-        "An empty history is a reason to escalate rather than something to treat as complete.",
+        `No prior trips to ${countryLabel(destination, "the destination")} were supplied, so the count is 0 across ` +
+        "0 trips — a floor, not a measurement. Nothing was read from Remote to confirm the employee has not been " +
+        "there. Treat an empty history as a reason to escalate.",
       evidence,
       whatItWouldTake:
-        "A read of this employee's own travel-letter requests across time (UC-04.md §3 lists that same endpoint, filtered by employee, as how Remote's own reviewers do it), so an empty history is a confirmed nil rather than a silence.",
+        "A read of this employee's own travel-letter requests across time (this use case's specification lists that same endpoint, filtered by employee, as how Remote's own reviewers do it), so an empty history is a confirmed nil rather than a silence.",
     };
   }
 
@@ -525,6 +715,63 @@ function presenceDimension({ factors, risk, tripDays, cumulativeDays, flags, ris
 }
 
 /**
+ * The `Document read from Remote` evidence row, and the sentence that goes with
+ * it — built from what the employment record actually carries (2026-08-31).
+ *
+ * THIS ROW USED TO BE THE HARD-CODED STRING `"none"`. It reported an absence on
+ * a record the same request had already fetched, having never looked at the
+ * documented field that holds the answer — the P9 half of C-27 (claiming more
+ * than was done) inside the one dimension written to avoid it, and the thing
+ * the project owner asked about directly. See `./identityDocuments.js` for what
+ * Remote publishes, what the Sandbox holds, and the bound below.
+ *
+ * IT STILL NEVER CLEARS THE DIMENSION, and the reason is Remote's own: a
+ * right-to-work document on the employment record establishes entitlement in
+ * the COUNTRY OF EMPLOYMENT, and this dimension is about the DESTINATION. Every
+ * branch here therefore returns evidence and prose only — no state — and the
+ * caller's state is unchanged by what is found.
+ */
+function documentEvidence(summary) {
+  switch (summary.state) {
+    case DOCS_ON_FILE: {
+      const kinds = summary.kinds.length ? summary.kinds.join(", ") : "kind not stated on the record";
+      return {
+        row: {
+          label: "Identity documents on the employment record",
+          value:
+            `${summary.count} on file (${kinds})` +
+            (summary.mostRecent ? `, most recent ${summary.mostRecent.slice(0, 10)}` : "") +
+            (summary.standin ? " — STAND-IN FIXTURE, not a document Remote returned" : ""),
+        },
+        clause:
+          `the identity document${summary.count === 1 ? "" : "s"} on Remote's record` +
+          (summary.standin ? " (a stand-in fixture)" : "") +
+          `${summary.count === 1 ? " covers" : " cover"} the country of employment, not the destination`,
+      };
+    }
+    case DOCS_NONE_ON_FILE:
+      return {
+        row: {
+          label: "Identity documents on the employment record",
+          value:
+            `none${summary.totalFiles ? ` (${summary.totalFiles} file${summary.totalFiles === 1 ? "" : "s"} of other kinds: ${summary.otherTypes.join(", ") || "type not stated"})` : " — the record holds no files at all"}`,
+        },
+        clause: "Remote's record holds no identity document",
+      };
+    case DOCS_FIELD_ABSENT:
+      return {
+        row: { label: "Identity documents on the employment record", value: "not carried on the record read" },
+        clause: "Remote's record carries no documents field, so nothing was searched",
+      };
+    default:
+      return {
+        row: { label: "Identity documents on the employment record", value: "not read" },
+        clause: "no employment record was read",
+      };
+  }
+}
+
+/**
  * Dimension 4 — the immigration authorization document itself.
  *
  * THIS ONE IS NEVER CONFIRMED, AND THAT IS THE FINDING. UC-04.md §5 asks for
@@ -539,8 +786,38 @@ function presenceDimension({ factors, risk, tripDays, cumulativeDays, flags, ris
  * a claim into a confirmation, which is the one thing §9 forbids by name. So
  * this dimension states the claim, states that no document backs it, and names
  * what would.
+ *
+ * WHAT CHANGED 2026-08-31, AND WHAT DID NOT. It now READS the employment
+ * record's `files[]` instead of asserting `"none"` — see `documentEvidence()`
+ * above and `./identityDocuments.js`. The dimension's STATE is untouched by
+ * what it finds: an identity document proves right to work in the country of
+ * employment, never entitlement at the destination, so there is no branch here
+ * that returns `cleared` and no value of `identityDocuments` that could reach
+ * one. §5 and §9 are as binding after this change as before it; the only
+ * difference is that the absence is now measured rather than assumed.
  */
-function documentDimension({ factors, flags, riskRan }) {
+/**
+ * What the "travel document number" row says when there is no number — and it
+ * must never be a bare "none". "Remote holds no number for this request" and
+ * "there is no Remote request" and "we could not ask Remote" are three
+ * different facts, and the first is the only one that is about the traveller.
+ */
+function linkedRequestAbsence(linkedRequest) {
+  switch (linkedRequest?.state) {
+    case "read":
+      return "not stated on the request";
+    case "missing":
+      return "the linked Remote request no longer exists";
+    case "unavailable":
+      return "Remote could not be asked";
+    case "not_looked_up":
+      return "not looked up by this deployment";
+    default:
+      return "no Remote request is linked to this decision";
+  }
+}
+
+function documentDimension({ factors, flags, riskRan, identityDocuments = null, linkedRequest = null }) {
   const base = {
     position: 4,
     key: "immigration_document",
@@ -548,10 +825,35 @@ function documentDimension({ factors, flags, riskRan }) {
     question: "Is there a document permitting this person to work there — not merely a stated visa type?",
   };
   const visaType = factors?.visaType ?? null;
+  const documents = identityDocuments ?? summariseIdentityDocuments(null);
+  const documentRead = documentEvidence(documents);
+  /* THE NUMBER THE REQUEST WAS ALREADY CARRYING (W-1). `travel_document_number`
+     is a [CONFIRMED] field on Remote's own work-authorization request, it was
+     being fetched at decision time by requestLink.js, and it was dropped — so
+     this dimension told a specialist "a claim, not a document" about a request
+     that named a specific document. It is read live off the linked request now
+     (src/uc04/linkedRequest.js).
+
+     IT DOES NOT CLEAR THIS DIMENSION AND NOTHING HERE LETS IT. A travel
+     document number is the number of the document the traveller will travel
+     ON — a passport in practice — typed by the requester on Remote's form. It
+     identifies a document a specialist can go and verify, which is materially
+     more than a dropdown selection, and it is still not an authorization to
+     WORK at the destination. UC-04.md §5/§9 forbid inferring that document, and
+     no branch below returns `cleared` whatever this row holds. */
+  const linkedFields = linkedRequest?.fields ?? null;
+  const travelDocument = linkedFields?.travelDocumentNumber ?? null;
+  const workLocation = linkedFields?.workLocation ?? null;
+
   const evidence = [
     { label: "Travel document type stated by the requester", value: visaTypeWords(visaType) ?? "not stated" },
-    { label: "Document read from Remote", value: "none" },
+    {
+      label: "Travel document number on the Remote request",
+      value: travelDocument ?? linkedRequestAbsence(linkedRequest),
+    },
+    documentRead.row,
   ];
+  if (workLocation) evidence.push({ label: "Work location stated on the Remote request", value: workLocation });
   const blockedByType =
     riskRan &&
     (flags.includes("visitor_visa_blocks_remote_work") ||
@@ -563,8 +865,8 @@ function documentDimension({ factors, flags, riskRan }) {
       ...base,
       state: "blocking",
       finding:
-        `The document TYPE stated — ${visaTypeWords(visaType) ?? "none"} — does not permit working at this destination, so the request cannot be granted as worded whatever document is later produced. ` +
-        "No document was read; this is a finding about the stated type alone.",
+        `The stated document type — ${visaTypeWords(visaType) ?? "none"} — does not permit work at this destination, ` +
+        "so this request cannot be granted as worded, whatever document is produced later.",
       evidence,
       whatItWouldTake:
         "Nothing changes this one from here: a document type that permits work has to be obtained and the request re-submitted.",
@@ -574,12 +876,22 @@ function documentDimension({ factors, flags, riskRan }) {
   return {
     ...base,
     state: "unavailable",
-    finding:
-      `${visaTypeWords(visaType) ?? "No document type"} is what the requester SELECTED on the form. No immigration document was read from Remote and none is held here, so nothing confirms one exists. ` +
-      "Whether a document exists must never be inferred from the destination, which is why it is reported as absent rather than assumed.",
+    // TWO SENTENCES, AND THE MIDDLE ONE WENT TO THE ROW BENEATH IT. This used to
+    // spend a whole sentence on what the record holds — "though it holds 1 file
+    // of other kinds — not filed, rather than not read" — directly above an
+    // evidence row that already says `none (1 file of other kinds: contract)`.
+    // The distinction that sentence was defending is real and must survive: a
+    // record nobody read and a record with nothing filed are different answers.
+    // It survives in the CLAUSE, which differs for all four document states, and
+    // in the row. It does not need to be argued twice.
+    finding: travelDocument
+      ? `The Remote request names travel document ${travelDocument} — the document they will travel on, not a right ` +
+        "to work at the destination. Verify it, and obtain the destination's authorization before approving."
+      : `${visaTypeWords(visaType) ?? "No document type"} is a type the requester selected, not a document, and ` +
+        `${documentRead.clause}. Obtain the destination's authorization before approving.`,
     evidence,
     whatItWouldTake:
-      "The linked travel-letter request's `travel_document_number` (a [CONFIRMED] field, resolved at decision time by src/uc04/requestLink.js but not kept — `uc04_authorizations` has no `remote_request` column, already an open item in UC-04.md), or an employment custom field holding the immigration authorization.",
+      "The linked travel-letter request's `travel_document_number` (a [CONFIRMED] field, resolved at decision time when the request is linked, but not kept — this system's work-authorization record has no column for it, which is already an open item on this use case), or an employment custom field holding the immigration authorization. Note that an identity document in `files[]` would NOT do it: Remote's Right-to-Work check establishes entitlement in the country of employment, and this dimension asks about the destination.",
   };
 }
 
@@ -625,7 +937,7 @@ function measurements({ factors, risk, tripDays, cumulativeDays, flags, riskRan 
       // NOT "passed". Nothing was measured and nothing cleared.
       state: "suppressed",
       note:
-        `${destination} is inside the Schengen area, so the ${SCHENGEN_LIMIT_DAYS}-days-in-${SCHENGEN_WINDOW_DAYS} allowance WOULD govern this trip — and it was NOT applied. ` +
+        `${countryLabel(destination, "This destination")} is inside the Schengen area, so the ${SCHENGEN_LIMIT_DAYS}-days-in-${SCHENGEN_WINDOW_DAYS} allowance WOULD govern this trip — and it was NOT applied. ` +
         "The check was skipped because this destination is treated as running a formal digital-nomad-visa scheme, which is assumed to sit outside the short-stay allowance. " +
         "No day count was taken, so nothing here says the employee is within the limit; the limit was excused, which is a different fact.",
       basis: {
@@ -677,8 +989,35 @@ function measurements({ factors, risk, tripDays, cumulativeDays, flags, riskRan 
     // It has approved of nothing." That is exactly what happened. No window is
     // emitted either: `trailingWindow()` would compute a plausible one, and a
     // window nothing measured over is the same lie in a smaller font.
-    const refused =
-      flags.includes("travel_history_unreadable") || measurement?.status === "NOT_EVALUATED";
+    // FIXED FOR EVERY EARLY EXIT, NOT TWO OF THEM (2026-09-02).
+    //
+    // The comment above diagnosed this exactly and then closed it for one
+    // cause. `classifyRisk()` returns early with `schengen: null` whenever ANY
+    // prior gate raised a reason (src/uc04/riskMatrix.js) — a visitor visa, a
+    // US/CA work permit, a same-country trip, an invalid date. Only two of
+    // those set `travel_history_unreadable` or `NOT_EVALUATED`, so every other
+    // early exit fell straight through to the `within_limit` branch and the
+    // page rendered, in green, on a decision taken seconds earlier:
+    //
+    //     Schengen days across a rolling 180 days
+    //     not measured on this run      ✓ Within the limit
+    //
+    // — the value and the state mark contradicting each other on ONE LINE, over
+    // a 180-day window `trailingWindow()` had synthesised across a period
+    // nothing was measured over, filed below the controls under the summary
+    // "Each of these ran and found nothing against the request. None of them is
+    // a gate that never ran." Found by a global mobility specialist reading the
+    // reassembled panel, who called it the one finding that would stop them
+    // signing a Schengen case.
+    //
+    // THE TEST IS NOW THE ABSENCE OF A MEASUREMENT, WHICH IS THE THING ITSELF.
+    // There is no honest route from "no count was taken" to "within the limit",
+    // whatever the reason, so the reason is no longer consulted — a new early
+    // exit added to the matrix tomorrow is covered by construction rather than
+    // by somebody remembering to extend a list. `breached` still wins where the
+    // flag records an overstay, because that IS a measurement result: the
+    // matrix had to count to raise it.
+    const refused = !counted && !flags.includes("schengen_overstay");
     const window = counted && measurement.window
       ? measurement.window
       : refused
@@ -704,13 +1043,13 @@ function measurements({ factors, risk, tripDays, cumulativeDays, flags, riskRan 
           ? `Exceeded: this trip would take the employee past ${SCHENGEN_LIMIT_DAYS} days in the ${SCHENGEN_WINDOW_DAYS} days to ${window?.to ?? "the trip start"}. The exact total is not recorded on this row — only that it is over.`
           : refused
             ? `Not measured, and therefore not cleared. A prior stay could not be read, so no day count was attempted and no ${SCHENGEN_WINDOW_DAYS}-day window was chosen — there is no total here that is under ${SCHENGEN_LIMIT_DAYS}, and none that is over it. Fix or remove the stay named in the decision and re-run; nothing about the allowance has been established either way.`
-            : `Within the limit. The measured total is not recorded on this row: this decision predates the matrix carrying its Schengen figure forward, so "under ${SCHENGEN_LIMIT_DAYS}" is what is known, not by how much.`,
+            : `Not measured on this run, and therefore not cleared. No day count was taken and no ${SCHENGEN_WINDOW_DAYS}-day window was chosen — there is no total here that is under ${SCHENGEN_LIMIT_DAYS}, and none that is over it. This says nothing about the allowance in either direction.`,
       ...(counted
         ? {}
         : {
             whatItWouldTake: refused
               ? "A readable travel history. The row named in the decision has to be corrected or removed; until then there is nothing to measure and this limit stays unassessed."
-              : "A re-run of this request on the current matrix, which carries the Schengen peak on `risk.schengen`. This row is a decision taken before that, and the figure it measured was not kept.",
+              : "A re-run once whatever stopped the matrix has been resolved. An earlier gate decided this request before the day count ran, so the allowance was never assessed — the decision on this row is about that earlier gate, not about Schengen.",
           }),
     });
   }
@@ -726,7 +1065,13 @@ function measurements({ factors, risk, tripDays, cumulativeDays, flags, riskRan 
     rows.push({
       state: total > RESIDENCY_LIMIT_DAYS ? "breached" : "within_limit",
       key: "tax_residency_183",
-      label: `Days in ${destination || "the destination"} across a rolling ${RESIDENCY_WINDOW_DAYS} days, including this trip`,
+      // A COMPOSED LABEL CANNOT BE NAMED BY THE BROWSER. zaf-app's
+      // COUNTRY_VALUED_LABELS maps a whole label onto "this row holds a country
+      // code"; a code interpolated INTO a label is invisible to it, and there
+      // is no label to register. So this one names its own country, the same as
+      // the three prose sites above — otherwise the row reads "Days in NL"
+      // directly under a finding that says "Netherlands".
+      label: `Days in ${countryLabel(destination, "the destination")} across a rolling ${RESIDENCY_WINDOW_DAYS} days, including this trip`,
       limit: RESIDENCY_LIMIT_DAYS,
       unit: "days",
       window: trailingWindow(factors?.startDate, RESIDENCY_WINDOW_DAYS),
@@ -737,6 +1082,86 @@ function measurements({ factors, risk, tripDays, cumulativeDays, flags, riskRan 
         total > RESIDENCY_LIMIT_DAYS
           ? `${total} days against a ${RESIDENCY_LIMIT_DAYS}-day watch line — over by ${total - RESIDENCY_LIMIT_DAYS}.`
           : `${total} days against a ${RESIDENCY_LIMIT_DAYS}-day watch line — ${RESIDENCY_LIMIT_DAYS - total} of headroom.`,
+    });
+  }
+
+  /* W-3 — NOTICE BEFORE DEPARTURE, and it belongs here rather than in a fifth
+     dimension. UC-04.md §7 fixes the four dimensions and forbids collapsing
+     them; lead time is not a fifth independent judgement, it is a measured
+     value against a stated line, which is exactly what this section is.
+
+     IT IS THE FACT THAT DECIDES WHETHER EVERY OTHER REMEDY ON THIS PAGE IS
+     REAL. "Obtain the destination's authorization before approving", "obtain
+     the certificate named below", a Modelo 21-RFI that must reach the payer by
+     the 20th — each is an instruction with a lead time of weeks, printed on a
+     screen that until now never said how many days were left. Four days'
+     notice and four months' notice rendered identically.
+
+     THE LINE IS THIS SYSTEM'S OWN AND THE ROW SAYS SO. `basis` carries
+     `[PROPOSED]` and names no authority, because none sets a notice period for
+     a workation — the same disclosure the Schengen suppression row makes about
+     `DNV_COUNTRIES`, for the same reason: a limit a reader assumes is a rule is
+     worse than no limit at all. */
+  const leadTimeDays = isRealNumber(risk?.leadTimeDays) ? risk.leadTimeDays : null;
+  if (riskRan && leadTimeDays !== null) {
+    const short = leadTimeDays < LEAD_TIME_MINIMUM_DAYS;
+    const belowRecommended = !short && leadTimeDays < LEAD_TIME_RECOMMENDED_DAYS;
+    const days = (n) => `${n} day${n === 1 ? "" : "s"}`;
+    rows.push({
+      /* `urgent`, NOT `breached`. The panel's own vocabulary already had the
+         right word — "Urgent: checked, and the time left to act on it is
+         short" — written before this row existed and describing it exactly.
+         `breached` renders as "OVER THE LIMIT", which is what 13 days against a
+         14-day MINIMUM is not, and its tone is `stopped`, which would draw a
+         short-notice trip in the colour reserved for things an approval cannot
+         override. Short notice is neither. */
+      state: short ? "urgent" : belowRecommended ? "attention" : "within_limit",
+      key: "lead_time",
+      label: "Notice before departure",
+      limit: LEAD_TIME_MINIMUM_DAYS,
+      /* THE ONLY ROW IN THIS SECTION WHOSE LIMIT IS A FLOOR, and saying so is
+         not cosmetic. Every other measurement here is a ceiling — 90 Schengen
+         days, 183 residency days — so both renderers print "67 of 90 days" and
+         "23 days left", which read as "91 of 14 days, 77 days left" on a trip
+         three months out: arithmetically right, and backwards. A reader
+         scanning for a breach would see the largest number over the smallest
+         and take it for the worst row on the page. Absent means ceiling, so
+         every existing row is unaffected. */
+      comparison: "floor",
+      unit: "days",
+      window: null,
+      measured: leadTimeDays,
+      headroom: leadTimeDays - LEAD_TIME_MINIMUM_DAYS,
+      // A CEILING CONCEPT, LEFT FALSE ON PURPOSE. Nothing here is over a limit;
+      // a value under a floor is the opposite shape, and `state` carries it.
+      breached: false,
+      note: short
+        ? `${days(leadTimeDays)} until departure. Remote's own guidance puts a request under two weeks outside the ` +
+          "ordinary flow, and anything this page asks to be obtained — a permit, an A1, a certificate of coverage — " +
+          "takes longer than that."
+        : belowRecommended
+          ? `${days(leadTimeDays)} until departure — inside Remote's two-week floor but below the three-to-eight ` +
+            "week window it recommends. Advice, not a threshold: this is a reason to check the remedies below are " +
+            "already in hand, not a reason to refuse."
+          : `${days(leadTimeDays)} until departure, inside the three-to-eight week window Remote recommends.`,
+      /* NO SOURCE PATH HERE. The first draft named the constant's file, and
+         test/zafSidebarLayout.test.js refused it — correctly: a `src/uc0N`
+         path is engineering backlog wearing a provenance label, and this block
+         renders straight at an approver. The table NAME is what a reader needs
+         to know a curated list decided this; where it lives is not their
+         question. Same shape as DNV_COUNTRIES_PROVENANCE. */
+      basis: {
+        table: "LEAD_TIME_MINIMUM_DAYS / LEAD_TIME_RECOMMENDED_DAYS",
+        status: "[VENDOR-PUBLIC] — Remote's own published guidance, not a statute",
+        authority: "Remote Help Center, article 37802834593805",
+        version: null,
+        reviewedOn: "2026-08-18",
+        detail:
+          "Remote asks for a remote work authorization \"at least 3-8 weeks before your intended departure\", and " +
+          "puts a request under two weeks outside the ordinary flow. Both lines here are Remote's. Neither is a rule " +
+          "of law: a notice period is a vendor's process expectation, which is what makes an exception to it the " +
+          "specialist's call rather than a refusal.",
+      },
     });
   }
 
@@ -784,6 +1209,48 @@ export function requesterParties({ authorizationRow } = {}) {
   const row = authorizationRow;
   if (!row) return null;
   const flags = Array.isArray(row.flags) ? row.flags : [];
+
+  // WHICH OF THE TWO PARTIES FILED IT — because since 2026-08-30 there are two.
+  // A work-authorization request may be filed by the EMPLOYEE about their own
+  // trip (Remote's own primary actor for it) or by a company admin on their
+  // behalf, and the identity gate accepts a different comparison for each
+  // (src/uc04/submissionIdentity.js). The sentences below used to assert the
+  // company comparison unconditionally — "an authenticated actor for the
+  // company, not by the employee" — which is now false of a whole class of row,
+  // and false in the worst way: confidently, about the one thing this block
+  // exists to state precisely.
+  //
+  // READ OFF THE ROW, comparing the two ids the row already holds — the same
+  // comparison describeRequesterParties() makes for `actingFor`, so the two
+  // halves of this block cannot contradict each other. It re-derives no
+  // verdict: `identityVerified` still comes from the gate's own flag.
+  const filerIsSubject =
+    typeof row.requester === "string" &&
+    typeof row.employmentId === "string" &&
+    row.requester.trim() !== "" &&
+    row.requester.trim() === row.employmentId.trim();
+
+  const employeeModel = {
+    authenticatedState: "authenticated_employee_session",
+    authenticatedFinding: (who) =>
+      `Filed by ${who}, an authenticated session naming that employment — the employee this request is about, filing it themselves. That is what Remote's own work-authorization request is: it is submitted by the employee, and the employer's manager approves it.`,
+    identityChecks:
+      "that a session was present, that the employment record could be read, and that the employment id the session names equals the id on that record",
+    identityVerifiedFinding:
+      "Verified: a session was present, the employment record was read, and the employment the session names is the employment this request is about. That is an authorisation to act on this record — it is not evidence about who the person behind the session is.",
+  };
+
+  const adminModel = {
+    authenticatedState: "authenticated_company_actor",
+    authenticatedFinding: (who) =>
+      `Filed by ${who}, an authenticated actor for the company rather than by the employee. UC-04 accepts a session carrying a company id and an admin id, and this row records the admin id that session carried. ` +
+      "The company id itself is not kept on the record, so the company this actor was authenticated for cannot be read back here.",
+    identityChecks:
+      "that a session was present, that the employment record could be read, and that the session's company id equals the employment's company id",
+    identityVerifiedFinding:
+      "Verified: a session was present, the employment record was read, and the company on the session matched the company on the employment. That is an authorisation to act for this company — it is not evidence about who the person behind the session is.",
+  };
+
   return describeRequesterParties({
     filerId: row.requester,
     subjectEmploymentId: row.employmentId ?? null,
@@ -791,20 +1258,17 @@ export function requesterParties({ authorizationRow } = {}) {
     source: row.source ?? null,
     externalRef: row.externalRef ?? null,
     model: {
-      authenticatedState: "authenticated_company_actor",
-      authenticatedFinding: (who) =>
-        `Filed by ${who}, an authenticated actor for the company — not by the employee. UC-04 accepts a session carrying a company id and an admin id, and this row records the admin id that session carried. ` +
-        "The company id itself is not kept on the record, so the company this actor was authenticated for cannot be read back here.",
+      ...(filerIsSubject ? employeeModel : adminModel),
       unauthenticatedFinding:
-        "No authenticated actor. The request arrived without a session carrying an admin id, and the workflow recorded the literal value 'unauthenticated' rather than a name — so nobody is identified as having filed this, and the identity gate below refused it.",
+        "No authenticated actor. The request arrived without a session naming either an employment or an admin id, and the workflow recorded the literal value 'unauthenticated' rather than a name — so nobody is identified as having filed this, and the identity gate below refused it.",
       onBehalfFinding: (who, about) =>
-        `Filed by ${who} about employment ${about} — an actor acting on someone else's record, which is the shape UC-04's session is built for. Nothing on this row says whether the subject knows of or consented to the request.`,
-      identityChecks:
-        "that a session was present, that the employment record could be read, and that the session's company id equals the employment's company id",
-      identityVerifiedFinding:
-        "Verified: a session was present, the employment record was read, and the company on the session matched the company on the employment. That is an authorisation to act for this company — it is not evidence about who the person behind the session is.",
+        `Filed by ${who} about employment ${about} — an actor acting on someone else's record, which a company admin's session is built for. Nothing on this row says whether the subject knows of or consented to the request.`,
+      // THE UNVERIFIED SENTENCE NAMES BOTH ROUTES, and it must: with two ways
+      // to satisfy this gate, "a company mismatch" is no longer the only way to
+      // fail it, and a refusal that names one cause it did not establish is the
+      // failure mode this whole file exists to avoid.
       identityUnverifiedFinding:
-        "NOT verified. One of the three conditions failed — no session, no readable employment record, or a company mismatch — and the row does not record which. This is a failure to confirm, not a finding that the filer is unauthorised.",
+        "NOT verified. Neither accepted relationship could be established — the session was absent, the employment record could not be read, or the session named neither this employment nor this employment's company — and the row does not record which. This is a failure to confirm, not a finding that the filer is unauthorised.",
     },
   });
 }
@@ -847,12 +1311,12 @@ export function describeRequester({ authorizationRow } = {}) {
     statedHomeCountry: {
       value: normalizeCountryCode(risk?.normalized?.homeCountry ?? factors?.homeCountry) || null,
       finding:
-        "Stated on the request as the employee's work country. It is not read from the Remote employment record and is never compared to it, so a wrong country here is not caught anywhere.",
+        "Stated on the request, not read from the employment record and never compared to it — a wrong country here is not caught anywhere.",
     },
     statedNationality: {
       value: normalizeCountryCode(risk?.normalized?.nationality ?? factors?.nationality) || null,
       finding:
-        "Stated on the request. It drives the Schengen allowance and the treaty pair, and no document was read to confirm it — including any second nationality, which this system has no field for.",
+        "Stated on the request. It drives the Schengen allowance and the treaty pair, and no document confirms it. A second nationality cannot be recorded here.",
     },
     // THE SNAPSHOT AS IT STOOD AT DECISION TIME. Still not retained, and this
     // is NOT the same fact as the `employee` block the API view now publishes:
@@ -865,10 +1329,10 @@ export function describeRequester({ authorizationRow } = {}) {
     employmentRecord: {
       state: "not_retained",
       finding: employmentActive
-        ? "The employment gate passed, so the record read at decision time carried the status active. That SNAPSHOT is not kept with this decision, so the employment TYPE (employee or contractor), the country and the entity AS THEY STOOD THEN cannot be read back. The employee card on this screen is a fresh read of the same record as it stands now — which is what the approve button will also re-read, and is not evidence of what the gate saw."
-        : "The employment gate refused: the record read at decision time was absent or not active. Which of those cannot be read back — the snapshot is not kept with this decision. The employee card on this screen reads the record as it stands NOW, which may well differ from what the gate saw.",
+        ? "The employment gate passed on a record read at decision time; that snapshot is not kept, so the type, country and entity as they stood then cannot be read back. The employee card above is a fresh read of the record as it stands now."
+        : "The employment gate refused: the record read at decision time was absent or not active, and which of those cannot be read back — the snapshot is not kept. The employee card above reads the record as it stands now.",
       whatItWouldTake:
-        "An employment snapshot on `uc04_authorizations` — status, type, country and entity as they stood when the decision was made. `uc04_authorizations` has no column for it today, the same gap already recorded for `remote_request` and `reason_text` in UC-04.md.",
+        "An employment snapshot on this system's work-authorization record — status, type, country and entity as they stood when the decision was made. The record has no column for it today, the same gap already recorded for the linked travel-letter request and for the requester's own words.",
     },
   };
 
@@ -886,8 +1350,8 @@ export function describeRequester({ authorizationRow } = {}) {
     statedReason: {
       state: "not_retained",
       finding:
-        "The free text the requester typed to explain the trip is not kept with this decision. It is passed to the summary drafter and written to the append-only audit record, which is where it can still be read.",
-      whatItWouldTake: "The `details.reasonText` field of this decision's `audit_log` row, or a `reason_text` column on `uc04_authorizations`.",
+        "The free text explaining the trip is not kept with this decision. It was passed to the summary drafter and written to the audit record, which is where it can be read.",
+      whatItWouldTake: "The requester's own words carried on this decision's audit record, or a column for them on the work-authorization record.",
     },
   };
 }
@@ -911,6 +1375,12 @@ function findingKeysForDimension(dimension, flags) {
         has("a1_certificate_recommended") ? "a1_certificate_recommended" : null,
         has("non_treaty_pair") ? "non_treaty_pair" : null,
         dimension.state === "unknown" ? "treaty_coverage_unconfirmed" : null,
+        /* THE CITATION GROUP IS KEYED ON THE STATE, so the covered case needs
+           its own key or a pair this system can now name its instruments for
+           would render with NO instruments — the state moving and the sources
+           not moving with it is the §3.98 defect exactly, and this line is
+           where it would have happened. */
+        dimension.state === "cleared" ? "treaty_coverage_confirmed" : null,
       ].filter(Boolean);
     case "cumulative_presence":
       return has("tax_residency_watch") ? ["tax_residency_watch"] : [];
@@ -956,9 +1426,43 @@ function uncitedKeysForDimension(dimension, flags) {
  *   riskLevel: {value:string|null, note:string}
  * }|null}  null when there is no row to describe
  */
-export function describeDecisionBasis({ authorizationRow } = {}) {
+export function describeDecisionBasis({ authorizationRow, employment = null, linkedRequest = null } = {}) {
   const row = authorizationRow;
   if (!row) return null;
+
+  /* THE EMPLOYMENT RECORD IS READ AT VIEW TIME, NOT PERSISTED (2026-08-31).
+     Same shape and same argument as `src/shared/employeeSubject.js`, which
+     rejected persisting a display name for three reasons that all apply here:
+     it freezes a fact that changes (a document filed the day after the request
+     was submitted is exactly the case a specialist cares about), it puts
+     personal data in a second place permanently, and it needs a schema change
+     — `uc04_authorizations` has no column for this and half-adding one the
+     store would drop is worse than reading fresh.
+
+     OPTIONAL, AND ABSENT IS ITS OWN STATE. Callers that hold no record (the
+     CLI, a test, any surface with no Remote client) pass nothing and the
+     dimension says so in those words, which is a different sentence from "the
+     record holds none". It cannot become a decision input: this function is
+     consulted after the decision exists and returns a view. */
+  const identityDocuments = summariseIdentityDocuments(employment);
+
+  /* WHAT THE PERSON WILL ACTUALLY BE DOING THERE (W-2). Stated by the requester
+     on the three questions Remote's own RWA form asks, carried on `factors`,
+     and read by nobody but the specialist — no gate, score or model touches it.
+     Published whether or not it was asked, because "this surface does not ask
+     the question" and "asked and left blank" are different facts, and a panel
+     that rendered nothing for the first would be saying the second. */
+  const activityProfile = describeActivityProfile(
+    normalizeActivityProfile(authorizationRow?.factors?.activityProfile)
+  );
+
+  /* THE LINKED REMOTE REQUEST, READ THE SAME WAY AND FOR THE SAME REASON.
+     `src/uc04/linkedRequest.js` fetches it at view time from the id the row
+     durably holds. Optional here, exactly like `employment`: a caller with no
+     Remote client passes nothing, and dimension 4 then says the request was
+     never asked about — which is a different sentence from "the request carries
+     no document number", and the two must not collapse. */
+  const linked = linkedRequest ?? null;
 
   const factors = row.factors ?? null;
   const risk = row.risk ?? null;
@@ -974,6 +1478,18 @@ export function describeDecisionBasis({ authorizationRow } = {}) {
   const destination = normalizeCountryCode(risk?.normalized?.destinationCountry ?? factors?.destination?.country);
   const homeCountry = normalizeCountryCode(risk?.normalized?.homeCountry ?? factors?.homeCountry);
   const nationality = normalizeCountryCode(risk?.normalized?.nationality ?? factors?.nationality);
+
+  /* THE JURISDICTION PREDICATE, BOUND ONCE (§3.100). Every `sourcesForFinding`
+     call below shares it, so two findings on one page cannot end up filtered
+     against different routes. Before this, a finding's citations were the same
+     whatever countries the trip involved — which is how a Portugal →
+     Netherlands workation came to cite the U.S. Social Security Administration
+     and the Canada Revenue Agency. */
+  const serves = servesRoute({
+    homeCountry: homeCountry || null,
+    destination: destination || null,
+    nationality: nationality || null,
+  });
 
   const trip = {
     homeCountry: homeCountry || null,
@@ -1006,7 +1522,7 @@ export function describeDecisionBasis({ authorizationRow } = {}) {
     treatyDimension({ nationality, destination, flags, riskRan }),
     roleDimension({ factors, flags, riskRan }),
     presenceDimension({ factors, risk, tripDays, cumulativeDays, flags, riskRan }),
-    documentDimension({ factors, flags, riskRan }),
+    documentDimension({ factors, flags, riskRan, identityDocuments, linkedRequest: linked }),
   ].map((d) => ({
     ...d,
     // Inline, beside the finding they belong to — a "Sources" list at the
@@ -1014,7 +1530,12 @@ export function describeDecisionBasis({ authorizationRow } = {}) {
     // reading list; `uncited` is the same statement in the other direction, and
     // it is rendered too: a citation block that only ever appears where a
     // citation exists teaches a reader that everything unmarked is fine.
-    sources: findingKeysForDimension(d, flags).map(sourcesForFinding).filter(Boolean),
+    // THE ROUTE IS PASSED NOW (§3.100). Without it every finding cited the same
+    // documents whatever countries the trip involved, so a Portugal →
+    // Netherlands workation was shown the U.S. Social Security Administration
+    // and the Canada Revenue Agency. `route` is built from the values this
+    // function already resolved a few lines above — nothing new is derived.
+    sources: findingKeysForDimension(d, flags).map((k) => sourcesForFinding(k, { serves })).filter(Boolean),
     uncited: uncitedKeysForDimension(d, flags).map(uncitedFinding).filter(Boolean),
   }));
 
@@ -1025,7 +1546,10 @@ export function describeDecisionBasis({ authorizationRow } = {}) {
     // basis was this excused", and C-17 answers it: on an article containing
     // none of the conditions this system attributes to it.
     sources: [
-      sourcesForFinding(m.key === "schengen_90_180" && m.state === "suppressed" ? "schengen_90_180_suppressed" : m.key),
+      sourcesForFinding(
+        m.key === "schengen_90_180" && m.state === "suppressed" ? "schengen_90_180_suppressed" : m.key,
+        { serves },
+      ),
     ].filter(Boolean),
   }));
 
@@ -1066,6 +1590,13 @@ export function describeDecisionBasis({ authorizationRow } = {}) {
     deciding: deciding ? { key: deciding.key, label: deciding.label, finding: deciding.finding } : null,
     dimensions,
     measurements: measurementRows,
+    // THE RAW SUMMARY, BESIDE THE PROSE THAT USES IT. Published so a surface
+    // can mark a stand-in fixture as one without re-parsing a sentence, and so
+    // a test can assert the state rather than a wording. It carries presence,
+    // kinds and dates only — never a file name, number, URL or body.
+    identityDocuments,
+    linkedRequest: linked,
+    activityProfile,
     // THE READING LIST, framed. `framing` and `caveatFraming` are not
     // decoration: a citation rendered without them reads as the system citing
     // authority for its own conclusion, which is the one thing these sources
@@ -1073,6 +1604,10 @@ export function describeDecisionBasis({ authorizationRow } = {}) {
     sources: {
       framing: SOURCE_FRAMING,
       caveatFraming: CAVEAT_FRAMING,
+      // AND THE OTHER DIRECTION. A reading list that only ever reports
+      // faults teaches distrust of everything equally — see
+      // CONFIRMATION_FRAMING's own header.
+      confirmationFraming: CONFIRMATION_FRAMING,
       method: RETRIEVAL_METHOD,
       entries: sourceEntries,
       uncited: uncitedEntries,

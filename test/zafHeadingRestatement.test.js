@@ -117,7 +117,15 @@ test("the single-approver summaries keep the absence and drop the heading", () =
   // that there is no SECOND one — a missing signature is not a visible row.
   for (const [uc, kept] of [
     ["UC-02", /no second signature/i],
-    ["UC-04", /no second signature/i],
+    /* UC-04's ABSENCE CHANGED KIND ON 2026-08-30, so the claim its summary
+       exists to make changed with it. It used to be "there is no second
+       signature on this one" — true while a Remote CX specialist signed the
+       first. That signature was `approved_by_manager`, which Remote's schema
+       gives to the CUSTOMER'S own manager, so it was never Remote CX's to give
+       and has moved to the customer-facing surface. The absence now worth
+       stating is bigger and is the one no row can carry: NEITHER party decides
+       here, and the Remote-side stage that would has no endpoint at all. */
+    ["UC-04", /no API this system can call/i],
     // UC-05's absence is of a different kind and is the more important one: it
     // is a statement about what this system does NOT do to Remote.
     ["UC-05", /nothing is written to Remote either way/i],

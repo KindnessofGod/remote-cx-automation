@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import vm from "node:vm";
 import { MAPPINGS as MAPPINGS_IMPORTED } from "../scripts/lib/deployedNodeMappings.mjs";
+import { CLAIM_TARGETS } from "../workflows/nodes/claimNodeSpec.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const scriptSource = (name) => readFileSync(join(__dirname, "..", "scripts", name), "utf8");
@@ -54,7 +55,14 @@ function arrayLiteral(source, name, where) {
 }
 
 const TARGETS = arrayLiteral(ADD, "TARGETS", "add-claim-nodes.mjs");
-const CLAIM_TARGETS = arrayLiteral(VERIFY_CLAIMS, "CLAIM_TARGETS", "verify-claim-nodes.mjs");
+// CLAIM_TARGETS MOVED TO A MODULE (2026-08-31, the account-qualified ledger
+// key). It used to be an array literal inside verify-claim-nodes.mjs and had to
+// be scraped out of the source, because that script runs network calls at
+// module scope and cannot be imported. workflows/nodes/claimNodeSpec.js is
+// side-effect-free — the deploy and the live checker now read the same object
+// out of it — so this reads the real table directly, the same upgrade
+// deployedNodeMappings.mjs got in rca-rqeo. The textual extraction stays for
+// add-claim-nodes.mjs, which is still a script.
 // rca-rqeo moved MAPPINGS out of verify-deployed-nodes.mjs (which cannot be
 // imported — it runs network calls at module scope) into scripts/lib/
 // deployedNodeMappings.mjs, a side-effect-free module. That module CAN be

@@ -254,3 +254,71 @@ test("a boolean lands on the checkbox as a checkbox, not as the string 'false'",
   assert.equal(pressCompletion(routine).boxes["uc04-hasContractSigningAuthority"].checked, false);
   assert.equal(pressCompletion(senior).boxes["uc04-hasContractSigningAuthority"].checked, true);
 });
+
+// --- 6. WHAT THEY WILL BE DOING THERE -------------------------------------
+//
+// The four activity boxes ride on `suggestIfEmpty`, not on `fields`, because
+// the server never asks about them and therefore cannot know whether they are
+// free. Everything below is about the promise that replaces the one `fields`
+// makes: a suggestion lands in a blank box and nowhere else.
+
+test("the activity suggestions land in boxes nobody has answered", () => {
+  const [routine] = buildCompletions(HANDOFF, ALL_NEEDED);
+  const { boxes } = pressCompletion(routine);
+
+  assert.equal(
+    boxes["uc04-activities"].value,
+    "Working with the local team, plus two partner meetings.",
+    "the continuation left the activity boxes empty and offered nothing to put in them"
+  );
+  assert.equal(boxes["uc04-institutions"].value, "the company's local entity, and one partner office");
+  assert.equal(boxes["uc04-worksites"].value, "none");
+  assert.equal(boxes["uc04-workLocation"].value, "The local team's office, and my accommodation.");
+});
+
+test("a suggestion never overwrites what the traveller wrote", () => {
+  // THE WHOLE REASON THESE ARE NOT IN `fields`. A traveller who described their
+  // trip and then pressed "Fill the rest" to finish the boxes they could not
+  // answer must keep every word — and the only thing that can say whether a box
+  // is free is the box, read when the button is pressed.
+  const [routine] = buildCompletions(HANDOFF, ALL_NEEDED);
+  const { boxes } = pressCompletion(routine, {
+    existing: {
+      "uc04-activities": "Three days in a BSL-3 laboratory running assays.",
+      "uc04-worksites": "the client's containment lab",
+    },
+  });
+
+  assert.equal(boxes["uc04-activities"].value, "Three days in a BSL-3 laboratory running assays.");
+  assert.equal(boxes["uc04-worksites"].value, "the client's containment lab");
+  // ...and the ones they did NOT answer are still offered.
+  assert.equal(boxes["uc04-institutions"].value, "the company's local entity, and one partner office");
+});
+
+test("a box holding only spaces is one nobody has answered", () => {
+  // A form that has been tabbed through is not a form that has been filled in.
+  const [routine] = buildCompletions(HANDOFF, ALL_NEEDED);
+  const { boxes } = pressCompletion(routine, { existing: { "uc04-activities": "   " } });
+  assert.equal(boxes["uc04-activities"].value, "Working with the local team, plus two partner meetings.");
+});
+
+test("both completions suggest the same words, and that is the demonstration", () => {
+  // The pair differs in exactly the two structured boxes (pinned above). Giving
+  // them different prose would quietly teach that the prose moved the answer.
+  // It does not: no gate, matrix or model reads any of it, so the same four
+  // sentences produce a clean approval and a high-risk escalation depending
+  // only on the two boxes beside them.
+  const [routine, senior] = buildCompletions(HANDOFF, ALL_NEEDED);
+  assert.deepEqual(routine.suggestIfEmpty, senior.suggestIfEmpty);
+});
+
+test("a suggestion names no city, because the destination is the routing's", () => {
+  // HANDOFF routes to one country; a suggestion naming another would put a
+  // place in the traveller's mouth that their own travel request never
+  // mentioned. Checked against the destinations this demo actually uses.
+  const [routine] = buildCompletions(HANDOFF, ALL_NEEDED);
+  const prose = Object.values(routine.suggestIfEmpty).join(" ").toLowerCase();
+  for (const city of ["amsterdam", "lisbon", "toronto", "austin", "madrid", "porto"]) {
+    assert.ok(!prose.includes(city), `a suggestion names ${city}, which the routing never stated`);
+  }
+});

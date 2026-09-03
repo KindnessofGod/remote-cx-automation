@@ -131,6 +131,30 @@ const HUMAN_VERDICTS = Object.freeze({
   workation_declined: { word: "declined", shape: "settles" },
   workation_denied: { word: "denied", shape: "settles" }, // pre-2026-08-19 spelling
 
+  // UC-04 HAS THREE DECIDERS, AND UNTIL 2026-08-31 THIS MAP KNEW ONE OF THEM
+  // (UC-04.md §1a). Stage 2 is the CUSTOMER'S OWN MANAGER approving in the
+  // Remote-product stand-in; stage 3 is REMOTE'S MOBILITY TEAM reviewing in the
+  // sidebar. Both write real audit rows naming a real person, and both were
+  // rendering in /audit as generic events — the under-claiming direction, so
+  // nothing was ever false, but the feed showed a request filed and a ticket
+  // handed off with two human decisions between them reading as machine noise.
+  // The owner's requirement for this chain was "everything must be recorded",
+  // and a decision that is stored but not legible as a decision only half is.
+  //
+  // THE WORDS ARE DIFFERENT ON PURPOSE. Stage 2 says "approved" because that is
+  // the verb Remote's API accepts and the manager's own screen uses. Stage 3
+  // says "cleared" because `mobilityReview.js` refuses the word "approve" for
+  // it — two different people approving two different things on one record is
+  // how a reader comes to believe one of them settled the other.
+  work_authorization_employer_approved: { word: "approved by the employer — Remote's review still outstanding", shape: "slot" },
+  work_authorization_employer_declined: { word: "declined by the employer", shape: "settles" },
+  // `shape: "slot"` for the approval, NOT "settles": the employee is not
+  // cleared to travel until stage 3 answers, and "settles" is the word this
+  // file uses for a matter that is closed. Same judgement the approval queue
+  // makes one file over, where `approved_by_manager` is `awaiting`.
+  workation_mobility_review_cleared: { word: "cleared by Remote's mobility review — recorded here, not at Remote", shape: "settles" },
+  workation_mobility_review_declined: { word: "declined by Remote's mobility review", shape: "settles" },
+
   resignation_signed_off: { word: "signed off", shape: "settles" },
   resignation_declined: { word: "declined", shape: "settles" },
   resignation_denied: { word: "denied", shape: "settles" }, // pre-2026-08-19 spelling

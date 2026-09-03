@@ -1430,7 +1430,10 @@ test("POSITIVE cross-UC: every country in Remote's live registry clears UC-03's 
 
     // UC-03 (🟢): a travel inquiry for a registry country auto-resolves.
     const travel = evaluateTravel({
-      employment: { status: "active" },
+      // `contract_type` is required to REACH the destination gate this loop is
+      // about: UC-03's engagement gate sits ahead of it and fails closed on an
+      // unreadable engagement.
+      employment: { status: "active", contract_type: "full_time" },
       classification: {
         intent: "travel_letter",
         confidence: 0.9,

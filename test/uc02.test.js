@@ -582,6 +582,12 @@ function countingRemote(expenseOverrides = {}) {
       return [
         { code: "work_meals_and_entertainment.internal_meals_and_entertainment", title: "Internal meals and entertainment", description: "Meals or gatherings with colleagues for team-building or other work-related purposes.", status: "active", is_selectable: true, parent: { code: "work_meals_and_entertainment" }, scope: "global", slug: "e2f225f6-05e8-4538-94f0-0c4fe3073ac7", instructions: null, prompt: null },
         { code: "company_and_office_expenses.personal_occasion_gifts", title: "Personal occasion gifts", description: "Covers gifts for coworkers (e.g. birthday, baby, bereavement, get well soon).", status: "active", is_selectable: true, parent: { code: "company_and_office_expenses" }, scope: "global", slug: "787a79ef-8ce3-482e-807c-6f6ff3562015", instructions: null, prompt: null },
+        // Added 2026-08-29 so F-12 has an example of "no cap in the corpus"
+        // that CANNOT stop being one. personal_occasion_gifts above used to
+        // play that role and gained a $50 cap when the corpus was extended to
+        // 26 categories; this one is on MUST_STAY_UNCAPPED in
+        // uc02PolicyCapCoverage.test.js, which asserts it stays uncapped.
+        { code: "relocation_and_mobility.relocation_and_mobility", title: "Relocation and mobility", description: "Costs of relocating for work, including shipping, temporary housing and mobility support.", status: "active", is_selectable: true, parent: { code: "relocation_and_mobility" }, scope: "global", slug: "0f1e5c2a-6b7d-4e88-9a10-2c3d4e5f6a7b", instructions: null, prompt: null },
       ];
     },
     async patchExpenseStatus(id, body) {
@@ -633,15 +639,25 @@ test("F-11c. the status gate sits with the hard stops, ahead of the duplicate ch
 // --- F-12: an unknown policy cap must fail closed ---------------------------
 
 test("F-12. a valid category with NO cap in the corpus -> human_review, policy_cap_unknown, no write", async () => {
-  // personal_occasion_gifts is a real, selectable category on the live list
-  // that this repo's hand-curated cap corpus deliberately does not cover.
+  // relocation_and_mobility is a real, selectable category on the live list
+  // that this repo's cap corpus deliberately does not cover — and unlike the
+  // fixture this test used until 2026-08-29 (personal_occasion_gifts), it is
+  // on the MUST_STAY_UNCAPPED list in uc02PolicyCapCoverage.test.js, so it
+  // cannot quietly acquire a cap and turn this test into a different one.
+  //
+  // THAT IS WHY THE FIXTURE MOVED. The corpus was extended from 8 to 26 of the
+  // 32 live categories, personal_occasion_gifts gained a $50 cap, and this
+  // test went red on `over_policy_cap` — a real result for its claim of
+  // $99.99, and the wrong thing for this test to be measuring. The PROPERTY
+  // being pinned never changed: an unknown cap must fail closed. Only the
+  // example of "unknown" did, and it is now anchored to a category whose
+  // absence from the corpus is itself asserted elsewhere.
+  //
   // The old gate read `policyCap != null` as "no cap to enforce" and approved
-  // an unbounded amount.
-  // Classified into personal_occasion_gifts by token overlap on the title, and
-  // the amount is well within every other gate — so the ONLY thing that can
-  // stop it is the missing cap.
+  // an unbounded amount. The amount below is well within every other gate, so
+  // the ONLY thing that can stop it is the missing cap.
   const remoteGifts = countingRemote({
-    title: "Personal occasion gifts for a coworker's birthday",
+    title: "Relocation and mobility support for my move",
     expense_category: null,
     category: null,
     amount: 9999,
@@ -650,7 +666,7 @@ test("F-12. a valid category with NO cap in the corpus -> human_review, policy_c
     converted_tax_amount: 0,
   });
   const r = await submit({ expenseId: "exp_f12_uncapped" }, { remote: remoteGifts });
-  assert.equal(r.categoryId, "company_and_office_expenses.personal_occasion_gifts");
+  assert.equal(r.categoryId, "relocation_and_mobility.relocation_and_mobility");
   assert.equal(r.decision, "human_review");
   assert.equal(r.reason, "policy_cap_unknown");
   assert.equal(remoteGifts.writes.length, 0);

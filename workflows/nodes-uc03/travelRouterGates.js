@@ -129,6 +129,62 @@ const employment = empRaw && empRaw.id
         empRaw.email ??
         empRaw.personal_email ??
         null,
+      // --- THE FOUR LETTER-TEMPLATE FIELDS, added 2026-08-31 --------------
+      //
+      // WHAT THEIR ABSENCE DID. `assessLetterScope()` below checks
+      // TEMPLATE_EMPLOYMENT_FIELDS = ['full_name','job_title','status',
+      // 'contract_type','start_date'] against this object. Four of the five
+      // were never put on it, so `assessLetterScope` reported
+      // `letter_missing_full_name`, `letter_missing_job_title`,
+      // `letter_missing_contract_type` and `letter_missing_start_date` on
+      // EVERY run, for EVERY employee, however complete the Remote record —
+      // and a formal-letter request therefore escalated
+      // `letter_scope_exceeded` every single time. Measured against src on one
+      // employee with all four populated:
+      //
+      //     src/uc03/policyEngine.js  -> auto_resolve / standard_letter_issued
+      //     this file (before)        -> escalate / letter_scope_exceeded
+      //
+      // A DIFFERENT DECISION, a different terminal Zendesk node and a different
+      // queue tag, from the same request. Not a reason mismatch like UC-04's
+      // sanctions gate — an outcome mismatch.
+      //
+      // WHY THE PARITY TEST WAS BLIND, and it is the sharpest instance of this
+      // in the repo: test/n8nUc03Parity.test.js built its reference call as
+      // `evaluate({ employment: fromN8n.employment, … })` — it fed src THIS
+      // NODE'S OWN STRIPPED OBJECT. It compared like with like by construction
+      // and could never see a field this file failed to carry. 61/61 green over
+      // a live divergence. Fixed in the same change; that test now builds the
+      // src-side employment from the raw fixture.
+      //
+      // Candidate order mirrors src/remote/restClient.js's normalizeEmployment()
+      // field for field — `raw.full_name ?? basic_information.name`,
+      // `basic_information.job_title ?? raw.job_title`,
+      // `employment_model || type`, and start_date's three-step fallback ending
+      // at seniority_date. Do not "simplify" these to a single read: each
+      // second-choice exists because one of the two Remote shapes omits the
+      // first, and the mock and the live API disagree about which.
+      full_name: empRaw.full_name ?? empRaw.basic_information?.name ?? null,
+      job_title: empRaw.basic_information?.job_title ?? empRaw.job_title ?? null,
+      // The flat-shape passthrough first, mirroring normalizeEmployment()'s
+      // OWN early return (`if (typeof raw.contract_type === "string" && typeof
+      // raw.start_date === "string") return raw; // already the mock's flat
+      // shape`). Missing it is not academic: the mock server and every fixture
+      // in this repo use the flat shape, so a port that only reads the nested
+      // API form resolves `contract_type: 'unknown'` and `start_date: null` on
+      // exactly the records the tests are written against — which is a second,
+      // quieter version of the bug this block was added to fix.
+      contract_type:
+        typeof empRaw.contract_type === 'string' && empRaw.contract_type
+          ? empRaw.contract_type
+          : empRaw.employment_model || empRaw.type || 'unknown',
+      start_date:
+        typeof empRaw.start_date === 'string' && empRaw.start_date
+          ? empRaw.start_date
+          : empRaw.basic_information?.provisional_start_date ??
+            empRaw.provisional_start_date ??
+            empRaw.basic_information?.seniority_date ??
+            null,
     }
   : null;
 
@@ -775,12 +831,72 @@ function assessLetterScope({ requestText, classification, employment, confidence
   return { standard: findings.length === 0, findings };
 }
 
+const UC03_EOR_ENGAGEMENTS = ['eor', 'eor_employee', 'employee', 'full_time', 'part_time'];
+const UC03_NON_EOR_ENGAGEMENTS = {
+  contractor: 'engagement_not_eor_contractor',
+  independent_contractor: 'engagement_not_eor_contractor',
+  global_payroll: 'engagement_not_eor_direct',
+  global_payroll_employee: 'engagement_not_eor_direct',
+  direct: 'engagement_not_eor_direct',
+  direct_employee: 'engagement_not_eor_direct',
+  hris_employee: 'engagement_not_eor_direct',
+  hris: 'engagement_not_eor_direct',
+};
+const UC03_ONBOARDING_STATUSES = ['created', 'initiated', 'pending', 'invited', 'onboarding', 'pre_hire'];
+const UC03_OFFBOARDING_STATUSES = ['offboarding', 'notice', 'serving_notice', 'leaving', 'termination_pending'];
+const uc03Lower = (v) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
+
+function classifyEngagementUc03(rec) {
+  if (!rec) return { eligible: true, engagement: null };
+  const st = uc03Lower(rec.status);
+  if (UC03_OFFBOARDING_STATUSES.indexOf(st) !== -1) {
+    return { eligible: false, decision: 'escalate', reason: 'engagement_offboarding', flag: 'engagement_status_' + st, engagement: uc03Lower(rec.contract_type) || null };
+  }
+  const eng = uc03Lower(rec.contract_type);
+  if (!eng || eng === 'unknown') {
+    return { eligible: false, decision: 'blocked', reason: 'eor_status_unknown', flag: 'engagement_unreadable', engagement: eng || null };
+  }
+  if (UC03_NON_EOR_ENGAGEMENTS[eng]) {
+    return { eligible: false, decision: 'blocked', reason: UC03_NON_EOR_ENGAGEMENTS[eng], flag: 'engagement_' + eng, engagement: eng };
+  }
+  if (UC03_EOR_ENGAGEMENTS.indexOf(eng) === -1) {
+    return { eligible: false, decision: 'blocked', reason: 'eor_status_unknown', flag: 'engagement_unrecognised_' + eng, engagement: eng };
+  }
+  if (UC03_ONBOARDING_STATUSES.indexOf(st) !== -1) {
+    return { eligible: false, decision: 'blocked', reason: 'engagement_onboarding_incomplete', flag: 'engagement_status_' + st, engagement: eng };
+  }
+  return { eligible: true, engagement: eng };
+}
+
 function route({ employment, classification, identity, supportedCountries, upstreamFailures, sanctionedRegions, durationCapDays, confidenceThreshold, requestText, letterheadAvailable, letterAutoIssue }) {
   const supported = supportedCountries ?? new Set();
   const sanctioned = sanctionedRegions ?? SANCTIONED_OR_RESTRICTED;
   const cap = durationCapDays ?? DEFAULT_DURATION_CAP_DAYS;
   const minConfidence = confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
   const flags = [];
+
+  // ENGAGEMENT ELIGIBILITY, ahead of identity. Port of the gate
+  // src/uc03/policyEngine.js added 2026-09-03, which itself imports
+  // src/uc01/engagementEligibility.js. INLINED rather than imported for the
+  // usual reason (a Code node imports nothing), and the classes and decisions
+  // are copied EXACTLY from that module — test/n8nUc03Parity.test.js runs this
+  // body against the real one and will fail on any divergence.
+  //
+  // The offboarding-record read is absent here for the same reason it is
+  // absent from the reference implementation's call: UC-03 makes no such call
+  // on either path, and this decides on the record's own status, which is what
+  // the reference passes `null` to get.
+  const engagement = classifyEngagementUc03(employment);
+  if (!engagement.eligible) {
+    flags.push(engagement.flag);
+    return {
+      decision: engagement.decision,
+      flags,
+      reason: engagement.reason,
+      engagement: engagement.engagement,
+      durationDays: null,
+    };
+  }
 
   if (!identity.verified) {
     flags.push(`identity_${identity.reason}`);
@@ -958,6 +1074,487 @@ function readLetterheadAvailable() {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// composeInternalNote() — the Zendesk internal note, composed HERE
+// ---------------------------------------------------------------------------
+// WHY THIS IS IN THIS FILE AND NOT IN FIVE NODE PARAMETERS.
+//
+// UC-03's five terminal Zendesk nodes each carried a sentence typed once into a
+// node parameter. A Zendesk node has no `jsCode`, so `verify-deployed`'s body
+// diff is structurally blind to it and all five sit in
+// `scripts/lib/unguarded-node-baseline.json` as accepted debt — prose written
+// onto real customers' tickets, versioned by nothing and read back by no check.
+// `test/n8nUc03Parity.test.js` cannot see it either, by its own design: it
+// compares DECISIONS, and a node that reaches the right verdict and describes it
+// in false words passes it every time. Two of the five sentences were measurably
+// false; one of them was FALSE ADVICE TO THE CUSTOMER. See
+// `workflows/nodes-uc03/terminalZendeskNodesSpec.js`'s header for the evidence
+// per node.
+//
+// Composing here puts the prose in a file `verify-deployed` diffs byte for byte,
+// and makes the per-decision difference a branch in reviewed code rather than
+// five independent copies that drift. Same move, same reasoning, as
+// `workflows/nodes/composeInternalNote.js` (UC-01) and `composeInternalNote()`
+// in `workflows/nodes-uc04/workationGates.js`.
+//
+// IT IS EMITTED FOR EVERY DECISION, including `auto_resolve`, so a node that
+// does not consume it today can adopt it without this file changing again.
+//
+// PURE, AND IT DECIDES NOTHING. It reads an outcome already reached and cannot
+// change it. `route()` above is untouched by this addition, which is what keeps
+// `test/n8nUc03Parity.test.js` green — the DECISION vocabulary is unchanged.
+//
+// --- WHY THE `means` TABLE IS PORTED AND NOT WRITTEN ------------------------
+//
+// `src/uc03/policyEngine.js`'s GATE_SEQUENCE already says, in reviewed prose,
+// what each reason MEANS to a person. An n8n Code node cannot import it, so the
+// established pattern in this repository is to COPY WITH ATTRIBUTION rather than
+// invent a second wording — a second wording is a second thing to drift, and
+// UC-01's composeInternalNote.js ports the identical table for the identical
+// reason. `test/n8nUc03TerminalZendeskNodes.test.js` reads GATE_SEQUENCE out of
+// `src/uc03/policyEngine.js` and asserts every row below is byte-identical to
+// it, so a change to the reference wording fails here rather than diverging.
+//
+// ONE DECLARED REWRITE, AND IT IS NOT COSMETIC. Two of the fourteen `means`
+// strings name **Global Mobility** as the owning team (`sanctioned_region`,
+// `duration_over_cap`), while UC-03's routing table sends the ticket to
+// **Travel & Mobility Support** and `Assign Routing`'s `routingNote` — appended
+// to this note by the Zendesk node, a few words later — spells that correctly.
+// Porting verbatim would put ONE TEAM, TWICE, IN TWO NAMES, SIX WORDS APART on
+// a real ticket: the exact defect already recorded for UC-04 at
+// `docs/ESCALATION-DESTINATIONS.md` §2.2, and one a specialist resolves by
+// searching Zendesk for a group that does not exist. `docs/ESCALATION-
+// DESTINATIONS.md` argues the src-side sentences should NOT simply be renamed
+// (it would make them contradict themselves), so this is deliberately not fixed
+// upstream by this pass — see this file's terminal-node spec header. Instead the
+// substitution is DECLARED, applied to exactly two strings, and the parity test
+// applies the SAME substitution to the src side before comparing, so a drift in
+// the reference wording still fails.
+const NOTE_MEANS_SUBSTITUTIONS = [
+  { from: 'Global Mobility', to: 'the team this ticket is routed to' },
+];
+
+function applyNoteMeansSubstitutions(text) {
+  let out = text;
+  for (const s of NOTE_MEANS_SUBSTITUTIONS) out = out.split(s.from).join(s.to);
+  return out;
+}
+
+// src/uc03/policyEngine.js's GATE_SEQUENCE, ported verbatim (position / reason /
+// gate / means). `checks` is deliberately NOT ported: it is the PASSING
+// condition, which a note describing the rung that REFUSED does not need, and
+// every unported field is one less thing to keep in step.
+const NOTE_GATE_SEQUENCE = [
+  {
+    position: 1,
+    reason: 'engagement_not_eor_contractor',
+    gate: 'engagement_eligibility',
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "This person is engaged as an independent contractor. Remote's travel support letter is published for EOR customers only, and Remote states plainly that contractors are not eligible — it is not their legal employer, so it cannot write to an embassy about employment it does not hold. Nothing the employee adds changes that, and no specialist can sign it. Remote also states it cannot assist contractors with sponsored work-permit routes unless the client converts them to full-time employment.",
+  },
+  {
+    position: 2,
+    reason: 'engagement_not_eor_direct',
+    gate: 'engagement_eligibility',
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "Remote administers this person's payroll, but the company they work for is their legal employer. The travel support letter is published for EOR customers only, so the letter has to come from their own employer, who is the party that can attest to the employment an embassy is asking about.",
+  },
+  {
+    position: 3,
+    reason: 'engagement_onboarding_incomplete',
+    gate: 'engagement_eligibility',
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "Onboarding has not finished, so the employment a travel letter would state as an established fact is not in place yet. This is a wait, not a refusal of the trip.",
+  },
+  {
+    position: 4,
+    reason: 'engagement_offboarding',
+    gate: 'engagement_eligibility',
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "This employment is ending. The facts a travel letter would state are changing right now, and there may be a notice period, a severance or a dispute behind that — which is a Lifecycle Support conversation and not a travel one. This is the one class here that goes to a person rather than being refused outright.",
+  },
+  {
+    position: 5,
+    reason: 'eor_status_unknown',
+    gate: 'engagement_eligibility',
+    checks: "the person is employed through a Remote entity, which is who this product is for",
+    means:
+      "The engagement type could not be read from the employment record, so it could not be established that this is an engagement Remote issues travel letters for. An engagement nobody could read is not an eligible one — this fails closed on purpose, and the flag says whether the value was absent or simply not recognised.",
+  },
+  {
+    position: 6,
+    reason: 'identity_not_verified',
+    gate: 'identity',
+    means:
+      'We could not confirm the person asking is the employee this trip is for, so nothing about their employment or travel was answered. This is a failure to VERIFY — it is not a finding that they are someone else.',
+  },
+  {
+    position: 7,
+    reason: 'employee_not_active',
+    gate: 'employment_status',
+    means:
+      "The employment record is not active, so there is no live employment to give travel support against. A former or suspended employee's travel is not something this can answer.",
+  },
+  {
+    position: 8,
+    reason: 'confidence_unknown',
+    gate: 'classification_confidence',
+    means:
+      'How sure we are about what this request is asking could not be established at all, so the reading of it was not acted on. A person confirms what is being asked before anything is decided. Nothing has been concluded about the trip itself.',
+  },
+  {
+    position: 9,
+    reason: 'low_confidence',
+    gate: 'classification_confidence',
+    means:
+      'What this request is asking for could not be read confidently enough to act on, so a person reads it first. A request understood wrongly here would be answered wrongly in every way that follows. This says nothing about whether the trip is allowed.',
+  },
+  {
+    position: 10,
+    reason: 'work_authorization_requested',
+    gate: 'intent_routing',
+    means:
+      "Nothing has been submitted on the employee's behalf and nobody is reviewing anything — this answer is the whole of what has happened so far. The next step is a work-authorization request the employee raises themselves in Remote's Request Hub, and it asks for details a travel message never states: the employee's nationality, the visa the employee intends to travel on, the job duties they will perform while away, whether they can sign contracts for the company. Whether working from the destination is allowed is settled on that request, and it has not been settled yet.",
+  },
+  {
+    position: 11,
+    reason: 'destination_unknown',
+    gate: 'destination_known',
+    means:
+      'This request does not say which country is the destination, in a form that could be used — so nothing about the destination has been checked. The destination has to be established before anything else about the trip can be.',
+  },
+  {
+    position: 12,
+    reason: 'sanctioned_region',
+    gate: 'sanctions',
+    means: applyNoteMeansSubstitutions(
+      'The destination is on the sanctioned or restricted list. This is not a support question at all — Global Mobility owns it, and no extra information from the employee changes that.'
+    ),
+  },
+  {
+    position: 13,
+    reason: 'destination_jurisdiction_excluded',
+    gate: 'supported_destination',
+    means:
+      "The destination could not be CONFIRMED as a country Remote supports. That may be because Remote does not support it, or because Remote's list of countries could not be read when this was answered — either way it is unconfirmed, which is not the same as confirmed-bad.",
+  },
+  {
+    position: 14,
+    reason: 'duration_unknown',
+    gate: 'duration_computable',
+    means:
+      'Usable travel dates could not be read out of the request, so the length of the trip is unknown. The trip is not too long — nobody has established how long it is.',
+  },
+  {
+    position: 15,
+    reason: 'duration_over_cap',
+    gate: 'duration_cap',
+    means: applyNoteMeansSubstitutions(
+      'The trip is longer than the cap for an automatic informational answer, so Global Mobility weighs it instead. Length is a risk signal here, not a refusal — a longer trip is allowed to be fine, it just is not decided here.'
+    ),
+  },
+  {
+    position: 16,
+    reason: 'letter_scope_exceeded',
+    gate: 'letter_within_template',
+    means:
+      'A formal travel letter was asked for, and it is not the standard one. The request asks for something the standard letter cannot express — a named addressee asked for in a sentence, particular wording, an identity document, a statement of who bears the costs, another language, or a row removed — or a row it states has no value behind it. NO LETTER WAS DRAFTED, deliberately: the standard one would have left out what was asked for without saying so, and that is the document somebody would then have been asked to sign. Everything that was asked for is listed with this request, beside what the standard letter cannot carry and why.',
+  },
+  {
+    position: 17,
+    reason: 'formal_letter_requested',
+    gate: 'letter_issuable',
+    means:
+      "The standard letter was asked for and the trip qualifies for it, but it was not issued automatically. There are two reasons that can happen and this request is one of them: either every travel letter here needs a specialist's signature, in which case the letter IS drafted and is waiting for one — or the employing entity could not be read, in which case there is no letterhead, NOTHING WAS DRAFTED, and what is owed is a fix to the employing-entity record and a re-run rather than a signature. Every check about the trip itself passed either way.",
+  },
+  {
+    position: 18,
+    reason: 'standard_letter_issued',
+    gate: 'standard_letter',
+    means:
+      'The employee asked for the standard travel letter, every check passed, and there was a letterhead to write it on — so it was written and issued to them straight away, with nobody in the path. This is the routine outcome this path is built for: checked, produced and closed in one pass. A letter that is NOT the standard one, a request that could not be read confidently, a traveller who does not qualify, or an employing entity that could not be read each stops earlier, with the document unwritten.',
+  },
+  {
+    position: 19,
+    reason: 'all_gates_passed',
+    gate: 'outcome',
+    means:
+      "Every check passed, so the question was answered directly, with the standing note that entry requirements are the destination's to set. No formal travel letter was written — none was asked for, and an answer is not a letter. One is offered for the same trip, and accepting it does not mean describing the trip again.",
+  },
+];
+
+function describeNoteGate(reasonSlug) {
+  const row = NOTE_GATE_SEQUENCE.find((r) => r.reason === reasonSlug);
+  if (!row) return null;
+  const total = new Set(NOTE_GATE_SEQUENCE.map((r) => r.position)).size;
+  return { position: row.position, gate: row.gate, means: row.means, total: total };
+}
+
+// THE FOUR INPUTS UC-03 CAN NEVER SOURCE, ported from
+// src/uc03/uc04Intake.js's UC04_REQUIRED_INPUTS (the four rows whose `source`
+// is null), in that file's own order and its own words. Held against the
+// original by test, not by hope — the same reason `Assign Routing` ports the
+// routing table rather than restating it.
+const UC04_INPUTS_UC03_CANNOT_SOURCE = [
+  "the employee's nationality",
+  'the visa the employee intends to travel on',
+  'the job duties they will perform while away',
+  'whether they can sign contracts for the company',
+];
+
+// WHAT THIS EXECUTION PATH DOES AND DOES NOT WRITE, stated once.
+//
+// This graph's only durable writes are `audit_log`, `workflow_claims` and
+// `audit_trace` — there is no `cases` insert and no `documents` insert anywhere
+// on it. Two consequences reach whoever opens the ticket, and BOTH were
+// previously invisible:
+//   1. The Remote CX Review sidebar and `GET /uc03/api/cases/by-ticket/:ref`
+//      resolve a `cases` row, so for an n8n-decided ticket they answer 404 /
+//      `{"found": false}`. The retired note on `Flag For Formal Letter Review`
+//      told a specialist the letter's "DRAFTED text is available in the UC-03
+//      app" — pointing at a screen that has never held anything for this run.
+//   2. Nothing on this graph renders a letter. There is no letter-render node
+//      and no `documents` write, so NO DECISION ON THIS PATH PRODUCES A
+//      DOCUMENT — including `standard_letter_issued`, whose own ported `means`
+//      says a letter "was written and issued straight away" because on the Node
+//      path it is. That reason is unreachable here today (it needs a
+//      `Fetch Legal Entity (Remote)` node this graph does not have, so
+//      `letterheadAvailable` is false and the run lands on
+//      `formal_letter_requested` instead) — but "unreachable today" is one node
+//      away from "reached and lying", so the note says the true thing on that
+//      branch rather than relying on the branch staying dead.
+// The FACT, stated once, and the INSTRUCTION built on it separately — because
+// an auto-resolved ticket is not outstanding work and must not be told to be.
+const NO_CASE_ROW_FACT =
+  'This decision was made on the n8n execution path, whose only durable writes are audit_log, workflow_claims and ' +
+  'audit_trace — it creates no cases row, so the Remote CX Review sidebar and the UC-03 API answer 404 for this ' +
+  'ticket, and the audit_log row is the record.';
+
+const WORKED_BY_HAND_SENTENCE =
+  'WHERE THIS IS WORKED: on this ticket, by hand. ' +
+  NO_CASE_ROW_FACT +
+  ' There is no screen to open and no button to press; everything needed to act on it is in this note.';
+
+const NO_DOCUMENT_SENTENCE =
+  'No document exists anywhere for this run: this graph has no letter-render node and writes no documents row.';
+
+/**
+ * The internal note the ticket carries. DETERMINISTIC TEXT, never LLM-authored
+ * — the same discipline as UC-01's composeInternalNote.js and UC-04's.
+ *
+ * @param {object} args
+ * @param {object} args.outcome        route()'s return
+ * @param {object|null} args.employment
+ * @param {object} args.classification
+ * @param {object} args.identity
+ * @param {object|null} args.handoffEvent
+ * @returns {string} plain text
+ */
+function composeInternalNote({ outcome, employment, classification, identity, handoffEvent }) {
+  const decision = outcome.decision;
+  const reason = outcome.reason;
+  const flags = Array.isArray(outcome.flags) ? outcome.flags : [];
+  const emp = employment ?? {};
+  const lines = [];
+
+  // --- WHO THIS IS ABOUT, withheld where the verdict is that we do not know --
+  //
+  // Same rule, same reasoning, as UC-01's composeInternalNote.js: when the
+  // decision's OWN verdict is that we could not establish who is asking, a note
+  // that then prints the subject's name, status and country discloses the record
+  // the gate just refused to disclose. The gate meaning and the identity facts
+  // below stay — they are what makes the note actionable — and only the
+  // subject's own details are withheld.
+  lines.push(
+    reason === 'identity_not_verified'
+      ? 'Regarding this employment — subject details withheld: we could not confirm the requester is the employee this ' +
+        'trip is for, so nothing about who this is regarding is disclosed here.'
+      : 'Regarding ' +
+        (emp.full_name || 'an employee not named on this record') +
+        (emp.job_title ? ' (' + emp.job_title + ')' : '') +
+        ' — status: ' +
+        (emp.status || 'not recorded') +
+        ', contract: ' +
+        (emp.contract_type || 'not recorded') +
+        ', home country: ' +
+        (emp.country_code || 'not recorded') +
+        '.'
+  );
+  lines.push('');
+
+  // --- WHO READ THE REQUEST, per run rather than per node --------------------
+  //
+  // Three of the five retired notes opened "AI summary — ", flatly, on every
+  // run. It is defensible on this graph (there IS a real `Classify Inquiry
+  // (LLM)` node) and it is still not a fact about any particular run: the model
+  // is validated against a strict shape and ANY failure falls back verbatim to
+  // the deterministic rules, which is the ordinary case here. `classification
+  // .source` already records which one answered, so the note says the true
+  // thing per run instead of a blanket claim. It also matters for a reader
+  // deciding how much to trust the reading: "a model read this" and "a regex
+  // table read this" are different warnings.
+  lines.push(
+    classification && classification.source === 'llm'
+      ? 'AI-ASSISTED: a language model read the request text into a classification on this run (source: llm). Every gate ' +
+        'below is deterministic and none of them consults the model again.'
+      : 'NO MODEL WAS USED on this run: the request text was read by the deterministic rules (source: ' +
+        ((classification && classification.source) || 'unknown') +
+        '), which is what happens whenever the model is unreachable or returns a shape that does not validate. Every ' +
+        'gate below is deterministic.'
+  );
+  lines.push('');
+
+  // --- THE DECISION, AND THE RUNG THAT MADE IT -------------------------------
+  const decidedBy = describeNoteGate(reason);
+  lines.push(
+    'Assessment: ' +
+      decision +
+      ' (' +
+      reason +
+      '). Flags: ' +
+      (flags.length ? flags.join(', ') : 'none') +
+      '.' +
+      (typeof outcome.durationDays === 'number' ? ' Trip length as read: ' + outcome.durationDays + ' day(s).' : '') +
+      (decidedBy
+        ? ' Decided at gate ' + decidedBy.position + ' of ' + decidedBy.total + ' (' + decidedBy.gate + '): ' + decidedBy.means
+        : ' This reason is not in the gate ladder — that is itself worth reporting, because every reason route() can ' +
+          'return has a rung.')
+  );
+  lines.push('');
+
+  // --- WHAT WAS PRODUCED, AND WHAT WAS NOT -----------------------------------
+  //
+  // "No letter was issued" was the one retired sentence that was TRUE on every
+  // reachable input, and it is kept — moved in here with the rest rather than
+  // left typed into a node parameter, which is the whole point of this
+  // function. What is added is the same statement for the four decisions that
+  // sentence never covered.
+  if (decision === 'escalate') {
+    lines.push('No letter was issued. ' + NO_DOCUMENT_SENTENCE);
+  } else if (decision === 'human_review' && reason === 'formal_letter_requested') {
+    // THE PORTED `means` ABOVE OFFERS TWO POSSIBILITIES AND THIS RUN IS ONE OF
+    // THEM — resolved from the run's own flags rather than left to the reader.
+    // `letterhead_unavailable` is pushed by route() only on the no-letterhead
+    // branch, so its presence is the discriminator. On THIS graph it is always
+    // present (there is no `Fetch Legal Entity (Remote)` node, so
+    // `readLetterheadAvailable()` returns false), and the other branch is
+    // written out anyway because a graph that later gains that node must not
+    // start telling specialists to sign a document this path never writes.
+    lines.push(
+      flags.includes('letterhead_unavailable')
+        ? 'NO LETTER WAS WRITTEN AND NONE IS WAITING FOR A SIGNATURE. The employing entity could not be read, so there ' +
+          'was no letterhead to write on. What is owed here is a fix to the employing-entity record and a re-run — not ' +
+          'a signature. ' +
+          NO_DOCUMENT_SENTENCE
+        : 'NO LETTER WAS WRITTEN. ' +
+          NO_DOCUMENT_SENTENCE +
+          ' The gate meaning above describes a drafted letter waiting for a signature because that is what happens on ' +
+          'the Node execution path; on this one nothing is drafted, so do not go looking for a document to sign.'
+    );
+  } else if (decision === 'human_review') {
+    // low_confidence (and confidence_unknown, which no input on this graph can
+    // reach — the validator requires a numeric confidence and the rule-based
+    // fallback always emits one). Copied from src/uc03/signoffPolicy.js's
+    // describeUnconfirmed(), which refuses a sign-off on exactly this case:
+    // what is owed is a READING, not a signature.
+    lines.push(
+      'NO LETTER WAS DRAFTED, deliberately: a formal letter built from an extraction the router itself refused to trust ' +
+        'is not something anybody can responsibly sign. What is owed here is a reading of the request, not a signature — ' +
+        'confirm what is being asked and re-run it. ' +
+        NO_DOCUMENT_SENTENCE
+    );
+  } else if (decision === 'route_to_uc04') {
+    lines.push(
+      'No letter was issued and none was asked for. A travel letter certifies business travel, and this request is not ' +
+        'about business travel. ' +
+        NO_DOCUMENT_SENTENCE
+    );
+  } else if (decision === 'auto_resolve' && reason === 'standard_letter_issued') {
+    lines.push(
+      'THE DECISION SAYS THE STANDARD LETTER WAS ISSUED AND NO LETTER EXISTS. ' +
+        NO_DOCUMENT_SENTENCE +
+        ' The customer received the informational answer only. Treat this ticket as an unissued letter request and ' +
+        'reopen it: this is a graph defect, not a decision about the trip.'
+    );
+  } else if (decision === 'auto_resolve') {
+    lines.push(
+      'The employee was answered informationally and the ticket was solved. No letter was written and none was asked ' +
+        'for. ' +
+        NO_DOCUMENT_SENTENCE
+    );
+  } else {
+    lines.push(
+      'The automation produced a decision this graph does not recognise, so the ticket was routed to a human rather ' +
+        'than dropped. Nothing was issued and nobody has been asked to approve anything. ' +
+        NO_DOCUMENT_SENTENCE
+    );
+  }
+  lines.push('');
+
+  // --- WHO ACTS NEXT, AND WHERE ----------------------------------------------
+  if (decision === 'route_to_uc04') {
+    // The handoff branch said what HAPPENED and nothing about what now. Its
+    // central claim — "recorded for inspection only, never dispatched
+    // automatically" — is true in both halves and is kept. What is added is the
+    // actor, the surface, and the three things a reader would otherwise assume
+    // exist. The wording is copied from src/uc03/workflow.js's review-queue note
+    // and src/uc03/signoffPolicy.js's describeNoSignoffPath(), which already say
+    // it to the other audience.
+    lines.push(
+      "WHO ACTS NEXT: the travelling employee, in Remote's own Request Hub. UC-04 decides on a work-authorisation " +
+        'request the employee raises themselves; no API creates one on their behalf, so the outstanding work here is an ' +
+        'OUTREACH, not a signature.'
+    );
+    lines.push('');
+    lines.push(
+      'A handoff event was RECORDED FOR INSPECTION and dispatched to nothing — deterministically built from fields ' +
+        'already read, not summarised by a model: ' +
+        (handoffEvent ? handoffEvent.event_type : 'none') +
+        ' → destination ' +
+        (handoffEvent && handoffEvent.destination_country ? handoffEvent.destination_country : 'unknown') +
+        '. Three things a reader would reasonably assume exist and do not: this ticket carries no uc04_* tag, so ' +
+        "UC-04's own intake trigger cannot fire on it; no uc04_authorizations row was created; and no cases row was " +
+        'created on either use case, so both sidebars answer 404 for this ticket. Nobody else has this.'
+    );
+    lines.push('');
+    lines.push(
+      'What that request needs and this travel message never states: ' + UC04_INPUTS_UC03_CANNOT_SOURCE.join(', ') + '.'
+    );
+  } else if (decision === 'auto_resolve' && reason === 'all_gates_passed') {
+    lines.push(
+      'Nothing is outstanding: the ticket was answered and solved with no person in the path. ' + NO_CASE_ROW_FACT
+    );
+  } else {
+    // Everything else — including `auto_resolve / standard_letter_issued`, which
+    // IS outstanding work on this path however the decision reads (see the
+    // paragraph above it).
+    lines.push(WORKED_BY_HAND_SENTENCE);
+  }
+
+  // --- THE IDENTITY FACTS, when identity is what stopped it -------------------
+  if (reason === 'identity_not_verified') {
+    lines.push('');
+    lines.push(
+      'Identity signal used: ' +
+        ((identity && identity.method) || 'none') +
+        '. What was missing: ' +
+        ((identity && identity.reason) || 'not recorded') +
+        '. Employment record read: ' +
+        (employment && employment.id ? 'yes' : 'NO — Remote returned no usable record for the id on this ticket, so ' +
+          'there was nothing to check an identity against. Confirm the id resolves before treating this as an identity ' +
+          'problem') +
+        '.'
+    );
+  }
+
+  return lines.join('\n');
+}
+
 const outcome = route({
   employment,
   classification,
@@ -1018,6 +1615,19 @@ const handoffEvent =
 // defect its parity test exists to prevent.
 const handoffUseCase = outcome.decision === 'route_to_uc04' ? 'UC-04' : null;
 
+// --- the internal note, composed rather than typed into a node parameter -----
+// See composeInternalNote() above for why this is here and not in five Zendesk
+// node parameters. Emitted for EVERY decision, including auto_resolve, so a
+// terminal node that does not consume it today can adopt it without this file
+// changing again.
+const internalNote = composeInternalNote({
+  outcome: outcome,
+  employment: employment,
+  classification: classification,
+  identity: identity,
+  handoffEvent: handoffEvent,
+});
+
 // --- output: the routed decision plus the facts a specialist / UC-04 reads ---
 return [
   {
@@ -1033,6 +1643,7 @@ return [
       flags: outcome.flags,
       durationDays: outcome.durationDays,
       upstreamFailures,
+      internalNote,
       ...(handoffEvent ? { handoffEvent } : {}),
       ...(handoffUseCase ? { handoffUseCase } : {}),
     },

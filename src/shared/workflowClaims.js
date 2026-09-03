@@ -30,6 +30,8 @@
 // it prevents: a dropped request looks like nothing happened.
 // ---------------------------------------------------------------------------
 
+import { qualifyClaimRef, claimRefCandidates } from "./claimRef.js";
+
 /**
  * Claim an external reference for a use case, exactly once.
  *
@@ -54,7 +56,15 @@ export async function claimExternalRef({ pgPool = null, useCase, externalRef, de
     return { claimed: true };
   }
 
-  const ref = String(externalRef);
+  // THE KEY IS ACCOUNT-QUALIFIED — see src/shared/claimRef.js for why, and for
+  // what it cost to find out. A bare Zendesk ticket number is not a unique
+  // reference: this project has moved account twice, and the new account
+  // restarted its numbering at 1 while the retired one had reached 143, so
+  // `93` named two unrelated tickets. Everything else — a descriptive ref, a
+  // portal id, a content-derived key, an authorization UUID — is passed
+  // through untouched.
+  const ref = qualifyClaimRef(externalRef);
+  if (ref === null) return { claimed: true };
 
   if (!pgPool) {
     // NO LEDGER, NO GUARANTEE — and saying so is better than faking it.
@@ -129,10 +139,25 @@ export async function claimExternalRef({ pgPool = null, useCase, externalRef, de
  */
 export async function findClaimDecision({ pgPool = null, useCase, externalRef }) {
   if (!pgPool || externalRef == null || externalRef === "") return null;
+  // BOTH SPELLINGS, QUALIFIED FIRST. claimExternalRef() now keys a bare ticket
+  // number under `<account>:<ref>`, but rows written before 2026-08-31 hold the
+  // bare form — and this function's whole job is recovering the identity a
+  // WINNING claim recorded, which for an old row is filed under the old
+  // spelling. Reading only the new one would report "no prior submission" for
+  // every claim this ledger took before today, which is precisely the
+  // confidently-wrong absence D-26 exists to avoid.
+  //
+  // `= any($2)` rather than two queries, and ORDER BY array_position so the
+  // qualified spelling wins when both exist: a row under the new key was
+  // written by this account and is the one that describes the ticket in hand.
+  const candidates = claimRefCandidates(externalRef);
+  if (candidates.length === 0) return null;
   try {
     const result = await pgPool.query(
-      `select decision from workflow_claims where use_case = $1 and external_ref = $2 limit 1`,
-      [useCase, String(externalRef)]
+      `select decision from workflow_claims
+        where use_case = $1 and external_ref = any($2)
+        order by array_position($2, external_ref) limit 1`,
+      [useCase, candidates]
     );
     return result.rows[0]?.decision ?? null;
   } catch (err) {

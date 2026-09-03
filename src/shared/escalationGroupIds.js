@@ -36,15 +36,15 @@
 
 // --- GENERATED: Zendesk group name -> group_id, resolved from the live account
 export const ESCALATION_GROUP_IDS = Object.freeze({
-  "Finance Ops": 6168404929055,
-  "HR Ops": 6168404929823,
-  "Local HR & Legal": 9990000000002,
-  "Mobility & Legal (Tier-2)": 6168394286495,
-  "Mobility Legal (Tier-3)": 6168424846751,
-  "Mobility Specialists": 9990000000003,
-  "Payroll Ops": 6168442797343,
-  "Tax Operations": 6168394287519,
-  "Travel & Mobility Support": 6168404930335,
+  "Finance Ops": 99900000000009,
+  "HR Ops": 99900000000009,
+  "Local HR & Legal": 99900000000009,
+  "Mobility & Legal (Tier-2)": 99900000000009,
+  "Mobility Legal (Tier-3)": 99900000000009,
+  "Mobility Specialists": 99900000000009,
+  "Payroll Ops": 99900000000009,
+  "Tax Operations": 99900000000009,
+  "Travel & Mobility Support": 99900000000009,
 });
 // --- END GENERATED ---
 

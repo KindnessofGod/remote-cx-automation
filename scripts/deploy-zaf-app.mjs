@@ -61,7 +61,22 @@ import { assessZafDrift } from "./lib/zafDrift.mjs";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const APP_DIR = join(REPO, "zaf-app");
-const APP_ID = process.env.ZAF_APP_ID || "9990001";
+/* THE APP ID IS ACCOUNT-SCOPED, AND THIS PROJECT HAS MOVED ACCOUNT TWICE.
+   `9990001` was the app on `your-subdomain`; the migration to `your-subdomainhelp`
+   recreated it as `1288211`, and this constant kept the retired number, so the
+   only verb that ships the sidebar died with
+
+       REFUSED: app 9990001 is not owned by this account.
+
+   — an error that names the app and reads like a permissions problem, on the
+   one surface whose whole failure mode is silently serving a stale bundle.
+   Hard-coding the new number would just reset the same trap for the next move,
+   so the id is now RESOLVED FROM THE ACCOUNT by the app's own name and
+   `ZAF_APP_ID` remains the override for anyone who needs to aim it elsewhere.
+   Nothing here guesses: if the account owns no app by that name, or owns more
+   than one, the script refuses and says which — see resolveAppId(). */
+const APP_NAME = "Remote CX Review";
+const APP_ID_OVERRIDE = process.env.ZAF_APP_ID || null;
 const checkOnly = process.argv.includes("--check");
 
 /**
@@ -128,16 +143,43 @@ async function token() {
   return t;
 }
 
-async function installedVersion(tok) {
+async function ownedApps(tok) {
   const r = await fetch(`${BASE}/api/v2/apps/owned.json`, { headers: { Authorization: `Bearer ${tok}` } });
   if (!r.ok) die(2, `COULD NOT TELL: GET /apps/owned.json ${r.status}.`);
-  const app = (await r.json()).apps.find((a) => String(a.id) === String(APP_ID));
-  return app ? { version: app.version, updated: app.updated_at, name: app.name } : null;
+  return (await r.json()).apps ?? [];
+}
+
+/**
+ * Which app on THIS account is the sidebar. Refuses rather than guesses: zero
+ * matches means the app was never installed here (a real thing that happens
+ * after an account move), and two matches means a superseded upload is still
+ * around and picking either one silently is how a deploy lands nowhere.
+ */
+function resolveAppId(apps) {
+  if (APP_ID_OVERRIDE) {
+    const found = apps.find((a) => String(a.id) === String(APP_ID_OVERRIDE));
+    if (!found) die(1, `REFUSED: ZAF_APP_ID=${APP_ID_OVERRIDE} is not owned by this account. Owned: ${apps.map((a) => `${a.id} "${a.name}"`).join(", ") || "(none)"}`);
+    return found;
+  }
+  const matches = apps.filter((a) => a.name === APP_NAME);
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0) {
+    die(1, `REFUSED: this account owns no app named "${APP_NAME}". Owned: ${apps.map((a) => `${a.id} "${a.name}"`).join(", ") || "(none)"}. Set ZAF_APP_ID to aim this explicitly.`);
+  }
+  die(1, `REFUSED: ${matches.length} apps named "${APP_NAME}" (${matches.map((a) => a.id).join(", ")}). Set ZAF_APP_ID to say which.`);
 }
 
 const tok = await token();
-const before = await installedVersion(tok);
-if (!before) die(1, `REFUSED: app ${APP_ID} is not owned by this account.`);
+const apps = await ownedApps(tok);
+const resolved = resolveAppId(apps);
+const APP_ID = String(resolved.id);
+const before = { version: resolved.version, updated: resolved.updated_at, name: resolved.name };
+say(`app       : ${APP_ID} "${before.name}" on ${process.env.ZENDESK_SUBDOMAIN}`);
+
+async function installedVersion(tok) {
+  const app = (await ownedApps(tok)).find((a) => String(a.id) === APP_ID);
+  return app ? { version: app.version, updated: app.updated_at, name: app.name } : null;
+}
 
 const manifest = JSON.parse(readFileSync(join(APP_DIR, "manifest.json"), "utf8"));
 say(`installed : v${before.version}  (updated ${before.updated})`);

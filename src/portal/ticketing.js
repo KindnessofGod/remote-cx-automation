@@ -71,7 +71,11 @@ export const NO_TICKET_DECISIONS = Object.freeze({
   // it never needs one.
   uc01: ["auto_resolve"],
   uc02: ["auto_approve", "blocked"],
-  uc03: ["auto_resolve"],
+  // `blocked` joins `auto_resolve` here (2026-09-03): the engagement gate's
+  // refusal is terminal on a fact Remote publishes, so there is nothing for a
+  // specialist to look at and a ticket would be a hand-off to nobody. Same
+  // reasoning UC-01 applies to its own `blocked`.
+  uc03: ["auto_resolve", "blocked"],
   uc04: ["blocked"],
   uc05: [],
   uc09: [],
@@ -83,6 +87,31 @@ export const NO_TICKET_DECISIONS = Object.freeze({
  */
 export const TICKETABLE_TYPES = Object.freeze(Object.keys(NO_TICKET_DECISIONS));
 
+/**
+ * The UC-04 intake tag that stops being true the moment the employer decides.
+ *
+ * EXPORTED SO THE REMOVER CANNOT DRIFT FROM THE WRITER. This string is added
+ * here, at intake, and dropped in src/remoteui/server.js's handOffToMobility()
+ * when the customer's manager approves or declines. Two literals would be two
+ * things to keep in step, and the failure is SILENT in the worst direction: a
+ * remover naming a tag nothing writes removes nothing and reports success, so
+ * the stale tag survives and the guard that was supposed to catch it passes.
+ *
+ * WHY IT NEEDED REMOVING. Read live on 2026-09-01: ticket 127 carried
+ * `uc04_awaiting_employer_approval` thirty-five minutes after admin_jane had
+ * approved it and Remote's mobility team had cleared it. Tags are written at
+ * intake and nothing rewrote them, so the ticket asserted it was waiting for a
+ * decision that had already been made twice over. Same defect class as the
+ * sidebar badge and the "My requests" status the same evening — a surface that
+ * does not move when the state does.
+ *
+ * ONLY THIS ONE. `uc04_specialist_approval` stays: after the employer approves,
+ * a Remote mobility specialist genuinely is the next reader, so that tag is
+ * still true. And the QUEUE tag stays on a decline as well, deliberately —
+ * handOffToMobility() argues that case where it makes it.
+ */
+export const UC04_AWAITING_EMPLOYER_TAG = "uc04_awaiting_employer_approval";
+
 /** Outcome tags per use case, matching each one's own n8n/ZAF vocabulary. */
 const OUTCOME_TAGS = Object.freeze({
   uc02: {
@@ -93,9 +122,26 @@ const OUTCOME_TAGS = Object.freeze({
     human_review: "uc03_formal_letter_review",
     escalate: "uc03_escalated",
     route_to_uc04: "uc03_routed_uc04",
+    blocked: "uc03_blocked_ineligible",
   },
   uc04: {
-    ready_for_approval: "uc04_specialist_approval",
+    // THE ACTOR IN THIS TAG IS WRONG, AND IT IS ON EVERY LIVE UC-04 TICKET
+    // (2026-08-31). `uc04_specialist_approval` says a Remote mobility
+    // specialist approves. Since the three-stage correction (UC-04.md §1a) a
+    // `ready_for_approval` request waits on the CUSTOMER'S OWN MANAGER, in
+    // Remote's own product, and `src/uc04/approvalPolicy.js` refuses the
+    // specialist who reads this tag and goes looking for a button.
+    //
+    // ADDED, NOT RENAMED, and the asymmetry is the whole decision. Twenty live
+    // tickets carry the old string, the live Zendesk views and this repo's own
+    // registries key off it, and a rename would strand every one of them — the
+    // hand-off would be correct for the next request and unfindable for all the
+    // existing ones. The n8n port made the same call one file over
+    // (`uc04_ready_for_approval` kept, `uc04_awaiting_employer_approval`
+    // added), and two surfaces disagreeing about a tag is worse than one
+    // surface carrying a legacy one. Retiring the old string is its own unit of
+    // work, with a sweep of the live queue, and is not this one.
+    ready_for_approval: ["uc04_specialist_approval", UC04_AWAITING_EMPLOYER_TAG],
     escalate: "uc04_escalated",
   },
   uc05: {
@@ -130,8 +176,13 @@ export function needsTicket(typeId, decision) {
  */
 export function ticketTags(typeId, decision) {
   const named = OUTCOME_TAGS[typeId]?.[decision];
+  // AN ENTRY MAY NOW BE A LIST, because one decision can legitimately need two
+  // outcome tags: a legacy one that live tickets and live Zendesk views already
+  // key off, and a corrected one. See the uc04 entry above for the case that
+  // forced it. A string is still a string — the array form is opt-in per entry,
+  // so no other use case's tags move.
   const outcome = named ?? `${typeId}_${String(decision ?? "unknown").replace(/[^a-z0-9_]/gi, "_")}`;
-  return [MARKER_TAG, typeId, outcome];
+  return [MARKER_TAG, typeId, ...(Array.isArray(outcome) ? outcome : [outcome])];
 }
 
 // ---------------------------------------------------------------------------

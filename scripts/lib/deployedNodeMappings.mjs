@@ -58,6 +58,18 @@ import {
   consentLookupParamIssues,
 } from "../../workflows/nodes/consentLookupSpec.js";
 import { structuralNodeIssues, switchRuleIssues } from "./structuralNodeChecks.mjs";
+import { readReceiptNodeIssues } from "../../workflows/nodes-uc02/readReceiptNodeSpec.js";
+import {
+  FLAG_AWAITING_NODE_NAME,
+  FLAG_AWAITING_NODE_TYPE,
+  UC04_WORKFLOW_ID,
+  flagAwaitingApprovalIssues,
+} from "../../workflows/nodes-uc04/flagAwaitingApprovalSpec.js";
+// The twenty-six terminal Zendesk rows below are GENERATED from this one
+// module, which is also what scripts/deploy-terminal-nodes.mjs publishes from.
+// It pairs each node with the spec that owns its parameters and composes the
+// checkers where two specs own different dimensions of one node.
+import { structuralMappingRows } from "../../workflows/nodes/terminalZendeskDeployTargets.js";
 
 /**
  * Every deployed Code node that is supposed to be a copy of a file in this
@@ -180,6 +192,18 @@ export const MAPPINGS = [
   { workflowId: "WORKFLOW_UC02_ID", workflow: "UC-02 — Expense & Receipt Validation", node: "Expense Gates", file: "workflows/nodes-uc02/expenseGates.js" },
   { workflowId: "WORKFLOW_UC03_ID", workflow: "UC-03 — Travel Support Letter / Workation Router", node: "Normalize Inquiry", file: "workflows/nodes-uc03/normalizeInquiry.js" },
   { workflowId: "WORKFLOW_UC03_ID", workflow: "UC-03 — Travel Support Letter / Workation Router", node: "Travel Router Gates", file: "workflows/nodes-uc03/travelRouterGates.js" },
+  // rca-1e9k / 2026-08-31 — THE ONLY TEXT ON UC-03'S GRAPH A CUSTOMER READS,
+  // and until this row it was the least-checked string in the project: the
+  // node's body lived only on the live graph, so it had no file to diff and
+  // sat in unguarded-node-baseline.json as accepted debt. Its closing sentence
+  // told the customer to "reply to this ticket and a specialist will review and
+  // issue it" — advice to do the one thing that produces nothing, since the
+  // graph claims (UC-03, ticket) in `workflow_claims` and a re-trigger stops at
+  // `Duplicate Delivery — Stop`. docs/use-cases/UC-03.md had QUOTED that
+  // sentence as a defect for longer than it took to fix, because nothing read
+  // the node. See the file's own header for why this paragraph deliberately
+  // does NOT match src/uc03/letter.js's.
+  { workflowId: "WORKFLOW_UC03_ID", workflow: "UC-03 — Travel Support Letter / Workation Router", node: "Render Informational Answer", file: "workflows/nodes-uc03/renderInformationalAnswer.js" },
   { workflowId: "WORKFLOW_UC04_ID", workflow: "UC-04 — Work Authorization / Workation", node: "Normalize Workation Request", file: "workflows/nodes-uc04/normalizeWorkationRequest.js" },
   { workflowId: "WORKFLOW_UC04_ID", workflow: "UC-04 — Work Authorization / Workation", node: "Workation Gates", file: "workflows/nodes-uc04/workationGates.js" },
   { workflowId: "WORKFLOW_UC05_ID", workflow: "UC-05 — Resignation Notice Calculation", node: "Normalize Resignation Request", file: "workflows/nodes-uc05/normalizeResignationRequest.js" },
@@ -234,6 +258,18 @@ export const MAPPINGS = [
  * whose live shape needs to be held against a repo-side spec.
  */
 export const STRUCTURAL_MAPPINGS = [
+  // [E-1] the Zendesk receipt read. An HTTP node has no jsCode, so MAPPINGS
+  // cannot see it; its URL, its auth header and above all its onError are
+  // load-bearing. See workflows/nodes-uc02/readReceiptNodeSpec.js.
+  {
+    workflowId: "WORKFLOW_UC02_ID",
+    workflow: "UC-02 — Expense & Receipt Validation",
+    node: "Read Receipt (API)",
+    type: "n8n-nodes-base.httpRequest",
+    specFile: "workflows/nodes-uc02/readReceiptNodeSpec.js",
+    checkParams: (node) => readReceiptNodeIssues(node),
+    expectedOutputs: ["Expense Gates"],
+  },
   {
     workflowId: "WORKFLOW_UC01_ID",
     workflow: "UC-01 — Employment Verification",
@@ -405,6 +441,76 @@ export const STRUCTURAL_MAPPINGS = [
     specFile: "workflows/nodes/consentLookupSpec.js",
     expectedOutputs: [CONSENT_LOOKUP_NODE_NAME],
   },
+  // rca-1e9k / §3.109 — the FIRST row in this table that is not UC-01's, and
+  // the sixth node of the shape rca-uim, rca-ibh, rca-zu3, rca-2ix1 and
+  // rca-wn30 each paid for separately: a Zendesk "update ticket" node carries
+  // no jsCode, so MAPPINGS above is structurally blind to it, and until
+  // 2026-08-31 `Flag Awaiting Specialist Approval` was in
+  // unguarded-node-baseline.json — accepted debt, checked by nothing.
+  //
+  // WHAT THAT COST. The internal note this node writes onto a real customer's
+  // ticket read "awaiting ONE mobility specialist's approval". A UC-04
+  // `ready_for_approval` request is not awaiting a mobility specialist; it is
+  // awaiting THE CUSTOMER'S OWN MANAGER, in Remote's own product, and no
+  // Zendesk agent can make that decision (`src/uc04/approvalPolicy.js` refuses
+  // them; the sidebar panel offers no approve control). So the ticket
+  // instructed a Remote specialist to do the one thing every other layer of
+  // this system refuses — in PROSE, which is exactly what
+  // test/n8nUc04Parity.test.js cannot see: that test compares DECISIONS, so a
+  // node reaching the right verdict and describing it to the wrong person
+  // passes it every time. UC-04.md §1a is the corrected model.
+  //
+  // `expectedInputs` is a real assertion here and not boilerplate: it holds
+  // that output 0 of "Route by Decision" — the `ready_for_approval` branch —
+  // is what feeds this node, so a rule reorder that pointed the
+  // awaiting-your-manager note at a BLOCKED trip goes red. What it does NOT
+  // hold is the switch's own rule table: UC-04 has no STRUCTURAL_MAPPINGS row
+  // for "Route by Decision" because `routeByDecisionSpec.js`'s RULES are
+  // UC-01's seven decisions and UC-04 emits three. Named as the residual gap
+  // rather than papered over.
+  //
+  // `expectedOutputs: []` pins it terminal. A node wired downstream of a
+  // customer-facing Zendesk write is a change that should have to be declared.
+  {
+    workflowId: UC04_WORKFLOW_ID,
+    workflow: "UC-04 — Work Authorization / Workation",
+    node: FLAG_AWAITING_NODE_NAME,
+    type: FLAG_AWAITING_NODE_TYPE,
+    specFile: "workflows/nodes-uc04/flagAwaitingApprovalSpec.js",
+    checkParams: flagAwaitingApprovalIssues,
+    expectedInputs: ["Route by Decision"],
+    expectedOutputs: [],
+  },
+  // ---------------------------------------------------------------------------
+  // EVERY TERMINAL ZENDESK NODE ON THE NINE GRAPHS — twenty-six rows, GENERATED
+  // ---------------------------------------------------------------------------
+  // Was two hand-maintained blocks here: UC-04's three terminal nodes (prose)
+  // and a fourteen-row spread over escalationQueueTagSpec (rca-iih7 / D-14).
+  // They overlapped on two nodes, and by 2026-08-31 seven more use cases had
+  // gained a prose spec, so keeping them apart meant a third list to forget a
+  // node from. `workflows/nodes/terminalZendeskDeployTargets.js` is now the one
+  // pairing, and `scripts/deploy-terminal-nodes.mjs` reads the SAME table — so
+  // what gets published and what gets checked cannot drift apart, because they
+  // are the same objects.
+  //
+  // WHY THESE NODES NEEDED ROWS AT ALL. A Zendesk "update ticket" node carries
+  // no `jsCode`, so MAPPINGS above is structurally blind to it: its sentences
+  // were typed into node parameters, unversioned and diffed by nothing. That is
+  // how UC-04's blocked note came to say "blocked by the risk matrix" over a
+  // `factors_invalid` refusal where the matrix never ran; how UC-05's sign-off
+  // note asserted "No Remote write exists" after `resignation:write` shipped;
+  // and how fourteen escalation notes claimed a queue tag the ticket never got.
+  // `test/n8nUc0NParity.test.js` cannot see any of it — those tests compare
+  // DECISIONS, so a node reaching the right verdict and describing it to the
+  // wrong person, or naming a tag that is not there, passes every time.
+  //
+  // A node covered by BOTH a prose spec and D-14 gets one parameters object and
+  // BOTH checkers; `terminalZendeskDeployTargets.js` throws at import if a
+  // prose edit would revert D-14. Eight of the twenty-six carry `expectedInputs`
+  // — the eight that sit on output index ZERO, which is the only index
+  // `structuralNodeIssues()` can read. That limitation, and the residual gap it
+  // leaves on the other eighteen, are argued in that file's own header.
+  ...structuralMappingRows(),
 ];
 
 /**

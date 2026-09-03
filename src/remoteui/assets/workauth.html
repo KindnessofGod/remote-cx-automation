@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Remote UI Stand-in — Work authorization (employer decision)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<link rel="stylesheet" href="remote-ui.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="r-app">
+
+  <aside class="r-sidebar">
+    <div class="r-logo">
+      <span class="r-logo-mark" aria-hidden="true">R</span>
+      <span class="r-logo-word">remote</span>
+    </div>
+
+    <div class="r-nav">
+      <div class="r-nav-label">Use case</div>
+      <p class="sidebar-fact">UC-04 — Work authorization</p>
+      <div class="r-nav-label">Stage</div>
+      <p class="sidebar-fact">2 of 3 — the employer's decision</p>
+      <div class="r-nav-label">Other screens</div>
+      <p class="sidebar-fact"><a href="./">Contract amendment (UC-06)</a></p>
+    </div>
+
+    <div class="r-spacer"></div>
+
+    <p class="sidebar-foot">
+      The company you can act for comes from your signed-in session, not from
+      anything you type. Requests belonging to another company are not listed
+      here and are refused if their id is quoted.
+    </p>
+  </aside>
+
+  <main class="r-main">
+
+    <!-- THE QUEUE IS THE PAGE. Everything that is true of the SCREEN rather
+         than of a REQUEST — the three stages, the stand-in disclosure, the two
+         verbs Remote accepts — was repeated on every card and pushed the work
+         below the fold. It is said once now, in the collapsed explainer below,
+         and what stays per-row is only what is true of that row. -->
+    <header class="wa-head">
+      <div class="wa-head-text">
+        <h1 class="r-page-title">Work authorization requests</h1>
+        <p class="r-page-sub wa-sub">
+          Raised by an employee inside Remote's Request Hub and waiting on you, their
+          employer. Approve or decline on the row.
+        </p>
+      </div>
+      <div class="wa-head-actions">
+        <button type="button" class="r-btn r-btn-secondary r-btn-sm" id="reload">Reload</button>
+        <!-- Auto-refresh is stated, not silent: a list that changes under a
+             reader without saying it does is how a stale screen gets trusted. -->
+        <p class="r-muted small wa-live" id="live-note"></p>
+      </div>
+    </header>
+
+    <!-- STAYS VISIBLE, ALWAYS, AND IS NOT COLLAPSIBLE. An employer approval
+         reads like the end of the process and is not one: stage 3 is Remote's
+         own compliance review, it has no endpoint, and this system can neither
+         perform it nor watch for it. The span is filled with the SERVER's
+         sentence (STAGE_3_NOTE); the lead below it is the page's own standing
+         copy so the warning is on screen even before the first response and
+         after a failed one. -->
+    <div class="r-banner r-banner-warn wa-stage-note" role="note">
+      <span class="r-banner-icon" aria-hidden="true">&#9888;</span>
+      <span>
+        <strong>Your decision here is the EMPLOYER's, and only the employer's.</strong>
+        Remote's own Mobility Team reviews it separately afterwards. This system cannot
+        perform that review and cannot observe its outcome, so nobody is cleared to travel
+        by anything on this screen.
+        <span id="next-stage" class="wa-stage-note-detail"></span>
+      </span>
+    </div>
+
+    <!-- Said ONCE. It was previously repeated verbatim under every request,
+         which is what made two requests impossible to see at the same time. -->
+    <details class="r-banner r-banner-neutral wa-explainer" id="explainer">
+      <summary>
+        <span class="r-banner-icon" aria-hidden="true">&#8505;</span>
+        <strong>This is a stand-in, not Remote's real platform.</strong>
+        <span class="wa-explainer-more">Where this sits, and what the two verbs are</span>
+      </summary>
+      <div class="wa-explainer-body">
+        <p>
+          Remote publishes no endpoint that creates a work-authorization request &mdash; an
+          employee raises one inside Remote's own Request Hub &mdash; and the Sandbox holds
+          none. Requests badged <strong>stand-in</strong> in the queue are this repository's,
+          so the employer's decision has something to be about. Every field on them is a
+          property of Remote's own schema; the values are ours, and a decision on one is
+          recorded here and never sent to Remote.
+        </p>
+        <h3 class="wa-explainer-title">Where this sits</h3>
+        <ol id="stages" class="wa-stage-list"></ol>
+        <h3 class="wa-explainer-title">What the two buttons send</h3>
+        <p>
+          Approve sends <code>approved_by_manager</code>. Decline sends
+          <code>declined_by_manager</code>, and Remote requires a reason with it &mdash; which
+          is why declining on a row asks for one before it will send.
+        </p>
+      </div>
+    </details>
+
+    <section class="r-card wa-card" aria-labelledby="queue-title">
+      <div class="r-card-head wa-card-head">
+        <span class="r-tile" aria-hidden="true">&#9992;</span>
+        <div class="wa-card-head-text">
+          <h2 class="r-card-title" id="queue-title">
+            Awaiting your decision <span class="r-count" id="queue-count"></span>
+          </h2>
+          <p class="r-card-sub" id="queue-scope"></p>
+        </div>
+      </div>
+
+      <!-- Loading, refusals and the two empty states render here, above the
+           list, so the list itself only ever contains rows. -->
+      <div class="wa-notice" id="queue-message"></div>
+
+      <!-- The list itself carries aria-busy while a load is in flight. It is
+           deliberately NOT the live region: it is rebuilt on every poll, and a
+           region that re-announces forty rows every ten seconds is a region a
+           screen-reader user turns off. The short announcements go to
+           #announce below. -->
+      <ul class="wa-queue" id="queue" aria-busy="true"></ul>
+
+      <div class="r-card-body wa-queue-foot">
+        <p id="announce" class="wa-announce" role="status" aria-live="polite"></p>
+        <p id="probe" class="r-muted small"></p>
+        <div id="exclusions"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="workauth.js"></script>
+</body>
+</html>

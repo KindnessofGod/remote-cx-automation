@@ -94,17 +94,22 @@ function submit(overrides = {}) {
 // ---------------------------------------------------------------------------
 
 test("1. UK standard resignation, proposed LWD within statutory notice -> prepared_for_signoff", async () => {
-  // emp_uk_001: start 2023-01-10, ~43 months tenure by 2026-08-16 -> UK 37-48 month
-  // bracket = 21 days notice. Statutory end = 2026-08-16 + 21 = 2026-09-06. Proposed
-  // 2026-09-15 is later than the statutory end by 9 days; `later_than_statutory` is
-  // the conservative direction (more notice than required) — not a discrepancy that
-  // escalates.
+  // emp_uk_001: start 2023-01-10, ~43 months tenure by 2026-08-16. ERA 1996
+  // s.86(2) gives a resigning employee ONE WEEK, flat, from one month's
+  // continuous employment — it does not rise with service. Statutory end =
+  // 2026-08-16 + 7 = 2026-08-23. Proposed 2026-09-15 is later; the employee is
+  // giving MORE notice than required, which is the conservative direction and
+  // not a discrepancy that escalates.
+  //
+  // This scenario asserted 21 days until 2026-09-02, from the eight-bracket
+  // ladder that was s.86(1) — the EMPLOYER'S obligation applied to the
+  // employee. D-41, legislation.gov.uk.
   const r = await submit();
   assert.equal(r.decision, "prepared_for_signoff");
   assert.equal(r.reason, "all_gates_passed");
   assert.equal(r.notice.countryCode, "GB");
-  assert.equal(r.notice.noticeDays, 21);
-  assert.equal(r.notice.noticeEndDate, "2026-09-06");
+  assert.equal(r.notice.noticeDays, 7);
+  assert.equal(r.notice.noticeEndDate, "2026-08-23");
   assert.equal(r.notice.discrepancy, "later_than_statutory");
   assert.equal(r.extractionSource, "structured_input"); // explicit proposedEndDate -> no LLM
 });
@@ -125,12 +130,17 @@ test("2. PL tenure >3y, proposed LWD shorter than statutory 3-month notice -> es
   assert.equal(r.reason, "statutory_discrepancy");
   assert.ok(r.flags.includes("discrepancy_earlier_than_statutory"));
   assert.equal(r.notice.countryCode, "PL");
-  assert.equal(r.notice.noticeDays, 90);
-  // PL uses month_1st anchor for monthly notices -> end of notice is the 1st
-  // of the month FOLLOWING the +90 day calculation. The +/- 3-day window
-  // accounts for weekend alignment of the 1st-of-month rule.
+  // THREE MONTHS, AS THE STATUTE DENOMINATES IT — not 90 days (2026-09-02).
+  // Kodeks pracy art. 36 §1 pkt 3 states the period in months, and "30 days is
+  // not the same quantity" is this table's own rule, already applied to NL.
+  assert.equal(r.notice.noticeDays, null, "a months-denominated period must not report a day count");
+  assert.equal(r.notice.noticeMonths, 3);
+  // art. 30 §2¹ ends a monthly notice period on the LAST DAY of a calendar
+  // month. The anchor was `month_1st` until 2026-09-02, which returned the
+  // FIRST of the following month — a date that cannot be a last working day
+  // under the rule it claimed to implement, and one day past the right answer.
   assert.equal(r.notice.anchorAdjusted, true);
-  assert.match(r.notice.noticeEndDate, /^2026-(10|11)-/);
+  assert.equal(r.notice.noticeEndDate, "2026-10-31");
 });
 
 // ---------------------------------------------------------------------------
@@ -357,9 +367,10 @@ test("DE non-probation: an established DE employee gets the 4-week notice + mont
 });
 
 test("proposed LWD exactly on statutory end -> discrepancy 'match', still prepared_for_signoff", async () => {
-  // emp_uk_001, ~43 months tenure by 2026-08-16 -> 21 days notice (UK 37-48 month
-  // bracket). Statutory end = 2026-08-16 + 21 = 2026-09-06. Set proposed to 2026-09-06.
-  const r = await submit({ proposedEndDate: "2026-09-06" });
+  // emp_uk_001. ERA 1996 s.86(2): one week, flat. Statutory end = 2026-08-16 + 7
+  // = 2026-08-23. (This read 21 days and 2026-09-06 until 2026-09-02, from the
+  // employer's s.86(1) ladder — D-41.)
+  const r = await submit({ proposedEndDate: "2026-08-23" });
   assert.equal(r.decision, "prepared_for_signoff");
   assert.equal(r.notice.discrepancy, "match");
   assert.equal(r.notice.discrepancyDays, 0);
@@ -552,7 +563,13 @@ test("addCalendarDays: simple + N days, no DST/leap gotchas in YYYY-MM-DD arithm
   assert.equal(addCalendarDays("2026-02-27", 2), "2026-03-01");
 });
 
-test("applyAnchor: month_15 snaps day<=14 to the 15th, day>=16 to month-end of the following month", () => {
+test("applyAnchor: month_15 snaps to the NEXT PERMITTED DATE ON OR AFTER the raw end", () => {
+  // CORRECTED 2026-09-02. This test used to assert that day 16+ went to the
+  // month-end of the FOLLOWING month, which is what the code did and what its
+  // comment said it did. BGB §622(1) permits termination on the 15th OR the end
+  // of a calendar month, so for a raw end on day 16+ the next permitted date is
+  // THIS month's own last day — already on or after it. Going a month further
+  // overshoots and skips a date the statute plainly allows.
   const r1 = applyAnchor("2026-08-10", "month_15");
   assert.equal(r1.date, "2026-08-15");
   assert.equal(r1.adjusted, true);
@@ -562,8 +579,39 @@ test("applyAnchor: month_15 snaps day<=14 to the 15th, day>=16 to month-end of t
   assert.equal(r2.adjusted, false);
 
   const r3 = applyAnchor("2026-08-20", "month_15");
-  assert.equal(r3.date, "2026-09-30");
+  assert.equal(r3.date, "2026-08-31", "day 16+ overshoots into the following month again");
   assert.equal(r3.adjusted, true);
+
+  // A raw end that IS already a permitted date is not moved, and is not
+  // reported as moved — the panel says "the end date was moved by that
+  // country's own rule", and saying so about a date nothing touched is the
+  // sentence that made the old defect invisible.
+  const r4 = applyAnchor("2026-08-31", "month_15");
+  assert.equal(r4.date, "2026-08-31");
+  assert.equal(r4.adjusted, false);
+});
+
+test("month_15 NEVER SHORTENS the notice, and never rewards resigning later", () => {
+  // The two properties that make an anchor safe, both violated before the fix.
+  //
+  // (1) The anchored end is always ON OR AFTER the raw end, so snapping can
+  //     only ever give the employee more notice to serve, never less than the
+  //     statute requires.
+  // (2) Monotonic: a later filing can never produce an earlier last working
+  //     day. A German employee with seven years' service used to leave sixteen
+  //     days EARLIER by resigning on 4 October instead of 3 October. No notice
+  //     rule in any jurisdiction produces that curve, which is why this needed
+  //     no German-law argument to reject.
+  let previous = null;
+  for (let day = 1; day <= 28; day++) {
+    const raw = `2026-08-${String(day).padStart(2, "0")}`;
+    const anchored = applyAnchor(raw, "month_15").date;
+    assert.ok(anchored >= raw, `${raw} anchored BACKWARDS to ${anchored} — the notice was shortened`);
+    if (previous) {
+      assert.ok(anchored >= previous, `a raw end of ${raw} anchors to ${anchored}, earlier than the day before`);
+    }
+    previous = anchored;
+  }
 });
 
 test("applyAnchor: month_1st always snaps to the 1st of the following month", () => {
@@ -577,11 +625,22 @@ test("applyAnchor: continuous leaves the date alone (and reports not adjusted)",
   assert.equal(r.adjusted, false);
 });
 
-test("pickBracket: UK 37-48 month bracket -> 21 days, 49-60 month bracket -> 28 days", () => {
+test("pickBracket: the UK has ONE bracket — one week, flat, and it does not rise with service", () => {
+  // REWRITTEN 2026-09-02. This asserted a ladder — 48 months to 21 days, 49 to
+  // 28, 121 to 84 — which is ERA 1996 s.86(1), the EMPLOYER'S sliding scale.
+  // s.86(2) gives a resigning employee "not less than one week", flat, from one
+  // month's continuous employment. D-41, legislation.gov.uk.
+  //
+  // The test now asserts the FLATNESS, which is the property the old ladder
+  // violated, rather than three points on a curve that should not exist.
   const rule = getNoticeRule("GB");
-  assert.equal(pickBracket(rule, 48).noticeDays, 21); // upper bound inclusive
-  assert.equal(pickBracket(rule, 49).noticeDays, 28);
-  assert.equal(pickBracket(rule, 121).noticeDays, 84);
+  assert.equal(rule.brackets.length, 1, "a second UK bracket means the employer's ladder is creeping back");
+  for (const months of [1, 12, 48, 49, 121, 400]) {
+    assert.equal(pickBracket(rule, months).noticeDays, 7, `${months} months must still be one week`);
+  }
+  // And below the threshold there is no rule at all — the statute is silent,
+  // which is not the same claim as "nothing is owed".
+  assert.equal(pickBracket(rule, 0), null, "under one month s.86(2) has not attached; a bracket here would assert a quantity");
 });
 
 test("pickBracket: DE on probation picks the 2-week probation rule, not the regular 4-week", () => {
@@ -601,8 +660,9 @@ test("supportedCountryCodes returns the 11 expected ISO codes", () => {
 });
 
 test("computeNoticePeriod: proposed date LATER than statutory end is `later_than_statutory`, not a discrepancy that escalates", () => {
-  // UK 37-48 month bracket = 21 days. Statutory end = 2026-08-16 + 21 = 2026-09-06.
-  // Proposed 2026-09-15 is 9 days later.
+  // ERA 1996 s.86(2) = one week. Statutory end = 2026-08-16 + 7 = 2026-08-23.
+  // Proposed 2026-09-15 is 23 days later. (21 days / 9 days until 2026-09-02,
+  // from the employer's ladder — D-41.)
   const r = computeNoticePeriod({
     countryCode: "GB",
     startDate: "2023-01-10",
@@ -610,7 +670,7 @@ test("computeNoticePeriod: proposed date LATER than statutory end is `later_than
     proposedEndDate: "2026-09-15",
   });
   assert.equal(r.discrepancy, "later_than_statutory");
-  assert.equal(r.discrepancyDays, 9);
+  assert.equal(r.discrepancyDays, 23);
 });
 
 test("computeNoticePeriod: PT >2y tenure gives 60 days notice, <2y gives 30", () => {
@@ -626,15 +686,21 @@ test("computeNoticePeriod: all 9 supported countries each produce their own dist
   // bracket from noticePeriodTable.js — every value here is read directly
   // off that table's own comments, not re-derived from the code under test.
   const cases = [
-    { countryCode: "GB", startDate: "2023-01-10", expectedDays: 21, basis: "statutory" }, // 37-48mo bracket
+    { countryCode: "GB", startDate: "2023-01-10", expectedDays: 7, basis: "statutory" }, // s.86(2): one week, flat, at any service
     { countryCode: "IE", startDate: "2020-01-01", expectedDays: 7, basis: "statutory" }, // >=3mo bracket
     { countryCode: "DE", startDate: "2020-01-01", expectedDays: 28, basis: "statutory" }, // flat 4 weeks
-    { countryCode: "PL", startDate: "2020-01-01", expectedDays: 90, basis: "statutory" }, // >36mo bracket
+    // PL IS ASSERTED SEPARATELY BELOW — Kodeks pracy art. 36 §1 pkt 3 states
+    // three MONTHS, so this row has no `noticeDays` to compare and belongs with
+    // the Netherlands, which was never in this list for the same reason.
     { countryCode: "IN", startDate: "2023-08-01", expectedDays: 14, basis: "statutory" }, // 24-59mo bracket
     { countryCode: "PH", startDate: "2020-01-01", expectedDays: 30, basis: "statutory" }, // flat 30 days
     { countryCode: "MX", startDate: "2020-01-01", expectedDays: 30, basis: "statutory" }, // flat 30 days
-    { countryCode: "CA", startDate: "2020-01-01", expectedDays: 14, basis: "customary" }, // >=36mo bracket
     { countryCode: "PT", startDate: "2020-01-01", expectedDays: 60, basis: "statutory" }, // >=2y bracket
+    // CANADA REMOVED FROM THIS LIST 2026-09-02, and asserted separately below
+    // instead. It had `expectedDays: 14, basis: "customary"` — a figure nobody
+    // retrieved, on a row CONTRADICTIONS.md C-30 decided to delete twelve days
+    // earlier. A country with no statutory rule cannot "produce its own
+    // distinct, correct notice days" and must not be asked to.
   ];
   for (const c of cases) {
     const r = computeNoticePeriod({ countryCode: c.countryCode, startDate: c.startDate, now });
@@ -644,7 +710,30 @@ test("computeNoticePeriod: all 9 supported countries each produce their own dist
     assert.ok(r.noticeEndDate, `${c.countryCode}: must produce a concrete notice end date`);
     assert.ok(r.sourceCitation && r.sourceCitation.length > 0, `${c.countryCode}: must cite a source rule`);
   }
-  // The 9 expected values are not all identical — confirms the table is
+  // THE MONTHS-DENOMINATED ROWS, asserted in their own unit rather than
+  // converted. "30 days is not the same quantity" as one month — this table's
+  // own rule, and the reason Poland moved off `noticeDays` on 2026-09-02.
+  for (const [countryCode, months] of [["PL", 3], ["NL", 1]]) {
+    const r = computeNoticePeriod({ countryCode, startDate: "2020-01-01", now });
+    assert.equal(r.noticeMonths, months, `${countryCode}: expected ${months} month(s)`);
+    assert.equal(r.noticeDays, null, `${countryCode}: a months-denominated period must not report a day count`);
+    assert.ok(r.noticeEndDate, `${countryCode}: must still produce a concrete last working day`);
+  }
+
+  // THE SOURCED ABSENCES, ASSERTED RATHER THAN OMITTED — so shortening the list
+  // above can never be how this test is made to pass. CA and US are covered by
+  // a finding that there is nothing to compute; each must say so under its own
+  // reason and must NOT fall through to `unsupported_country`, which means a
+  // gap in our table and goes to a different desk.
+  for (const countryCode of ["CA", "US"]) {
+    const r = computeNoticePeriod({ countryCode, startDate: "2020-01-01", now });
+    assert.equal(r.noticeDays, null, `${countryCode}: computed a notice period it holds no rule for`);
+    assert.equal(r.noticeEndDate, null, `${countryCode}: produced a date from no rule`);
+    assert.equal(r.statutoryMinimumExists, false, `${countryCode}: a sourced absence must say so`);
+    assert.ok(r.sourceCitation && r.sourceCitation.length > 0, `${countryCode}: an absence still needs its source`);
+  }
+
+  // The expected values are not all identical — confirms the table is
   // actually being read per-country rather than one bracket silently
   // winning for every input.
   const distinctDays = new Set(cases.map((c) => c.expectedDays));
@@ -853,15 +942,19 @@ test("STRUCTURAL: workflow.js does not invoke any patch/post endpoint on RemoteC
 // proves two implementations MATCH; it never proves either is right about an
 // input neither was given.
 test("computeNoticePeriod accepts a full ISO timestamp for `now`, as the real intake sends", () => {
+  // MX RATHER THAN CA (2026-09-02). Canada was only ever a vehicle here — this
+  // test is about parsing `now`, not about Canadian notice — and it stopped
+  // being usable when the CA row became a sourced absence with no computed date
+  // (CONTRADICTIONS.md C-30). Any country with a real statutory rule serves.
   const fromTimestamp = computeNoticePeriod({
-    countryCode: "CA",
+    countryCode: "MX",
     startDate: "2023-06-24",
     probationEndDate: null,
     proposedEndDate: "2026-10-15",
     now: "2026-08-16T13:05:20.171Z",
   });
   const fromCalendarDay = computeNoticePeriod({
-    countryCode: "CA",
+    countryCode: "MX",
     startDate: "2023-06-24",
     probationEndDate: null,
     proposedEndDate: "2026-10-15",
@@ -870,12 +963,14 @@ test("computeNoticePeriod accepts a full ISO timestamp for `now`, as the real in
 
   assert.equal(fromTimestamp.noticeStartDate, "2026-08-16", "the time component must be dropped, not carried into the date");
   assert.deepEqual(fromTimestamp, fromCalendarDay, "a timestamp and its calendar day must produce the identical result");
-  assert.equal(fromTimestamp.noticeEndDate, "2026-08-30", "14 days' customary notice at 38 months' tenure");
+  assert.equal(fromTimestamp.noticeEndDate, "2026-09-15", "30 days' statutory notice");
 });
 
 test("computeNoticePeriod accepts a Date for `now` too, and refuses what it cannot read", () => {
+  // MX rather than CA, same reason as the test above: Canada was a vehicle for
+  // date parsing, and its row no longer computes a date at all.
   const fromDate = computeNoticePeriod({
-    countryCode: "CA",
+    countryCode: "MX",
     startDate: "2023-06-24",
     probationEndDate: null,
     proposedEndDate: "2026-10-15",
@@ -887,7 +982,7 @@ test("computeNoticePeriod accepts a Date for `now` too, and refuses what it cann
   // HR document, and a silently wrong one is worse than a refused one.
   assert.throws(
     () => computeNoticePeriod({
-      countryCode: "CA",
+      countryCode: "MX",
       startDate: "2023-06-24",
       probationEndDate: null,
       proposedEndDate: "2026-10-15",
@@ -973,7 +1068,7 @@ test("8d. policy engine turns an uncomputable payout into escalate/pto_balance_u
   assert.ok(result.flags.includes("pto_balance_unusable"));
   assert.ok(result.flags.includes("pto_missing_hourlyRateInRemoteInteger"));
   // The statutory notice is still computed and attached — HR Ops needs it.
-  assert.equal(result.notice.noticeDays, 21);
+  assert.equal(result.notice.noticeDays, 7); // ERA 1996 s.86(2) — one week, flat (was 21, the employer's ladder; D-41)
   assert.equal(result.payout.computable, false);
 });
 
@@ -1078,7 +1173,7 @@ test("F-33: the gate turns a negative accrual into an audited escalate, not a si
   assert.ok(result.flags.includes("pto_balance_unusable"));
   assert.ok(result.flags.includes("pto_missing_daysAccrued"), "the escalation names the field");
   // The statutory notice is still computed and attached — HR Ops needs it.
-  assert.equal(result.notice.noticeDays, 21);
+  assert.equal(result.notice.noticeDays, 7); // ERA 1996 s.86(2) — one week, flat (was 21, the employer's ladder; D-41)
 });
 
 test("F-33 POSITIVE: the clamp survives for the case it exists for — leave taken in ADVANCE still pays 0.00", () => {
@@ -1262,7 +1357,45 @@ test("F-36 POSITIVE: a probation end date on the NORMALIZED employment shape rea
     now: "2026-08-16",
   });
   assert.equal(onProbation.notice.onProbation, true, "the gate must SEE the probation date");
-  assert.equal(onProbation.notice.noticeDays, 15, "Portugal's probation notice is 15 days, not 30");
+
+  // PORTUGAL NO LONGER DEMONSTRATES THE DIFFERENCE, and that is a correction
+  // rather than a regression (2026-09-02). This asserted `noticeDays: 15` —
+  // which was the EMPLOYER's figure, and superseded by Lei n.º 13/2023 in any
+  // case. art. 114.º(1) lets either party terminate during probation "sem aviso
+  // prévio", so a resigning Portuguese employee owes NOTHING, and the row now
+  // says so and carries no probation bracket. With none, pickBracket() falls
+  // through to the ordinary rule, so PT's on- and off-probation answers are the
+  // same number and the reachability this test exists for is unobservable here.
+  //
+  // The SEEN assertion above is the half F-36 is actually about and it stays.
+  // The half that needs a visible difference moves to Germany, whose two-week
+  // probationary period under BGB §622(3) binds both parties and is confirmed
+  // by D-45. If PT's probation ever becomes branchable (`noStatutoryProbationNotice`
+  // is on the row and nothing consumes it yet), this is where to assert it.
+  const deOnProbation = evaluatePolicy({
+    identityVerified: true,
+    employment: {
+      status: "active",
+      country_code: "DE",
+      start_date: "2026-06-01",
+      probation_end_date: "2026-11-01",
+    },
+    now: "2026-08-16",
+  });
+  assert.equal(deOnProbation.notice.onProbation, true);
+  assert.equal(deOnProbation.notice.noticeDays, 14, "Germany's probationary notice is two weeks");
+
+  const deOffProbation = evaluatePolicy({
+    identityVerified: true,
+    employment: { status: "active", country_code: "DE", start_date: "2026-06-01" },
+    now: "2026-08-16",
+  });
+  assert.equal(deOffProbation.notice.noticeDays, 28, "off probation it is the ordinary four weeks");
+  assert.notEqual(
+    deOnProbation.notice.noticeDays,
+    deOffProbation.notice.noticeDays,
+    "the probation date reaches the bracket and CHANGES the answer — the whole point of F-36"
+  );
 
   const offProbation = evaluatePolicy({
     identityVerified: true,
@@ -1270,7 +1403,9 @@ test("F-36 POSITIVE: a probation end date on the NORMALIZED employment shape rea
     now: "2026-08-16",
   });
   assert.equal(offProbation.notice.onProbation, false);
-  assert.equal(offProbation.notice.noticeDays, 30, "without the date the employee is told they owe twice as much");
+  // PT's ordinary bracket at under two years' service. Unchanged by the
+  // probation correction — art. 400.º(1) is a different article.
+  assert.equal(offProbation.notice.noticeDays, 30);
 });
 
 test("F-36: the RAW Remote field name is accepted too, so an unnormalized record is not silently full-tenure", () => {
@@ -1287,8 +1422,26 @@ test("F-36: the RAW Remote field name is accepted too, so an unnormalized record
     },
     now: "2026-08-16",
   });
+  // The RAW field name is SEEN — which is the whole assertion, and it is the one
+  // that has never moved. `onProbation` is what proves the finding.
   assert.equal(result.notice.onProbation, true);
-  assert.equal(result.notice.noticeDays, 15);
+  // THE FIGURE MOVED FROM 30 TO NULL ON 2026-09-02, and the statute is the
+  // reason. Código do Trabalho art. 114.º(1) — "durante o período experimental
+  // … qualquer das partes pode denunciar o contrato sem aviso prévio" — so a
+  // Portuguese employee inside probation owes NO statutory notice, and there is
+  // no period to state. Until this date the row recorded that fact in a field
+  // (`noStatutoryProbationNotice`) that nothing read, so `pickBracket()` fell
+  // through to the ordinary 30-day bracket and this fixture pinned the
+  // fall-through. The 30 was never art. 114.º's answer; it was art. 400.º(1)'s,
+  // applied to somebody art. 400.º does not yet reach.
+  //
+  // NOT `noticeDays: 0` either: art. 114.º(1) opens "salvo acordo escrito em
+  // contrário", so a written contract may require notice where the statute does
+  // not, and this system holds no contract. Hence a refusal, not a zero.
+  assert.equal(result.notice.noticeDays, null);
+  assert.equal(result.notice.noStatutoryProbationNotice, true);
+  assert.equal(result.reason, "no_statutory_notice_during_probation");
+  assert.equal(result.decision, "escalate");
 });
 
 test("F-36: normalizeEmployment carries the probation END DATE, not just the boolean", () => {

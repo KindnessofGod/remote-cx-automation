@@ -380,14 +380,21 @@ export function createEntitlementChecker({ grants, source = "configured roster" 
       if (held && held.grants.has(wanted)) return null;
 
       const holds = held ? [...held.grants].sort().join(", ") : "";
+      // THE SENTENCE A ZENDESK AGENT READS UNDER THE BUTTON (2026-09-02). It
+      // used to cite `docs/APPROVAL-ROUTING.md §1.3` and the env var name —
+      // neither of which an agent can open or act on — said "Approving" after a
+      // Decline, and never named the code they would quote when asking for
+      // access, nor what would clear it. Verb-neutral, code named, remedy
+      // stated; the doc citation lives in this file's header instead.
       return refuse(
         NOT_ENTITLED,
-        `${String(approver).trim()} is not entitled to act as "${role}" on ${useCase}. ` +
+        `${String(approver).trim()} is not entitled to act as "${role}" on ${useCase} (approver_not_entitled). ` +
           (holds
             ? `This approver is on the roster but holds only: ${holds}. `
             : "This approver is not on the entitlement roster at all. ") +
-          `Entitlement source: ${source}. Approving requires the role, not just an authenticated identity ` +
-          `— see docs/APPROVAL-ROUTING.md §1.3.`
+          "Signing or declining requires the role, not just a signed-in identity. " +
+          `What clears it: whoever administers this deployment adds "${useCase.toLowerCase().replace("-", "")}:${role}" ` +
+          `for this person to the entitlement roster (${source}); nothing on this panel can grant it.`
       );
     },
 

@@ -127,8 +127,24 @@ import { toRemoteInteger, fromRemoteInteger } from "../shared/money.js";
  * @property {boolean} computable              false when any balance line was unusable;
  *   the money fields are then null rather than a partial or invented figure
  * @property {UnusableLine[]} unusableLines    one entry per refused line, naming its fields
+ * @property {PayoutInput[]} inputs            one entry per USABLE line, index-parallel to
+ *   `lines`, echoing the figures that were multiplied so the working can be shown.
+ *   Descriptive only — nothing decides on it. See the block above `const inputs`.
  * @property {string} source                   "time_off_records" | "no_time_off_records"
  *   | "unusable_time_off_records"
+ */
+
+/**
+ * @typedef {object} PayoutInput
+ * @property {string|null} timeOffType
+ * @property {number|null} daysAccrued        null when the line carried Remote's own
+ *   netted `daysAvailable` — there was no subtraction to state
+ * @property {number|null} daysUsed
+ * @property {number} daysAvailable           the base actually multiplied
+ * @property {number} hoursPerDay
+ * @property {number} hourlyRateInRemoteInteger
+ * @property {number} payoutInRemoteInteger
+ * @property {string} currency
  */
 
 /**
@@ -176,9 +192,12 @@ import { toRemoteInteger, fromRemoteInteger } from "../shared/money.js";
  * @param {any} balance
  * @returns {string[]} field names that make the line unusable
  */
-function unusableFields(balance) {
+function unusableFields(balance, statedCurrency = null) {
   const missing = [];
   if (!balance || typeof balance !== "object") return ["balance"];
+  // NO CURRENCY, NO MONEY. See reconcilePtoPayout()'s header: this used to
+  // default to USD and denominated a Portuguese settlement in dollars.
+  if (!statedCurrency) missing.push("currency");
   // NEGATIVE IS NOT MERELY AN INTEGER. Number.isInteger(-2500) is true, so a
   // negative rate produced a confident negative payout and passed every gate.
   // F-33 already refuses negative daysAccrued/daysUsed a few lines below; the
@@ -249,17 +268,79 @@ function unusableFields(balance) {
  *   `hasDiscrepancy: true` so HR Ops can verify.
  * @returns {PayoutReconciliation}
  */
+/**
+ * WHERE A PAYOUT'S CURRENCY COMES FROM — stated by the caller, else Remote's
+ * own `contract_details.compensation_currency_code`, else nothing.
+ *
+ * ONE FUNCTION, TWO EXECUTION PATHS. `workflow.js` chose the currency inline
+ * (`ticket.currency ?? compensation_currency_code ?? employment.currency ??
+ * "USD"`) and the n8n gates body chose it a second time as `request.currency
+ * || 'USD'` — never reading the employment record at all — while the normalize
+ * node upstream had already filled a missing currency with 'USD'. So the fix
+ * that stopped the portal denominating a Portuguese settlement in dollars
+ * (uc05PayoutCurrency.test.js) never reached the Zendesk-driven path: every
+ * ticket-filed resignation was still USD unless the webhook body said otherwise.
+ * The parity harness now derives its currency through this function so the
+ * two paths are compared on the same rule, and the trailing "USD" is gone from
+ * all four places — an absent currency refuses the line, it does not become
+ * dollars.
+ *
+ * `compensation_currency_code` is [CONFIRMED] live on the NL/US/CA Sandbox
+ * records ("EUR"/"USD"/"CAD"). Naming a currency is not arithmetic, so
+ * preferring Remote's costs nothing and asserts nothing; an explicit stated
+ * value still wins because a caller that named one is stating a fact about its
+ * own numbers.
+ *
+ * @param {{ stated?: unknown, employment?: object|null }} args
+ * @returns {string|null} normalised (trimmed, upper-cased) code, or null
+ */
+export function payoutCurrencyFor({ stated = null, employment = null } = {}) {
+  const norm = (v) => (typeof v === "string" && v.trim() ? v.trim().toUpperCase() : null);
+  return (
+    norm(stated) ??
+    norm(employment?.contract_details?.compensation_currency_code) ??
+    norm(employment?.currency) ??
+    null
+  );
+}
+
 export function reconcilePtoPayout({ balances, currency, hoursPerDay = 8, reportedBalanceInRemoteInteger = null }) {
+  // A CURRENCY IS PART OF A MONEY FIGURE, NOT A LABEL ON ONE — and defaulting it
+  // to "USD" invented one, four times in this file (2026-09-02).
+  //
+  // MEASURED ON THE LIVE DEPLOYMENT. A PORTUGUESE employee filed a resignation
+  // through the portal, typed an hourly rate of 26.00 meaning euros, and the
+  // settlement rendered:
+  //
+  //     "2704.00 USD — vacation: 18 days accrued − 5 taken = 13 days × 8 hours
+  //      per day × 26.00 USD per hour = 2,704.00 USD"
+  //
+  // The portal form has no currency box at all, so EVERY portal-filed
+  // resignation was denominated USD whatever the country — on the figure that
+  // becomes someone's final payment, on a document HR Ops signs.
+  //
+  // THE SAME RULE THIS FILE ALREADY APPLIES TO A MISSING RATE. An absent hourly
+  // rate refuses the line rather than paying zero; an absent currency refuses it
+  // rather than paying dollars. Both are "we cannot see what is owed", and the
+  // repository's standing rule is that money is never fabricated — a
+  // denomination nobody stated is fabricated money with the digits left intact.
+  //
+  // NORMALISED, NOT VALIDATED AGAINST A LIST. An unrecognised three-letter code
+  // is the caller's problem to explain and not this function's to reject; what
+  // it must never do is substitute one.
+  const statedCurrency =
+    typeof currency === "string" && currency.trim() ? currency.trim().toUpperCase() : null;
   if (!Array.isArray(balances) || balances.length === 0) {
     return {
       lines: [],
       totalInRemoteInteger: 0,
-      currency: currency ?? "USD",
+      currency: statedCurrency,
       hasDiscrepancy: false,
       reportedBalanceInRemoteInteger,
       computedBalanceInRemoteInteger: 0,
       computable: true,
       unusableLines: [],
+      inputs: [],
       source: "no_time_off_records",
     };
   }
@@ -269,7 +350,7 @@ export function reconcilePtoPayout({ balances, currency, hoursPerDay = 8, report
   const unusableLines = [];
   const usable = [];
   balances.forEach((b, index) => {
-    const missing = unusableFields(b);
+    const missing = unusableFields(b, statedCurrency);
     if (missing.length > 0) {
       unusableLines.push({
         index,
@@ -287,6 +368,30 @@ export function reconcilePtoPayout({ balances, currency, hoursPerDay = 8, report
       usable.push(b);
     }
   });
+
+  // THE INPUTS THAT PRODUCED EACH LINE, ECHOED SO THE WORKING CAN BE SHOWN.
+  //
+  // A resigning employee was shown `2704.00 EUR — from the leave balances on
+  // record` for a figure they had derived themselves from four numbers they had
+  // just typed, and not one of the four was on the screen. `lines` carries the
+  // netted day count and the money and nothing else, so no consumer could state
+  // the derivation — and reconstructing the rate by dividing the payout by the
+  // hours is not open to them either: the payout is rounded to the cent, so that
+  // division yields a rate nobody stated.
+  //
+  // FILLED PARALLEL TO `lines`, INDEX FOR INDEX, and deliberately NOT merged
+  // into the line objects themselves: `test/n8nUc05Parity.test.js` deep-equals
+  // `payout.lines` against the n8n Code node's own copy of this function
+  // (workflows/nodes-uc05/noticePeriodGates.js), and widening that shape here
+  // alone would turn a real cross-path guard red for a field the n8n path has
+  // no use for — it renders no document and hands nobody a settlement to read.
+  // A top-level sibling is additive on both counts: the parity test compares
+  // `totalInRemoteInteger`, `source`, `computable`, `unusableLines` and `lines`
+  // by name, all five unchanged, and no decision anywhere consults this.
+  //
+  // src/uc05/payoutWorking.js is the only reader, and it adds nothing to what
+  // is echoed here — an absent input makes the working stop, never get filled.
+  const inputs = [];
 
   const lines = usable.map((b) => {
     // Remote's own netted balance when the line carries one, the accrued-minus-
@@ -313,11 +418,26 @@ export function reconcilePtoPayout({ balances, currency, hoursPerDay = 8, report
     const hourlyRateAsHuman = fromRemoteInteger(b.hourlyRateInRemoteInteger);
     const linePayoutHuman = hours * hourlyRateAsHuman;
     const linePayoutInteger = toRemoteInteger(linePayoutHuman);
+    inputs.push({
+      timeOffType: b.timeOffType ?? null,
+      // COMPONENTS ONLY WHEN THE COMPONENT SHAPE WAS THE ONE USED. A line that
+      // carried Remote's own netted `daysAvailable` was never a subtraction, and
+      // printing "13.75 accrued − 0 taken" over it would state a subtraction
+      // nobody performed. Null here is what makes the two shapes render as the
+      // two different claims they are (see payoutWorking.js's daysClause()).
+      daysAccrued: "daysAvailable" in b ? null : Number(b.daysAccrued),
+      daysUsed: "daysAvailable" in b || b.daysUsed === null || b.daysUsed === undefined ? null : Number(b.daysUsed),
+      daysAvailable,
+      hoursPerDay: effectiveHoursPerDay,
+      hourlyRateInRemoteInteger: b.hourlyRateInRemoteInteger,
+      payoutInRemoteInteger: linePayoutInteger,
+      currency: statedCurrency,
+    });
     return {
       timeOffType: b.timeOffType,
       daysAvailable,
       payoutInRemoteInteger: linePayoutInteger,
-      currency: currency ?? "USD",
+      currency: statedCurrency,
       // WHERE THE DAYS CAME FROM, carried onto the line that is stored and
       // signed. Until the Time Off read existed, every figure here originated
       // in a form field; now some do and some do not, and a settlement document
@@ -340,12 +460,14 @@ export function reconcilePtoPayout({ balances, currency, hoursPerDay = 8, report
   return {
     lines,
     totalInRemoteInteger,
-    currency: currency ?? "USD",
+    currency: statedCurrency,
     hasDiscrepancy,
     reportedBalanceInRemoteInteger,
     computedBalanceInRemoteInteger: totalInRemoteInteger,
     computable,
     unusableLines,
+    // Parallel to `lines`, index for index. See the block above `const inputs`.
+    inputs,
     source: computable ? "time_off_records" : "unusable_time_off_records",
   };
 }

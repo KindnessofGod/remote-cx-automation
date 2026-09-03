@@ -733,12 +733,43 @@ test("workflow: an over-cap business trip escalates to Global Mobility", async (
 
 test("workflow: an unsupported destination escalates — the supported list is a gate, not a hint", async () => {
   fresh();
-  const r = await run({
-    text: "Client meeting in Canada from 2026-09-01 to 2026-09-05.",
-    externalRef: "9005",
-  });
+  // A STRUCTURED DESTINATION, NOT A NAME IN THE TEXT — and the reason is worth
+  // recording, because it constrains what this rung can ever be tested with.
+  //
+  // Canada joined the mock registry (2026-09-02) because it is one of the four
+  // countries docs/DEMO-COUNTRIES.md promises. This test needs the opposite: a
+  // destination the registry does NOT confirm. Every country UC-03's free-text
+  // dictionary recognises and the mock omits is a SANCTIONED one — and those
+  // are caught by the sanctions rung, which runs FIRST — so after the Canada
+  // addition no sentence anybody can type reaches this rung at all. It is
+  // reachable only the way the portal actually reaches it: the destination
+  // picker, which offers the full ISO list rather than the 32 names the
+  // classifier can read out of prose.
+  //
+  // `classification` is passed directly for that reason, and this is the one
+  // place in this file that does it — the rung is real, the path to it is
+  // structured, and pretending otherwise would leave it untested.
+  const r = await run(
+    { text: "Client meeting from 2026-09-01 to 2026-09-05.", externalRef: "9005" },
+    { classify: async () => baseClassification({ destinationCountry: "JP" }) }
+  );
   assert.equal(r.decision, "escalate");
   assert.equal(r.reason, "destination_jurisdiction_excluded");
+
+  // THE OTHER HALF, AND IT IS WHAT MAKES THIS A GATE RATHER THAN A CONSTANT.
+  // The identical request to a CONFIRMED destination must not escalate — else
+  // this test would pass just as well against a list that refused everything,
+  // which is exactly the state Canada was in before it was added.
+  fresh();
+  const confirmed = await run(
+    { text: "Client meeting from 2026-09-01 to 2026-09-05.", externalRef: "9005-can" },
+    { classify: async () => baseClassification({ destinationCountry: "CA" }) }
+  );
+  assert.notEqual(
+    confirmed.reason,
+    "destination_jurisdiction_excluded",
+    "a demo country is being refused as unsupported — the fixture gap is back"
+  );
 });
 
 test("workflow: identity fails closed — no session, no support", async () => {
@@ -1081,7 +1112,22 @@ test("RemoteClient.listCountries(): normalizes the mock envelope to {country_cod
   assert.ok(list.every((c) => typeof c.country_code === "string" && typeof c.name === "string"));
   const codes = new Set(list.map((c) => c.country_code));
   assert.ok(codes.has("ES") && codes.has("DE") && codes.has("PT"));
-  assert.equal(codes.has("CA"), false, "Canada is deliberately absent so the fail-closed test has a fixture");
+  // CANADA IS NOW PRESENT, AND JAPAN IS THE FIXTURE INSTEAD (2026-09-02).
+  //
+  // This line used to read `codes.has("CA") === false`, with the note "Canada
+  // is deliberately absent so the fail-closed test has a fixture". True, and
+  // it collided with a promise: docs/DEMO-COUNTRIES.md declares NL · PT · CA ·
+  // US demonstrable, so every UC-03 question about Canada answered
+  // `destination_jurisdiction_excluded` — a claim ABOUT THE DESTINATION,
+  // produced by the mock never having heard of it. A fixture gap wearing a
+  // jurisdiction finding.
+  //
+  // The test still needs an absent country and now names one nothing promises.
+  // BOTH halves are asserted, so the fixture cannot quietly become complete
+  // (which would make the fail-closed path undemonstrable) and Canada cannot
+  // quietly go missing again.
+  assert.ok(codes.has("CA"), "Canada is one of the four demo countries and must be confirmable");
+  assert.equal(codes.has("JP"), false, "Japan is deliberately absent so the fail-closed test has a fixture");
   assert.equal(COUNTRIES.length, list.length);
 });
 
@@ -2014,7 +2060,10 @@ test("every member of SANCTIONED_OR_RESTRICTED is resolvable from free text, so 
       // deliberately CONTAINS the code: the sanctions override must not depend
       // on the registry gate catching it afterwards.
       const r = evaluate({
-        employment: { status: "active" },
+        // `contract_type` is required to reach this gate at all: the engagement gate
+        // added 2026-09-03 sits ahead of it and fails closed on an unreadable
+        // engagement. An ordinary EOR employee is what this test is about.
+        employment: { status: "active", contract_type: "full_time" },
         classification: { ...c },
         identity: { verified: true },
         supportedCountries: new Set(["ES", code]),
@@ -2052,7 +2101,10 @@ test("widening the dictionary cannot turn any refusal into an approval", () => {
   for (const code of SANCTIONED_OR_RESTRICTED) {
     for (const formalLetterRequested of [false, true]) {
       const r = evaluate({
-        employment: { status: "active" },
+        // `contract_type` is required to reach this gate at all: the engagement gate
+        // added 2026-09-03 sits ahead of it and fails closed on an unreadable
+        // engagement. An ordinary EOR employee is what this test is about.
+        employment: { status: "active", contract_type: "full_time" },
         classification: {
           intent: "business_travel",
           destinationCountry: code,

@@ -21,7 +21,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { pct, LLM_PRICING_USD_PER_MILLION_TOKENS } from "./compute.js";
+import { pct, costVerdict, LLM_PRICING_USD_PER_MILLION_TOKENS } from "./compute.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -91,6 +91,58 @@ function humanMs(ms) {
 }
 
 /** A hero stat tile. `tone` picks a status colour for the value, when relevant. */
+/**
+ * The LLM-spend tile, which is the one number on this page that could be read
+ * as a fact when it is a floor.
+ *
+ * WHY THIS IS ITS OWN FUNCTION (2026-08-30, CLAUDE.md §7 item 22). `costVerdict()`
+ * has distinguished three states since the day `computeLlmCost()` stopped
+ * throwing on an unpriced model — and this tile consulted none of them. It
+ * printed `humanUsd(totalUsd)` flat, so on production data, where every call
+ * runs on `gpt-5-nano` and no rate exists for it, the screen said **$0.0000**
+ * while the report it was rendering said `unpriced`. Two ways to be wrong in
+ * the same pixel: a real spend shown as nothing, and "we did not price this"
+ * shown as "this was free".
+ *
+ * `insufficient_data` gets an em dash rather than a zero for the same reason —
+ * the seeded dashboard run drives the rule-based classifier on purpose and
+ * legitimately makes no OpenAI call at all, and "$0.0000" is a measurement
+ * claim that nobody made. A missing number gets investigated; a wrong one gets
+ * acted on (§9's rule about reads that feed a dashboard).
+ *
+ * No rate is invented anywhere here. Money is the one thing the substitution
+ * ladder forbids fabricating outright.
+ */
+function spendTile(costs) {
+  const { verdict } = costVerdict(costs);
+
+  if (verdict === "insufficient_data") {
+    return statTile({
+      label: "Estimated LLM spend",
+      value: "—",
+      sub: "no attempt recorded token usage — not a measurement of zero spend",
+    });
+  }
+
+  const perCase =
+    costs.perResolvedCase === null
+      ? `${costs.callsPriced} priced call(s) — no resolved case yet`
+      : `${humanUsd(costs.perResolvedCase)} per resolved case (${costs.callsPriced} priced call(s))`;
+
+  if (verdict === "unpriced") {
+    const models = costs.unpriced.models.map((m) => m.model).join(", ");
+    return statTile({
+      label: "Estimated LLM spend",
+      // The "at least" is the whole point: the priced calls are real and the
+      // unpriced ones are missing from this figure, so it can only be too low.
+      value: `≥ ${humanUsd(costs.totalUsd)}`,
+      sub: `FLOOR, not the bill — ${costs.unpriced.calls} call(s) on ${models} have no rate on record`,
+    });
+  }
+
+  return statTile({ label: "Estimated LLM spend", value: humanUsd(costs.totalUsd), sub: perCase });
+}
+
 function statTile({ label, value, sub, tone = null }) {
   const color = tone ? `color:${tone};` : "";
   return `
@@ -331,14 +383,7 @@ export function renderDashboardHtml(report) {
       // work too, and flatter the automation by excluding exactly the slow part.
       sub: "resolved cases only — queued work excluded",
     }),
-    statTile({
-      label: "Estimated LLM spend",
-      value: humanUsd(report.costs.totalUsd),
-      sub:
-        report.costs.perResolvedCase === null
-          ? `${report.costs.callsPriced} priced call(s) — no resolved case yet`
-          : `${humanUsd(report.costs.perResolvedCase)} per resolved case (${report.costs.callsPriced} priced call(s))`,
-    }),
+    spendTile(report.costs),
   ].join("");
 
   return `<!doctype html>

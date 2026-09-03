@@ -444,6 +444,414 @@ function evaluate({ identityVerified, employment, incentiveSchema, adjustment, u
   return { decision, reason, flags: [...riskEvaluation.flags], approvalSlotsRequired, payload };
 }
 
+// ---------------------------------------------------------------------------
+// THE INTERNAL NOTE — composed HERE, interpolated by the four terminal Zendesk
+// nodes, and covered by `npm run verify-deployed` because this file is diffed
+// byte for byte and a node parameter is not
+// ---------------------------------------------------------------------------
+// WHY IT MOVED. A Zendesk "update ticket" node carries no `jsCode`, so
+// scripts/lib/deployedNodeMappings.mjs's MAPPINGS — which diffs
+// `parameters.jsCode` against a repo file — is structurally blind to all four
+// of UC-09's terminal nodes. The sentences they wrote onto real customers'
+// tickets were typed once into a node parameter and read back by no check.
+// test/n8nUc09Parity.test.js cannot see them either, by its own design: it
+// compares DECISIONS, and a node that reaches the right verdict and describes
+// it in false words passes it every time. Same shape, same fix, as UC-04's
+// workflows/nodes-uc04/{flagAwaitingApprovalSpec,terminalZendeskNodesSpec}.js.
+//
+// WHAT THE FOUR SENTENCES GOT WRONG — read live off WORKFLOW_UC09_ID on
+// 2026-08-31 (versionId === activeVersionId === 5d35be9a-aaf8-4e4f-8185-
+// 3f3e31fa3273, 18 nodes, active):
+//
+// 1. "Escalate Adjustment Ticket" — THE SEVERE ONE, and the only one already
+//    on real tickets. It read: "…this request needs MANUAL PAYROLL HANDLING,
+//    no approval path was offered." That is a true description of exactly ONE
+//    reachable escalate reason, `employment_not_active`, whose own rung says
+//    the payment "is a different process, handled by Payroll directly". It is
+//    FALSE of the reason that has actually fired in production — executions
+//    9279 (ticket 135) and 9942 (ticket 5) both recorded
+//    `identity_not_verified`, where evaluate() returns
+//    `approvalSlotsRequired: 0` under the comment "no approval path for
+//    unverified requests" and the ladder's own words are "Money never starts
+//    moving on a request whose origin is unverified." So the ticket invited
+//    Payroll Ops to move money BY HAND on a request whose origin the gate had
+//    just refused to verify — the exact bypass the gate exists to prevent,
+//    printed as an instruction. It is equally false of
+//    `invalid_adjustment_structure`, `schema_invalid`, `unparseable_amount`,
+//    `amount_not_extracted` and the two upstream reasons: each of those says
+//    the request could not be READ or the record could not be FETCHED, and
+//    none of them is an invitation to pay it another way.
+//
+// 2. "Flag Awaiting Triple Approval" — asserted "HIGH RISK" unconditionally.
+//    Four things raise the floor to three and only TWO of them are risk
+//    findings. `HIGH_AMOUNT_THRESHOLDS_BY_CURRENCY` states one line, in USD, so
+//    EVERY non-USD adjustment raises the floor via
+//    `high_amount_threshold_not_comparable` — which src/uc09/policyEngine.js
+//    calls "unmeasured", not large: "an unmeasured amount costs a third
+//    signature rather than buying two". A JPY 500 bonus rendered as HIGH RISK.
+//    The fourth trigger, `high_tax_compliance_risk` on ['DE','FR','IT'], is
+//    called "an UNSOURCED heuristic with no publishing authority behind it" by
+//    that same file. `describeThirdSignature()` below names which trigger
+//    fired and whether it is a finding or an absence of one. Structurally the
+//    same defect as UC-04's "Risk-matrix level: unknown. Blocked by the risk
+//    matrix", one use case over.
+//
+// 3. BOTH "Flag Awaiting …" nodes stated the signature requirement as
+//    "(requester + approver)" — two ROLES. Two roles are exactly what the
+//    pre-DRIFT-050 code accepted from ONE human: `adjustmentRow.requester` was
+//    compared to nothing, so the filer could sign their own request as
+//    `approver` and the floor of two still read satisfied. The rule is now
+//    live (src/uc09/multiApprovalPolicy.js:171) and the note has to say so,
+//    because a note that says "two roles" teaches the reader the old model.
+//
+// 4. THREE OF THE FOUR SAID "AI". This graph has NO language model node in it
+//    — 18 nodes, read live, zero `openai`/`langchain` types — and `summary`
+//    below is a fixed template. Calling deterministic arithmetic "AI drafted"
+//    inverts prime directive 1 and invites a specialist to distrust the one
+//    part of this decision that cannot have hallucinated.
+//
+// THE COPY IS PORTED, NOT COMPOSED FRESH, and the source is named per constant.
+// An n8n Code node has no module resolution (see this file's header), so the
+// established pattern in this repository is copy-with-attribution rather than a
+// second wording — a second wording is a second thing to drift, which is what
+// produced the four sentences above. Sources:
+//   src/uc09/policyEngine.js        GATE_SEQUENCE (the `means` per reason)
+//   src/shared/settledDecision.js   gateClause()
+//   src/uc09/multiApprovalPolicy.js describeNoApprovalPath(), and the
+//                                   DRIFT-050 rule at line 171
+//   src/portal/server.js            the "no row in this use case's gate
+//                                   sequence" sentence, for the four escalate
+//                                   reasons that have no rung
+//   src/approvalqueue/approvalRoutes.js  the "UC-09" row's surface + verbs
+//   docs/use-cases/UC-09.md §1      the Customer Admin has no surface to sign
+//
+// IT IS EMITTED FOR EVERY DECISION, not only for the two approval branches, so
+// all four terminal Zendesk nodes can adopt `internalNote` without this file
+// changing again. PURE, AND IT DECIDES NOTHING: it reads a decision already
+// made and cannot change what was decided. Nothing on this graph branches on
+// it — `Route by Decision` switches on `decision` and must go on doing so.
+//
+// IT PRINTS NO FIELD OF THE EMPLOYMENT RECORD. UC-01's composer needs a
+// WITHHOLD_SUBJECT_REASONS guard because its note names the subject; this one
+// never does, so there is no site here for the same guard. The only figures it
+// carries ride in via `summary`, and those are the REQUESTER'S OWN submitted
+// claim, not something read back off Remote.
+// ---------------------------------------------------------------------------
+
+// --- src/uc09/policyEngine.js's GATE_SEQUENCE, `means` ported VERBATIM ------
+// `checks` is omitted deliberately: it states each gate's PASSING condition,
+// which on a refusal says the opposite of what happened unless the reader
+// inverts it (the argument src/portal/assets/app.js makes when it removed the
+// same line from the requester's screen). `position`/`gate`/`means` are what a
+// specialist needs. Held against the original by
+// test/n8nUc09TerminalZendeskNodes.test.js.
+const GATE_SEQUENCE = [
+  {
+    position: 1,
+    reason: 'identity_not_verified',
+    gate: 'identity',
+    means:
+      'We could not confirm the requester is authorised for this employment, so no approval path was opened at all — not even the first signature slot. Money never starts moving on a request whose origin is unverified. This is a failure to VERIFY, not a finding that the requester is an impostor.',
+  },
+  {
+    position: 2,
+    reason: 'employment_not_active',
+    gate: 'employment_status',
+    means:
+      'The employment record is missing or not active, so there is no live payroll to make an off-cycle payment against. A payment owed to someone who has left is a different process, handled by Payroll directly.',
+  },
+  {
+    position: 3,
+    reason: 'invalid_adjustment_structure',
+    gate: 'request_completeness',
+    means:
+      'The adjustment request is incomplete or malformed — the flags recorded with this case name which part. It has not been refused on its merits; it could not be read well enough to have merits assessed.',
+  },
+  {
+    position: 4,
+    reason: 'schema_invalid',
+    gate: 'payload_schema',
+    means:
+      'The payment record that would be sent to Remote is missing a required field, so it could never be written even if every approver signed it. Approvals are deliberately not collected for something that cannot be executed — asking three people to sign an unpayable request wastes their time and hides the real problem.',
+  },
+  {
+    position: 5,
+    reason: 'high_risk_adjustment_needs_triple_approval',
+    gate: 'approval_sizing',
+    means:
+      'The adjustment is sound but carries a high-risk factor, so it needs THREE separate people before it can be paid: the requester, an approver, and a payment releaser. This is not a refusal — it is the request being routed to a larger signature set. Nothing has been paid.',
+  },
+  {
+    position: 6,
+    reason: 'standard_adjustment_needs_dual_approval',
+    gate: 'approval_sizing',
+    means:
+      'The adjustment is in order and needs the standard two people — a requester and an approver — before it can be paid. This is the normal successful outcome, not an objection. Nothing has been paid yet, and the automation itself can never pay it: two named humans have to.',
+  },
+  {
+    position: 7,
+    reason: 'adjustment_needs_approval',
+    gate: 'outcome',
+    means:
+      'A placeholder the gates cannot actually produce: the required-approver count is floored at two, so one of the two rungs above always decides first. Seeing this on a real case means the approval floor has been changed and this ladder is out of date — report it rather than explaining it to the requester.',
+  },
+];
+
+// TRUNCATED ON PURPOSE at position 5. The full `means` for
+// `high_risk_adjustment_needs_triple_approval` in src/uc09/policyEngine.js goes
+// on to explain all three third-signature triggers and their two health
+// warnings in one paragraph. That paragraph is CORRECT and it is also the
+// unconditional-assertion defect in a longer form: it recites every trigger on
+// every triple case, so the reader still has to work out which one fired.
+// `describeThirdSignature()` below answers that from the FLAGS, which is the
+// only place the answer actually is. Nothing is lost — the two health warnings
+// are reproduced verbatim there, attached to the trigger each one is about.
+
+function describeDecidingGate(reasonSlug) {
+  for (let i = 0; i < GATE_SEQUENCE.length; i++) {
+    if (GATE_SEQUENCE[i].reason === reasonSlug) {
+      const total = new Set(GATE_SEQUENCE.map((r) => r.position)).size;
+      return { position: GATE_SEQUENCE[i].position, reason: GATE_SEQUENCE[i].reason, gate: GATE_SEQUENCE[i].gate, means: GATE_SEQUENCE[i].means, total: total };
+    }
+  }
+  return null;
+}
+
+// --- src/shared/settledDecision.js: gateClause(), ported verbatim ----------
+function gateClause(describe, reasonSlug) {
+  const row = describe ? describe(reasonSlug) : null;
+  if (!row || row.position === null || row.position === undefined) return { at: '', means: '' };
+  return { at: ' at gate ' + row.position + ' (' + row.gate + ')', means: row.means ? ' ' + row.means : '' };
+}
+
+// FOUR REACHABLE ESCALATE REASONS HAVE NO RUNG, and that is a fact about the
+// ladder rather than about this note. `unparseable_amount` and
+// `amount_not_extracted` are produced by workflow.js's money guard AFTER
+// evaluate() has returned, and `upstream_record_not_found` /
+// `upstream_unavailable` come from shared/upstreamFailure.js BEFORE it — so
+// none of the four appears in policyEngine.js's GATE_SEQUENCE and
+// describeDecidingGate() returns null for all four. `amount_not_extracted` is
+// UC-09's most-ticketed refusal (src/surfaceverify/registries/index.js: "3
+// observed, all 3 ticketed"), so this is the common case, not the exotic one.
+//
+// The sentence below is PORTED VERBATIM from src/portal/server.js's
+// specialistDetail("What happened", …) — the reviewed wording this repository
+// already uses for exactly this gap, on exactly this reason. It is deliberately
+// an admission rather than a guess: inventing a plain-words meaning for a
+// reason with no reviewed rung is how a note starts asserting things nobody
+// checked, which is the defect this whole file is fixing.
+function noRungSentence(reasonSlug) {
+  return (
+    'No row in this use case\'s gate sequence describes the reason "' +
+    reasonSlug +
+    '", so what it means in plain words cannot be stated here. The reason slug is the whole of what was recorded.'
+  );
+}
+
+// --- src/uc09/multiApprovalPolicy.js: describeNoApprovalPath(), ported ------
+// It is the sentence the ZAF sidebar and the approval API already give a
+// specialist who tries to act on an escalated adjustment, so the ticket and the
+// panel now say the same thing instead of two different things. Its closing
+// clause — "the floor of two approvals is not lowered, it is never reached" —
+// is the load-bearing one and is verbatim.
+//
+// ONE DEVIATION FROM THE ORIGINAL, and it is a deduplication rather than a
+// rewording. The real function interpolates `gate.means` here because it is the
+// only place that reason's meaning appears; in this note the same sentence is
+// already printed four lines above as the deciding-gate line, and printing it
+// twice in one ticket comment reads as though two different things happened.
+// So the means is replaced by a pointer to it — and only when there IS a rung,
+// because pointing at a line that says "no row describes this reason" would be
+// pointing at nothing.
+function describeNoApprovalPath(reasonSlug) {
+  const gate = gateClause(describeDecidingGate, reasonSlug);
+  return (
+    'This adjustment was ESCALATED' +
+    gate.at +
+    ', so no approval path was ever opened.' +
+    (gate.means ? ' The deciding gate above says why.' : '') +
+    ' There is no route from here to a payment — the floor of two approvals is not lowered, it is never reached.'
+  );
+}
+
+// --- WHICH trigger asked for the third signature, and is it a FINDING? ------
+// assessRisk() above has exactly four ways to reach `minApprovalSlots = 3`.
+// Two are risk findings about this adjustment. The other two are absences —
+// something that could not be measured, and something measured against a list
+// with no authority behind it — and calling either of them "HIGH RISK" on a
+// customer's ticket is an assertion nobody made.
+//
+// `assessed: false` is NOT a claim that the third signature is unnecessary. The
+// floor may only ever go UP (`Math.max(2, …)`), and an unknown going up is the
+// design: "an unmeasured amount costs a third signature rather than buying
+// two". What changes is what the note CLAIMS, not what the gate REQUIRES.
+//
+// The two `note` strings on the unassessed rows are quoted VERBATIM from
+// src/uc09/policyEngine.js's GATE_SEQUENCE position 5 — this repository's own
+// health warnings, moved next to the trigger each one is about instead of
+// recited on every case.
+const THIRD_SIGNATURE_TRIGGERS = [
+  {
+    flag: 'high_amount_risk',
+    assessed: true,
+    headline: 'the adjustment value is over the high-value line stated for its currency',
+    note: 'A finding about this adjustment: the amount was compared with a stated policy figure and came out above it.',
+  },
+  {
+    flag: 'manual_tax_adjustment',
+    assessed: true,
+    headline: 'the request carries a manual tax adjustment',
+    note: 'A finding about this request: a hand-entered withholding change is the failure mode this use case exists to gate.',
+  },
+  {
+    flag: 'high_amount_threshold_not_comparable',
+    assessed: false,
+    headline: 'the amount COULD NOT BE COMPARED with the high-value line at all',
+    note:
+      'the high-value line is stated only in one currency, so a request in any other currency is not judged small or large — it is unmeasured, and an unmeasured amount costs a third signature rather than buying two. This is NOT a finding that the adjustment is large.',
+  },
+  {
+    flag: 'high_tax_compliance_risk',
+    assessed: false,
+    headline: 'the employment is in a country on the high-tax-complexity list',
+    note:
+      'The high-tax-complexity country list is an UNSOURCED heuristic with no publishing authority behind it, so read that dimension as an illustration rather than as a compliance determination.',
+  },
+];
+
+function describeThirdSignature(flags) {
+  const set = new Set(Array.isArray(flags) ? flags : []);
+  const fired = THIRD_SIGNATURE_TRIGGERS.filter((t) => set.has(t.flag));
+  const findings = fired.filter((t) => t.assessed);
+  const absences = fired.filter((t) => !t.assessed);
+  return { fired: fired, findings: findings, absences: absences };
+}
+
+// --- src/approvalqueue/approvalRoutes.js's "UC-09" row, and UC-09.md §1 -----
+// `deny`, not `decline` — approvalRoutes.js flags UC-09 as "the one row that
+// spells the refusal differently, and a note offering the wrong word sends a
+// specialist hunting for a button that is not there."
+const SIGNATURE_SURFACE =
+  'the UC-09 panel of the Remote CX Review sidebar on this ticket. The verbs there are approve / deny — deny, never decline, on this one use case.';
+
+// UC-09.md §1's own warning, and it is a live gap rather than a caveat: the
+// `requester` slot's control renders only in the ZAF sidebar (a Zendesk AGENT
+// surface) and in src/uc09/cli.js. The portal "offers no approve/decline
+// anywhere". Saying where the signature IS taken, rather than implying the
+// named party can reach it, is the whole point of this line.
+const REQUESTER_HAS_NO_SURFACE =
+  'NOTE ON THE FIRST SLOT: UC-09 names a Customer Admin as the requester, and the Customer Admin has NO SURFACE ON WHICH TO SIGN — that control renders only in this sidebar, which is a Zendesk agent surface, and in the UC-09 CLI. Do not read a waiting requester slot as something the customer has been asked for and not yet done (UC-09.md §1).';
+
+// src/uc09/multiApprovalPolicy.js:171, DRIFT-050. One sentence, because "two
+// roles" and "two people" read the same on a ticket and are not the same
+// control — before this rule one human could fill two slots and every check
+// still reported satisfied.
+const SEGREGATION_OF_DUTIES =
+  'SEGREGATION OF DUTIES: these are distinct PEOPLE, not just distinct roles. The person who filed this request may sign the requester slot and NO OTHER, and no one person may fill two slots — refused as requester_cannot_approve_own_adjustment and same_person_cannot_fill_multiple_roles respectively, compared on identity rather than on exact bytes.';
+
+/**
+ * The internal note the ticket carries. DETERMINISTIC TEXT, never LLM-authored
+ * — this graph has no language model node at all, which is the fourth defect
+ * listed in this section's header.
+ *
+ * IT DOES NOT REPRODUCE THE GATE LADDER OR THE APPROVAL SLOTS' STATE. Both are
+ * rendered by the ZAF sidebar off the stored row; porting them into a Code node
+ * would be a second copy of the longest reasoning in this use case, kept in
+ * step by nothing. The note POINTS at the surface that already has them.
+ */
+function composeInternalNote(args) {
+  const decision = args.decision;
+  const reasonSlug = args.reason;
+  const flags = Array.isArray(args.flags) ? args.flags : [];
+  const slots = Number.isInteger(args.approvalSlotsRequired) ? args.approvalSlotsRequired : null;
+  const flagText = flags.length ? flags.join(', ') : 'none';
+  const decidedBy = describeDecidingGate(reasonSlug);
+
+  const lines = [];
+  lines.push(
+    'UC-09 off-cycle payroll adjustment. DECIDED BY DETERMINISTIC CODE — this workflow runs no language model at any step, and the summary below is a fixed template, not drafted prose.'
+  );
+  lines.push('');
+  lines.push(args.summary);
+  lines.push('');
+  lines.push(
+    'Assessment: ' +
+      decision +
+      ' (' +
+      reasonSlug +
+      '). Flags: ' +
+      flagText +
+      '. Signatures required before any payment: ' +
+      (slots === null ? 'not recorded' : String(slots)) +
+      '.'
+  );
+  lines.push('');
+  lines.push(
+    decidedBy
+      ? 'Decided at gate ' + decidedBy.position + ' of ' + decidedBy.total + ' (' + decidedBy.gate + '): ' + decidedBy.means
+      : noRungSentence(reasonSlug)
+  );
+  lines.push('');
+
+  if (decision === 'triple_approval_required' || decision === 'dual_approval_required') {
+    const roles =
+      decision === 'triple_approval_required'
+        ? 'a requester, an approver and a payment releaser'
+        : 'a requester and an approver';
+    lines.push('WHO SIGNS, AND WHERE');
+    lines.push(
+      (slots === null ? 'Several' : String(slots)) +
+        ' separate people must sign before any money moves: ' +
+        roles +
+        '. The automation cannot pay this and never could — the required count is floored at two, so no risk score can take it below two.'
+    );
+    lines.push(SEGREGATION_OF_DUTIES);
+    lines.push('The signatures are taken in ' + SIGNATURE_SURFACE);
+    lines.push(REQUESTER_HAS_NO_SURFACE);
+
+    if (decision === 'triple_approval_required') {
+      const third = describeThirdSignature(flags);
+      lines.push('');
+      lines.push('WHY THREE AND NOT TWO');
+      if (third.fired.length === 0) {
+        // Unreachable through assessRisk() today — every path to 3 sets one of
+        // the four flags. Stated rather than assumed, because a note that
+        // asserts a trigger it cannot see is the defect being fixed here.
+        lines.push(
+          'The third signature was required, and no recorded flag says which factor asked for it. The flags on this case are the whole of what was recorded — do not infer a risk finding from the count alone.'
+        );
+      } else if (third.findings.length === 0) {
+        lines.push(
+          'NO RISK FINDING WAS MADE. The third signature is here because something could not be assessed, not because this adjustment was judged risky:'
+        );
+      } else {
+        lines.push('A high-value or manual-tax factor was found on this adjustment:');
+      }
+      for (let i = 0; i < third.fired.length; i++) {
+        const t = third.fired[i];
+        lines.push(
+          '· ' + t.flag + ' — ' + t.headline + '. ' + (t.assessed ? t.note : 'THIS IS NOT A RISK FINDING: ' + t.note)
+        );
+      }
+    }
+  } else if (decision === 'escalate') {
+    lines.push('NOBODY IS BEING ASKED TO SIGN');
+    lines.push(describeNoApprovalPath(reasonSlug));
+    lines.push(
+      'The sidebar renders no approve/deny control for an escalated adjustment — the approval policy refuses it with not_awaiting_approval before a control could exist. Work this ticket directly using the facts above; whether there is any other route to the money is what the deciding gate above answers, and it is not a question this note assumes an answer to.'
+    );
+  } else {
+    lines.push('NOBODY IS BEING ASKED TO SIGN');
+    lines.push(
+      'The automation produced a decision this graph does not recognise (' +
+        decision +
+        '), so this ticket is routed to a human rather than dropped. No approval path was opened, nothing is waiting for a signature, and no payment can be made from here.'
+    );
+  }
+
+  return lines.join('\n');
+}
+
 // --- workflow.js: assemble ticket -> evaluate() input, ported verbatim ---
 let parsedAdjustment;
 if (ticket.requestText && ticket.requestText.trim()) {
@@ -529,8 +937,44 @@ const adjustmentType = typeof parsedAdjustment.type === 'string' && parsedAdjust
 
 // --- workflow.js: the deterministic drafted summary (no LLM — the same
 // numbers the audit row and Zendesk note both read) ---
+//
+// NO HARD-CODED CURRENCY SIGN, corrected 2026-08-31 in step with
+// src/uc09/workflow.js, whose own comment records why: the template was
+// `$${displayAmount.toFixed(2)} ${currency}`, so a JPY bonus rendered as
+// "$500.00 JPY" — a dollar sign beside a yen code, on the one use case that
+// moves money, in the sentence that goes on the approver's ticket and (since
+// composeInternalNote() interpolates this summary) into the Zendesk internal
+// note. src/uc09/workflow.js fixed it there and this port did not move with it.
+// The currency CODE is the denomination; a glyph that contradicts it is worse
+// than no glyph, because a reader who trusts the glyph reads the wrong number.
+//
+// WHAT IS DELIBERATELY *NOT* FIXED HERE, and why — say it at the site rather
+// than in a report nobody reads:
+//
+//  1. `/100` IS WRONG FOR A ZERO-MINOR-UNIT CURRENCY. Remote's ×100 integer
+//     convention is what this repository's money axis is built on
+//     (src/shared/money.js), and JPY, KRW, VND and others have no minor unit at
+//     all — so a JPY amount of 500 is ¥500 and this line renders "5.00 JPY".
+//     Fixing it needs a per-currency minor-exponent table (ISO 4217's), which
+//     this repository does not have. It is NOT invented here: prime directive 4
+//     forbids inventing a schema, and money is the one thing the substitution
+//     ladder forbids fabricating outright — a wrong exponent silently moves the
+//     decimal point on a real payment by a factor of 100, in either direction,
+//     and nothing downstream would notice. A missing table gets investigated; a
+//     guessed one gets paid.
+//  2. THE GROSS/NET CLAUSE. src/uc09/workflow.js appends "gross" / "net" /
+//     "with no gross/net basis stated — do not sign without it" to this
+//     sentence, because the same integer moves a different amount of money
+//     under each reading. This port does not, and that divergence predates this
+//     change. Left alone rather than half-ported: it belongs with the request-
+//     text echo the same function adds, as one parity pass over the whole
+//     summary template, not folded into a prose fix.
+//
+// Neither omission changes any DECISION. `summary` is display/audit text; no
+// gate on this graph reads it, and test/n8nUc09Parity.test.js compares
+// decision/reason/flags/approvalSlotsRequired, none of which this line touches.
 const summary = Number.isInteger(parsedAdjustment.amount)
-  ? `Off-cycle ${parsedAdjustment.type}: $${fromRemoteInteger(parsedAdjustment.amount).toFixed(2)} ${parsedAdjustment.currency}. ${ticket.reasonText || ''}`.trim()
+  ? `Off-cycle ${parsedAdjustment.type}: ${fromRemoteInteger(parsedAdjustment.amount).toFixed(2)} ${parsedAdjustment.currency}. ${ticket.reasonText || ''}`.trim()
   : `Off-cycle adjustment request received with NO trustworthy amount (${result.reason}). No figure was guessed; a human must supply the amount as structured input. ${ticket.reasonText || ''}`.trim();
 
 // narrativeJudge.js's own unconfigured sentinel — no LLM available in an n8n
@@ -554,6 +998,29 @@ const status = result.decision.includes('approval_required') ? 'pending_approval
 // not re-implemented as a branch that can only ever take one path.
 const riskTier = 'high';
 
+// DISPLAY/AUDIT ONLY. Nothing on this graph branches on `internalNote`, and
+// nothing may: `Route by Decision` switches on `decision` and must go on doing
+// so. It is consumed by the four terminal Zendesk nodes via
+// `={{ $('Adjustment Gates').item.json.internalNote }}` — the same shape UC-01's
+// "Compose Internal Note" and UC-04's "Workation Gates" already feed their own
+// note nodes.
+//
+// IT LIVES HERE RATHER THAN IN THE NODE'S PARAMETERS because an inline
+// expression is versioned by nothing: `npm run verify-deployed` diffs this
+// file's bytes against the deployed body, and it cannot see a hand-typed string
+// in a node parameter at all. That blindness is exactly how the four sentences
+// this composer retires survived on real tickets.
+//
+// EMITTED FOR EVERY DECISION, including the unrecognised fallback, so all four
+// terminal nodes can adopt it without this file changing again.
+const internalNote = composeInternalNote({
+  decision: result.decision,
+  reason: result.reason,
+  flags: result.flags,
+  approvalSlotsRequired: result.approvalSlotsRequired,
+  summary,
+});
+
 return [
   {
     json: {
@@ -568,6 +1035,7 @@ return [
       payload: result.payload,
       adjustmentType,
       summary,
+      internalNote,
       faithfulness,
       status,
       riskTier,

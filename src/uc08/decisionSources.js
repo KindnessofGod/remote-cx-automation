@@ -129,6 +129,25 @@ export const CAVEAT_FRAMING =
   "Where this system applies a rule one of these documents disputes, the dispute is printed with the finding. " +
   "A contradicted finding is not evidence for the opposite conclusion — it is a finding whose basis you now know the limits of.";
 
+/**
+ * Rendered once above the confirmations, for the same reason as the two above.
+ *
+ * WHY A CONFIRMATION IS PRINTED AT ALL, since it changes no decision: the
+ * CONFIRMATION_LIBRARY's own header states it — "a list that only ever reports
+ * faults teaches distrust of everything equally". A finding shown with four
+ * caveats and no confirmation reads as a finding nobody has checked, and on the
+ * Schengen allowance that is exactly wrong: the 90 and the 180 ARE Article
+ * 6(1)'s own numbers, and it is only their APPLICATION that is disputed.
+ *
+ * VERBATIM IN UC-04, UC-07 AND UC-08, like CAVEAT_FRAMING beside it. The
+ * SOURCE_FRAMING sentences are tailored per use case because each names its own
+ * decision; this one names none, so a shared wording is the same wording rather
+ * than three that will drift.
+ */
+export const CONFIRMATION_FRAMING =
+  "Where a check was tested against its authority and the two agreed, that is printed with the finding as well. " +
+  "A confirmation is bounded: it says that one named thing — a number, a list, a date — matched the source it was taken from, and it says nothing whatever about whether this request should be approved. It is here because a page that reports only faults teaches a reader to distrust every part of it equally, including the parts that were checked and held.";
+
 /** How the citations got here. Stated because the alternative is assumed. */
 export const RETRIEVAL_METHOD =
   "Hand-curated: every document below was listed against this finding, for this jurisdiction or this jurisdiction pair, by a person who had read the document. There is no search, no ranking and no similarity score, so no figure of confidence is quoted. A finding with no entry gets no citation rather than a nearest match — Canada–Portugal is not a near miss for Canada–Netherlands.";

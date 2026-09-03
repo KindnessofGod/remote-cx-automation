@@ -40,6 +40,7 @@ import { createInProcessFetch } from "../src/remote/mockServer.js";
 import { RemoteClient } from "../src/remote/restClient.js";
 import { AuditLogger } from "../src/shared/audit.js";
 import { buildPortalStores } from "../src/portal/wiring.js";
+import { countryLabel } from "../src/shared/countryNames.js";
 import { nameableCountryCodes } from "../src/shared/countryNames.js";
 import { handoffFor } from "../src/shared/escalationRouting.js";
 
@@ -167,7 +168,17 @@ async function driveEveryScenario() {
         ctx
       );
       const res = await call(handler, { method: "POST", path: `/api/requests/${typeId}`, body });
-      results.push({ typeId, id: scenario.id, label: scenario.label, status: res.status, payload: res.body || {} });
+      // `fields` is carried so a test can read what a scenario SAYS instead of
+      // restating it — the same reason SCENARIOS is lifted out of app.js rather
+      // than copied. It is the scenario's own data, not a second copy of it.
+      results.push({
+        typeId,
+        id: scenario.id,
+        label: scenario.label,
+        fields: scenario.fields || {},
+        status: res.status,
+        payload: res.body || {},
+      });
     }
   }
   assert.ok(results.length >= 40, `only ${results.length} quick-fills were driven — a form has lost its scenarios`);
@@ -359,15 +370,31 @@ test("a summary names its country and never prints the code", async () => {
 });
 
 test("the country a UC-03 answer is about reaches the summary by name", async () => {
+  // THE EXPECTED NAME IS DERIVED FROM THE SCENARIO, NOT RESTATED. This test
+  // hard-coded /Spain/ and /Portugal/, so moving the quick-fills onto the demo
+  // countries (2026-08-30) failed it with "the answered trip does not name its
+  // destination" — while the answer under test said "the Netherlands" perfectly
+  // correctly. A test that restates a value it could read cannot tell a
+  // regression from a deliberate change, and blames the wrong one.
   const results = await driveEveryScenario();
+
   const trip = results.find((r) => r.id === "uc03-trip");
   assert.ok(trip, "the short-business-trip quick-fill has gone");
-  assert.match(trip.payload.plainAnswer.lead, /Spain/, "the answered trip does not name its destination");
+  const tripCountry = countryLabel(trip.fields["uc03-destinationCountry"]);
+  assert.ok(tripCountry, "the quick-fill names no destination to check against");
+  assert.ok(
+    trip.payload.plainAnswer.lead.includes(tripCountry),
+    `the answered trip does not name its destination (${tripCountry}): ${trip.payload.plainAnswer.lead}`
+  );
 
   const workation = results.find((r) => r.id === "uc03-workation");
   assert.ok(workation, "the workation quick-fill has gone");
   assert.equal(workation.payload.plainAnswer.shape, "redirected");
-  assert.match(workation.payload.plainAnswer.lead, /Portugal/, "the routed trip does not name its destination");
+  const workationCountry = countryLabel(workation.fields["uc03-destinationCountry"]);
+  assert.ok(
+    workation.payload.plainAnswer.lead.includes(workationCountry),
+    `the routed trip does not name its destination (${workationCountry}): ${workation.payload.plainAnswer.lead}`
+  );
 });
 
 // ---------------------------------------------------------------------------

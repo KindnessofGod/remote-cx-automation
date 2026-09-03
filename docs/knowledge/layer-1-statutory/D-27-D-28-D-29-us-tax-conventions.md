@@ -28,7 +28,19 @@
 
 ## The 183-day condition, quoted from each text
 
-**US–Netherlands, Article 16(2):**
+> **Each convention is a `###` of its own, and that is a retrieval decision
+> rather than a formatting one (2026-08-30).** These three quotes used to sit
+> under this one heading as bold labels. The corpus chunker splits on headings
+> and then on paragraph boundaries when a section runs long, so this section
+> came out as two passages: the first led with the **Netherlands** text and the
+> second opened with an unattributed `> …` — the `US–Portugal` label had fallen
+> on the chunk boundary. A specialist reading a US/PT dossier in the ZAF sidebar
+> was therefore shown the Netherlands convention, and the Portuguese one with no
+> country on it. Not one word of quoted treaty text is changed by this edit; the
+> SHA-256s above are of the retrieved PDFs and are unaffected.
+
+
+### US–Netherlands, Article 16(2)
 
 > … remuneration derived by a resident of one of the States in respect of an
 > employment exercised in the other State shall be taxable only in the
@@ -39,14 +51,14 @@
 > remuneration is **not borne by a permanent establishment or a fixed base**
 > which the employer has in the other State.
 
-**US–Portugal, Article 16(2):**
+### US–Portugal, Article 16(2)
 
 > … (a) the recipient is present in the other State for a period or periods not
 > exceeding in the aggregate **183 days in any 12-month period commencing or
 > ending in the taxable year concerned**; and (b) … not a resident of the other
 > State; and (c) … not borne by a permanent establishment or a fixed base …
 
-**US–Canada, Article XV(2):**
+### US–Canada, Article XV(2)
 
 > … remuneration derived by a resident of a Contracting State in respect of an
 > employment exercised **in a calendar year** in the other Contracting State

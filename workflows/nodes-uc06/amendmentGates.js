@@ -919,6 +919,480 @@ const summary = draftSummaryTemplate(request.changes, request.requestedEffective
 // riskEngine.js: UC-06's base tier is "medium"; any flag pushes it to "high".
 const riskTier = flags.length > 0 ? 'high' : 'medium';
 
+// ---------------------------------------------------------------------------
+// composeInternalNote() — the Zendesk internal note, composed HERE
+// ---------------------------------------------------------------------------
+// WHY THE NOTE MOVED INTO THIS FILE
+//
+// Until 2026-08-31 UC-06's three terminal Zendesk nodes each carried a
+// hand-typed sentence in `updateFields.internalNote`. A Zendesk "update
+// ticket" node has no `jsCode`, so `npm run verify-deployed` — which diffs
+// `parameters.jsCode` against a repo file — is STRUCTURALLY BLIND to it, and
+// `test/n8nUc06Parity.test.js` cannot see it either: parity compares
+// DECISIONS, and a node that reaches the right verdict and describes it in
+// false words passes every time. The prose on real customers' tickets was
+// versioned by nothing and read back by no check.
+//
+// Composing it here puts it in a file that IS byte-diffed against the deployed
+// node, exactly as UC-01 (workflows/nodes/composeInternalNote.js) and UC-04
+// (workflows/nodes-uc04/workationGates.js) already do.
+//
+// THREE THINGS THE OLD SENTENCES GOT WRONG. Each is a claim, not a style
+// preference, and each was live on this graph.
+//
+// 1. "AI drafted amendment …" / "AI summary — ESCALATED".
+//
+//    NEITHER IS AI. This graph has 18 nodes and three http calls, ALL of them
+//    to Remote — there is no LLM node anywhere on it. `summary` comes from
+//    draftSummaryTemplate() above, which is a string concatenation of values
+//    the requester supplied. Every gate below it is a comparison. Calling that
+//    "AI" inverts prime directive 1 — *LLMs interpret; deterministic code
+//    decides* — and it invites a payroll specialist to distrust a cutoff-lock
+//    comparison because they were told a model produced it. The note now says
+//    which reader produced the summary, by name.
+//
+// 2. "this request needs manual payroll/HR handling and will not go through
+//    dual approval."  ("Escalate Amendment Ticket")
+//
+//    ACCURATE FOR 6 OF THE 12 REACHABLE ESCALATE REASONS. ESCALATION_CLASS
+//    below is that count as data, one row per reason, so this header's claim
+//    is checkable rather than assertable.
+//
+//    THE WORK ORDER SAID "~5 of 12" AND SIX IS THE MEASURED ANSWER — the five
+//    payroll ones plus `employee_not_active`, which is a genuine HR
+//    record-keeping question a human at Remote owns. Written down rather than
+//    rounded: the direction makes the retired sentence slightly LESS wrong
+//    than assumed, and quietly taking the more damning number would be the
+//    same failure this change exists to fix.
+//
+//    The three classes it IS false for:
+//
+//    - `identity_not_verified` — an authentication finding. Nothing about the
+//      amendment was assessed. Payroll Ops cannot fix it by hand and should
+//      not try; the fix is a session, not a contract.
+//    - `upstream_record_not_found` / `upstream_unavailable` /
+//      `country_schema_unavailable` — a REMOTE API failure.
+//      src/shared/upstreamFailure.js exists precisely so these are not
+//      mistaken for policy refusals, and this sentence undid that at the last
+//      hop: it told the team that reads the ticket that a 502 from Remote was
+//      their manual work.
+//    - `change_value_underivable` / `schema_invalid` — malformed or incomplete
+//      INPUT. The remedy is the requester re-stating the change, not a
+//      specialist keying it in.
+//
+//    SHARPENED BY ROUTING, WHICH IS WHY THIS IS NOT COSMETIC. UC-06's row in
+//    src/shared/escalationRouting.js has NO `escalationGroup` — `group` and
+//    the escalation destination are both Payroll Ops. So an upstream outage
+//    lands in Payroll Ops' queue carrying a note telling Payroll Ops it is
+//    theirs to do by hand. Same shape as UC-04's retired "Blocked by the risk
+//    matrix or employer permission", one use case over.
+//
+// 3. "awaiting dual approval (Customer Admin + Payroll Specialist)".
+//
+//    NAMES TWO ROLES AND NOT WHERE EITHER ACTS, ON A SURFACE WHERE THAT
+//    MATTERS. `customer_admin` is EMPLOYER-side — "customer" means Remote's
+//    customer (UC-06.md §5's note on the word) — and slot 1 is the employer's
+//    own signing representative. But the only surface that renders both slots
+//    is the ZAF sidebar, a Zendesk AGENT surface, and this Zendesk account
+//    holds two agent seats, both the project owner's (docs/ZENDESK-ACCOUNT.md)
+//    — no customer-side seat exists. A Zendesk agent reading "awaiting dual
+//    approval (Customer Admin + Payroll Specialist)" may reasonably conclude
+//    both slots are theirs to fill, which collapses a cross-organisational
+//    dual control into two Remote employees while every control still reports
+//    satisfied.
+//
+//    THE MECHANISM IS NOT CHANGED HERE, AND MUST NOT BE. That the employer's
+//    signature is a separate act from the employer's consent is a DECIDED
+//    product call — qa/HUMAN-DECISIONS-REQUIRED.md §F1, recorded as `[A-4]` —
+//    taken on the argument that a control resting on a demonstration surface
+//    disappears when the real intake replaces it. What was missing was not a
+//    gate but a sentence: the note now names WHO fills each slot and WHERE,
+//    quoting src/uc06/dualApprovalPolicy.js's own refusal text, so the
+//    ambiguity cannot be read into it.
+//
+// PURE, AND IT DECIDES NOTHING. Same contract as describeDecidingGate() in
+// src/uc06/policyEngine.js: it reads a decision already made and cannot change
+// it. Called on every branch; its output is one more field, `internalNote`,
+// that no gate reads.
+//
+// THE WORDS ARE COPIED, NOT COMPOSED FRESH — an n8n Code node cannot import,
+// so the established pattern is to copy with attribution rather than invent a
+// second wording that then drifts. Sources, per constant:
+//   src/uc06/policyEngine.js         GATE_SEQUENCE's `means`, verbatim
+//   src/uc06/dualApprovalPolicy.js   REFUSALS.requester_cannot_approve,
+//                                    REFUSALS.not_awaiting_approval
+//   zaf-app/assets/panels.js         each role's `decides` line
+//   src/shared/upstreamFailure.js    the two upstream reason slugs
+// test/n8nUc06TerminalZendeskNodes.test.js holds the ported strings against
+// the originals by reading BOTH, rather than restating either.
+// ---------------------------------------------------------------------------
+
+// src/uc06/policyEngine.js's GATE_SEQUENCE, ported VERBATIM. `checks` is
+// dropped (the note states the outcome, not the passing condition); `means` is
+// byte-identical and is what the test compares.
+//
+// THE TWO UPSTREAM REASONS HAVE NO RUNG, exactly as they have none over there:
+// evaluate() does not author them — upstreamVerdict() does, out of a
+// vocabulary every use case shares. describeDecidingGate() returns null for
+// them and the note falls back to the bare slug, which is the honest
+// degradation. ESCALATION_CLASS below covers all twelve, so the hand-off
+// sentence is never the thing that goes missing.
+const GATE_SEQUENCE = [
+  {
+    position: 1,
+    reason: 'identity_not_verified',
+    gate: 'identity',
+    means:
+      'We could not confirm the requester acts for the company that employs this person, so nothing about the amendment was assessed. This is a failure to VERIFY — it is not a finding that the requester is unauthorised. A Zendesk requester legitimately lands here: a ticket carries an authenticated person, not an authenticated company-admin session, which is the signal this gate needs.',
+  },
+  {
+    position: 2,
+    reason: 'employee_not_active',
+    gate: 'employment_status',
+    means:
+      'The employment record is missing or is not active, so there is no live contract to amend. Nothing about the proposed change or the payroll calendar was looked at.',
+  },
+  {
+    position: 3,
+    reason: 'country_schema_unavailable',
+    gate: 'country_form',
+    means:
+      'The country\'s amendment form could not be read, so there is nothing to validate the change against. This is deliberately NOT treated as a form with no requirements: an empty required list validates literally any payload, which would turn the schema check into a gate that always opens. A flag on the case names the call and the HTTP status, because a 404 on an unsupported country and a 403 from a scope-less token read identically here and need opposite fixes.',
+  },
+  {
+    position: 4,
+    reason: 'change_value_underivable',
+    gate: 'change_values',
+    means:
+      'At least one requested change has no usable value: blank, null, not a number, or a quoted amount where a number is required. This is the requester\'s to fix and it is the most actionable message in the ladder — "you did not give me a salary". A quoted amount is refused rather than coerced, because coercing an unvalidated string is how a 100x scaling error reaches payroll.',
+  },
+  {
+    position: 5,
+    reason: 'change_not_expressible',
+    gate: 'form_vocabulary',
+    means:
+      'The country\'s amendment form has no field for at least one of the requested changes, so that change cannot be submitted through it at all. It is reported BEFORE validation on purpose: the payload that would reach the validator no longer contains the change, so a "valid" verdict on it would be a verdict about a different amendment than the one asked for. Live, this is exactly what a basic-information form says about a salary change — it has no salary field.',
+  },
+  {
+    position: 6,
+    reason: 'schema_invalid',
+    gate: 'schema_validation',
+    means:
+      'The full record this amendment would produce is missing at least one field the country\'s form requires — the flags name which. Validation is against the EFFECTIVE required list, the form\'s own `required` plus whatever its conditional branches add for this particular payload, because checking only the top-level list passes payloads the real write rejects.',
+  },
+  {
+    position: 7,
+    reason: 'ambiguous_payroll_cycle',
+    gate: 'payroll_cycle_identity',
+    means:
+      'More than one payroll cycle covers this effective date and they lock at DIFFERENT times, so which one governs is genuinely undecided — and ten days of difference in a payroll lock is the difference between the change landing and not landing. No cycle is recorded on the case, deliberately: writing down one of the candidates would put a coin-flip cutoff into the audit trail where a later reader would take it for the answer. The candidates are listed instead. This one is the payroll specialist\'s to settle.',
+  },
+  {
+    position: 8,
+    reason: 'no_matching_payroll_cycle',
+    gate: 'payroll_cycle_exists',
+    means:
+      'No payroll cycle on record covers the requested effective date, so there is no run for this change to land in. Usually this means the effective date is beyond the last published cycle rather than that anything is wrong with the amendment itself — the contract change may be perfectly sound and simply have nowhere yet to be paid from.',
+  },
+  {
+    position: 9,
+    reason: 'cutoff_date_unknown',
+    gate: 'cutoff_readable',
+    means:
+      'The payroll cycle exists but its lock time is unreadable, so we cannot say whether this change makes the run. "Cannot prove" is not "yes": an unreadable timestamp compares false against everything, which would have reported a comfortable runway derived from no information at all. A person has to establish the real lock time.',
+  },
+  {
+    position: 10,
+    reason: 'cutoff_lock_passed',
+    gate: 'cutoff_lock',
+    means:
+      'The payroll lock for the cycle covering this effective date has already closed, so applying the change now would be a retroactive correction rather than an ordinary forward-dated one. It escalates rather than being quietly re-drafted against the next cycle, because moving somebody\'s effective date is a decision, not a formatting step.',
+  },
+  {
+    position: 11,
+    reason: 'all_gates_passed',
+    gate: 'outcome',
+    means:
+      'Every check passed, so the amendment is prepared and waiting on TWO named humans: the employer\'s signatory, and an independent Remote payroll specialist. Nothing has been sent to Remote — the contract is unchanged until both slots are filled by two different people, and one approval alone executes nothing.',
+  },
+];
+
+function describeDecidingGate(reasonSlug) {
+  const row = GATE_SEQUENCE.filter((r) => r.reason === reasonSlug)[0];
+  if (!row) return null;
+  const positions = {};
+  for (let i = 0; i < GATE_SEQUENCE.length; i++) positions[GATE_SEQUENCE[i].position] = true;
+  return { position: row.position, gate: row.gate, total: Object.keys(positions).length, means: row.means };
+}
+
+/**
+ * WHAT KIND OF PROBLEM EACH ESCALATE REASON IS, and therefore what the team
+ * receiving the ticket is actually being asked to do.
+ *
+ * As DATA rather than as a paragraph, so this file's header claim ("accurate
+ * for 6 of the 12") is a count a test can take. `accurateUnderRetiredSentence`
+ * records whether the sentence this change retires — "this request needs
+ * manual payroll/HR handling" — was a true description of the reason.
+ *
+ * Nothing here is read by a gate. It selects a HAND-OFF SENTENCE and nothing
+ * else, and every branch of it still escalates: a reason with no row falls back
+ * to the most cautious wording rather than to silence, so an unrecognised
+ * reason can never produce a note that quietly claims less than it should.
+ */
+const ESCALATION_CLASS = [
+  { reason: 'identity_not_verified', kind: 'authentication', accurateUnderRetiredSentence: false },
+  { reason: 'upstream_record_not_found', kind: 'upstream_outage', accurateUnderRetiredSentence: false },
+  { reason: 'upstream_unavailable', kind: 'upstream_outage', accurateUnderRetiredSentence: false },
+  { reason: 'country_schema_unavailable', kind: 'upstream_outage', accurateUnderRetiredSentence: false },
+  { reason: 'change_value_underivable', kind: 'request_malformed', accurateUnderRetiredSentence: false },
+  { reason: 'schema_invalid', kind: 'request_malformed', accurateUnderRetiredSentence: false },
+  { reason: 'employee_not_active', kind: 'payroll_or_hr', accurateUnderRetiredSentence: true },
+  { reason: 'change_not_expressible', kind: 'payroll_or_hr', accurateUnderRetiredSentence: true },
+  { reason: 'ambiguous_payroll_cycle', kind: 'payroll_or_hr', accurateUnderRetiredSentence: true },
+  { reason: 'no_matching_payroll_cycle', kind: 'payroll_or_hr', accurateUnderRetiredSentence: true },
+  { reason: 'cutoff_date_unknown', kind: 'payroll_or_hr', accurateUnderRetiredSentence: true },
+  { reason: 'cutoff_lock_passed', kind: 'payroll_or_hr', accurateUnderRetiredSentence: true },
+];
+
+// One sentence per class. Each says what the receiving team is being asked to
+// do, and — where the answer is "nothing yet" — says that plainly rather than
+// leaving the retired sentence's implication standing.
+const HANDOFF_SENTENCE = {
+  authentication:
+    'This is an AUTHENTICATION finding, not a payroll one. Nothing about the amendment was assessed, so there is ' +
+    'nothing here to key in by hand: the request has to be re-filed from an authenticated company-admin session ' +
+    'before any of it can be evaluated. A Zendesk ticket legitimately lands here — a ticket carries an ' +
+    'authenticated person, not an authenticated company-admin session.',
+  upstream_outage:
+    'This is a REMOTE API FAILURE, not a decision about the amendment. The request was never evaluated on its ' +
+    'merits, so there is no refusal here to overturn and nothing to process manually. Check the flags for which ' +
+    'call failed and what it answered, confirm Remote is answering, then re-drive the request — a policy refusal ' +
+    'and an outage are different findings and this one is the outage.',
+  request_malformed:
+    'This is a MALFORMED OR INCOMPLETE REQUEST. The remedy is the requester re-stating the change — the flags name ' +
+    'which field. Keying a corrected value in on their behalf would substitute our reading of what they meant for ' +
+    'theirs, on a contract change.',
+  payroll_or_hr:
+    'This one genuinely needs manual payroll/HR handling and will not go through dual approval. The figures and the ' +
+    'deciding gate above are what to work from.',
+  unclassified:
+    'This reason has no hand-off classification in this workflow, so what it needs is not stated here rather than ' +
+    'guessed. Read the deciding gate above and route it deliberately.',
+};
+
+function escalationKind(reasonSlug) {
+  const row = ESCALATION_CLASS.filter((r) => r.reason === reasonSlug)[0];
+  return row ? row.kind : 'unclassified';
+}
+
+// src/uc06/dualApprovalPolicy.js's REFUSALS.requester_cannot_approve, quoted
+// for its description of the two slots — it is the one place in this repository
+// that says who fills each one, in a sentence written to be read by whoever is
+// being refused. Quoting it keeps the ticket and the sidebar saying the same
+// thing about the same amendment.
+const WHO_FILLS_THE_SLOTS =
+  'Slot 1 is the employer\'s signature, filled by the company\'s signing representative, and slot 2 is a Remote ' +
+  'payroll specialist — dual control requires two people who are neither of them the requester.';
+
+// zaf-app/assets/panels.js's UC-06 `approvalRoles()` — each role's own
+// `decides` line, verbatim, plus its `summary`.
+const SLOT_1_DECIDES = 'whether the contract change itself is right';
+const SLOT_2_DECIDES = 'whether payroll can carry the change on the requested date';
+const SLOT_ORDER = 'Either can go first; the amendment is applied only once both slots are filled.';
+
+function composeInternalNote(args) {
+  const d = args.decision;
+  const r = args.reason;
+  const emp = args.employment;
+  const cut = args.cutoff;
+  const flagList = args.flags && args.flags.length ? args.flags.join(', ') : 'none';
+  const decidedBy = describeDecidingGate(r);
+  const lines = [];
+
+  // THE OPENING LINE IS DECISION-AWARE, and it has to be. The first draft said
+  // "has PREPARED an amendment" on every branch — FALSE on identity_not_verified
+  // and on the three upstream reasons, where no payload was built and nothing
+  // was assessed. That is the same class of defect this change exists to retire
+  // (a sentence true of one branch, applied to all of them), and it was caught
+  // by rendering the note rather than by reading the code.
+  if (d === 'dual_approval_required') {
+    lines.push(
+      'UC-06 contract amendment — this automation has PREPARED an amendment and decided nothing. ' +
+        'Nothing has been sent to Remote and the contract is unchanged.'
+    );
+  } else if (d === 'escalate') {
+    lines.push(
+      'UC-06 contract amendment — this automation has ESCALATED and decided nothing. Nothing has been sent to ' +
+        'Remote and the contract is unchanged. How far it got before stopping is below.'
+    );
+  } else {
+    lines.push(
+      'UC-06 contract amendment — this automation produced a decision this workflow does not recognise. Nothing has ' +
+        'been sent to Remote and the contract is unchanged.'
+    );
+  }
+  lines.push('');
+
+  // WHO THIS IS ABOUT — withheld on identity_not_verified, the same scoping
+  // UC-01's composer applies (E4-F14). When the run's own verdict is that we
+  // could not establish who is asking, printing the subject's name, status and
+  // country into a durable ticket comment discloses what the failed check was
+  // protecting. The employment object here is a NORMALIZED one that fills its
+  // gaps with defaults, so it is plausible-looking even when the fetch failed —
+  // which is exactly why the guard is on the REASON and not on the object.
+  if (r === 'identity_not_verified') {
+    lines.push(
+      'Regarding this employment — subject details withheld: the requester could not be confirmed as acting for the ' +
+        'company that employs this person, so nothing about who it is regarding is disclosed here.'
+    );
+  } else if (escalationKind(r) === 'upstream_outage') {
+    lines.push(
+      'Regarding this employment — subject details withheld: a Remote read failed on this run, so anything shown ' +
+        'here would be defaults rather than the record.'
+    );
+  } else {
+    lines.push(
+      'Regarding ' +
+        ((emp && emp.full_name) || 'an employee not named on this record') +
+        (emp && emp.job_title ? ' (' + emp.job_title + ')' : '') +
+        ' — status: ' +
+        ((emp && emp.status) || 'not recorded') +
+        ', country: ' +
+        ((emp && emp.country_code) || 'not recorded') +
+        '.'
+    );
+  }
+  lines.push('');
+
+  // WHAT IS BEING ASKED FOR, and WHO WROTE THAT SENTENCE. This is the line
+  // that replaces "AI drafted amendment": the summary is a template, and the
+  // note now says so where a specialist reads it rather than only in a file.
+  lines.push(
+    (args.summary || 'No change summary was produced.') +
+      ' (Summary produced by a deterministic template from the values supplied — no language model runs on this ' +
+      'workflow.)'
+  );
+  lines.push('');
+
+  lines.push(
+    'Decision: ' + (d || 'unknown') + ' (' + (r || 'unknown') + '). Amendment type: ' + (args.amendmentType || 'not recorded') + '. Flags: ' + flagList + '.'
+  );
+  if (decidedBy) {
+    lines.push('Decided at gate ' + decidedBy.position + ' of ' + decidedBy.total + ' (' + decidedBy.gate + '): ' + decidedBy.means);
+  } else {
+    // SAY THAT NO GATE AUTHORED THIS, rather than letting the gate sentence
+    // simply be missing. The two upstream reasons come from
+    // shared/upstreamFailure.js's shared vocabulary and have no rung in
+    // GATE_SEQUENCE, by the same deliberate choice src/uc06/policyEngine.js
+    // makes. An absent line reads as an oversight; this reads as the fact it is.
+    lines.push(
+      'No gate in this ladder authored that reason — it comes from the shared upstream-failure vocabulary, which ' +
+        'means the request was never evaluated against UC-06\'s own rules at all.'
+    );
+  }
+  lines.push('');
+
+  // THE PAYROLL CLOCK, when there is one. It is the sharpest fact on this use
+  // case and the retired notes never carried it.
+  if (cut && cut.cycle) {
+    lines.push(
+      'Payroll cycle: ' +
+        (cut.cycle.id || 'id not recorded') +
+        ', locks ' +
+        (cut.cycle.cutoff_date || 'at an unrecorded time') +
+        (typeof cut.hoursUntilCutoff === 'number' && isFinite(cut.hoursUntilCutoff)
+          ? ' (' + Math.round(cut.hoursUntilCutoff) + 'h from the decision)'
+          : '') +
+        (cut.urgentWithin48h ? ' — URGENT: less than 48h of runway.' : '.') +
+        // A PROJECTED CYCLE SAYS SO ON THE TICKET. The stand-in bridge marks a
+        // continued cadence with `_standin` and an id beginning `standin-`;
+        // the note used to print "locks 2026-10-20 (1135h…)" as if Remote had
+        // published that cycle (2026-09-02, expert review D1). Contract §8
+        // invariant 13: a projected cycle is never presented as a real one.
+        (cut.cycle._standin || (typeof cut.cycle.id === 'string' && cut.cycle.id.indexOf('standin-') === 0)
+          ? ' PROJECTED cycle — a stand-in continuation of the observed cadence, not one Remote published; confirm the lock against the real calendar before relying on it.'
+          : '')
+    );
+  } else if (cut && cut.ambiguousCycles && cut.ambiguousCycles.length) {
+    lines.push(
+      'Payroll cycle: UNDECIDED between ' +
+        cut.ambiguousCycles.length +
+        ' candidates that lock at different times — ' +
+        cut.ambiguousCycles
+          .map((c) => (c.id || 'unidentified') + ' locking ' + (c.cutoff_date || 'at an unrecorded time'))
+          .join('; ') +
+        '. No cycle is recorded on the case: writing one down would put a coin-flip cutoff into the audit trail.'
+    );
+  } else if (cut) {
+    lines.push('Payroll cycle: none on record covers the requested effective date.');
+  } else {
+    // "NOT EVALUATED" IS NOT "NONE FOUND", and printing the second where the
+    // first is true is the same defect as the retired hand-off sentence one
+    // level down. `cutoff` is null on every branch that returned before the
+    // cutoff engine ran — identity, employment status, the country form, the
+    // change values, the form vocabulary, schema validation and all three
+    // upstream reasons. The first draft told a payroll specialist that no cycle
+    // covered a date nothing had ever looked up.
+    lines.push(
+      'Payroll cycle: NOT EVALUATED — the run stopped before the payroll calendar was consulted, so nothing here ' +
+        'says whether a cycle covers the requested effective date.'
+    );
+  }
+
+  // NO MONEY FIGURE IS ADDED HERE, and the omission is deliberate rather than
+  // an oversight. Everything this function builds lands in a Zendesk internal
+  // note — durable, and readable by every agent on the account — which is the
+  // same reason UC-01's composer refuses to carry compensation values
+  // (workflows/nodes/composeInternalNote.js, the over_scope_request branch).
+  // `summary` above may already name a salary because the REQUESTER stated it
+  // in their own request; restating it from the drafted PAYLOAD would be this
+  // system asserting a figure, and it would also have to guess which field
+  // name this country's form used (`annual_gross_salary` on some,
+  // `base_salary` on others — SALARY_FIELD aliases above). A wrong guess
+  // renders nothing and reports success, which is the silent-empty-expression
+  // failure this whole change exists to stop repeating.
+  lines.push('');
+
+  lines.push('WHO ACTS, AND WHERE');
+  if (d === 'dual_approval_required') {
+    // Defect 3. Two roles named WITH their surfaces, so a Zendesk agent
+    // reading this cannot take both slots for their own.
+    lines.push(WHO_FILLS_THE_SLOTS);
+    lines.push(
+      '1 · Employer signature (the customer_admin slot) — decides ' +
+        SLOT_1_DECIDES +
+        '. This is the CUSTOMER\'s side of the relationship, not Remote\'s: "customer admin" means an admin at ' +
+        'Remote\'s customer. A Remote agent must not fill it on their behalf, even though the sidebar renders both ' +
+        'slots on this ticket.'
+    );
+    lines.push('2 · Remote payroll specialist (the payroll_specialist slot) — decides ' + SLOT_2_DECIDES + '. This is Remote\'s side, and it is the slot a Remote agent fills.');
+    lines.push(SLOT_ORDER + ' The person who filed this amendment may fill neither.');
+  } else if (d === 'escalate') {
+    // src/uc06/dualApprovalPolicy.js's REFUSALS.not_awaiting_approval, quoted
+    // so the ticket and the sidebar say the same thing.
+    lines.push('This amendment was routed to escalation, not dual approval — it has no approve/decline path here.');
+    lines.push(HANDOFF_SENTENCE[escalationKind(r)] || HANDOFF_SENTENCE.unclassified);
+  } else {
+    lines.push(
+      'The automation produced a decision this graph does not recognise, so it is routed to a human rather than ' +
+        'dropped. Nobody has been asked to approve anything, and no approval here would execute the amendment.'
+    );
+  }
+
+  return lines.join('\n');
+}
+
+const internalNote = composeInternalNote({
+  decision,
+  reason,
+  flags,
+  employment,
+  cutoff,
+  summary,
+  amendmentType: type,
+  payload,
+});
+
 // `upstreamFailures` is carried so "Append Audit Log" can put WHICH call
 // failed and WHAT it answered into `audit_log.details` — triage starts at the
 // right service instead of hunting a phantom identity bug.
@@ -929,4 +1403,6 @@ const riskTier = flags.length > 0 ? 'high' : 'medium';
 // narrowed to three French cycles from one that silently read all seventeen.
 // It is also what test/n8nUc06Parity.test.js feeds to the real policyEngine,
 // exactly as it already feeds it this node's `employment` and `countrySchema`.
-return [{ json: { ...request, employment, countrySchema, payrollCycles, decision, reason, flags, amendmentType: type, payload, cutoff, summary, status, riskTier, upstreamFailures } }];
+// `internalNote` is what the three terminal Zendesk nodes interpolate — see
+// workflows/nodes-uc06/terminalZendeskNodesSpec.js.
+return [{ json: { ...request, employment, countrySchema, payrollCycles, decision, reason, flags, amendmentType: type, payload, cutoff, summary, status, riskTier, upstreamFailures, internalNote } }];

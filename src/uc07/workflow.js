@@ -163,9 +163,17 @@ export async function handleRelocationReview(
     ptoCashoutRemoteInteger,
   });
 
+  // THE ROUTE IS PASSED, NOT LEFT TO BE RE-READ OUT OF THE PROSE. Both country
+  // codes are resolved above and were in scope here while the retriever was
+  // handed only the request text — so a request whose route came from
+  // structured intake, and whose prose happened to name no country, was
+  // searched against the statutory index with no jurisdiction filter at all.
+  const retrievalCountries = [sourceCountry, destinationCountry].filter(Boolean);
+  const retrievalText = [text, parsed.relocationType].join(" ");
+  const retrievalOpts = { countries: retrievalCountries.length > 0 ? retrievalCountries : null };
   const citations = await (mobilityRetriever
-    ? mobilityRetriever.retrieveMobilityGuidance([text, parsed.relocationType].join(" "))
-    : retrieveMobilityGuidance([text, parsed.relocationType].join(" ")));
+    ? mobilityRetriever.retrieveMobilityGuidance(retrievalText, retrievalOpts)
+    : retrieveMobilityGuidance(retrievalText, retrievalOpts));
 
   const { narrative } = await draftNarrativeFn(
     {

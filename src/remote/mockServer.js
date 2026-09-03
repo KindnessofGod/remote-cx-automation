@@ -88,6 +88,35 @@ export const EMPLOYMENTS = {
     // against a field production never returns. That nearly happened while
     // building the UC-03 continuation (BUILD-LOG §3.72).
     custom_fields: { workation_permission: true },
+    // --- IDENTITY DOCUMENTS: THE RECORD THE UC-04 DEMO ACTUALLY RENDERS ----
+    // `npm run uc04-api` seeds all six of its demo cases against THIS id, and
+    // the ZAF sidebar's UC-04 fixture is this record — so this is where the
+    // fourth dimension's populated branch has to live to be seen. Chris Lee
+    // carries the same shape for the portal personas; both are marked.
+    //
+    // RUNG 4, DECLARING ITSELF (CLAUDE.md §3). The live Sandbox holds ZERO
+    // files of type `id` across all 112 employments (measured 2026-08-31: 333
+    // files, `contract` 108, `expense` 221, `document_scan` 2,
+    // `background_check` 2, every `sub_type` null), so this branch cannot be
+    // demonstrated on real data at all. `standin-` is the marker
+    // `summariseIdentityDocuments()` looks for, and every surface rendering it
+    // prints "STAND-IN FIXTURE, not a document Remote returned" beside the
+    // finding.
+    //
+    // THE SHAPE IS REMOTE'S OWN — the `File` schema on GET /v1/employments/{id},
+    // whose published example is `{name: "id.pdf", type: "id",
+    // sub_type: "personal_id"}`.
+    //
+    // AND IT CLEARS NOTHING, which is why it is worth demonstrating. Amara's
+    // Nigerian employment holding a personal ID is evidence of right to work in
+    // NIGERIA; every UC-04 request about her is about somewhere else. The
+    // dimension stays `unavailable` with the document reported and the bound
+    // stated — the demo shows the panel refusing to over-read its own evidence
+    // rather than showing a green tick.
+    files: [
+      { id: "standin-file-amara-id-01", name: "id.pdf", type: "id", sub_type: "personal_id", inserted_at: "2022-02-24T11:05:00Z" },
+      { id: "standin-file-amara-contract-01", name: "contract.pdf", type: "contract", sub_type: null, inserted_at: "2022-03-01T08:00:00Z" },
+    ],
   },
   "emp_terminated_002": {
     id: "emp_terminated_002",
@@ -244,9 +273,34 @@ export const EMPLOYMENTS = {
   // knows, and the id is the genuine one, so the same persona would resolve if a
   // surface with real credentials ever pointed at the live gateway.
   //
-  // WHAT IS *NOT* MIRRORED, AND MUST NOT BE READ AS SANDBOX FACT. Only the four
-  // facts listed above (name, id, country, employment type + status) were
-  // captured. Email, salary, start date, job title, legal entity, company id and
+  // JOB TITLE IS NOW MIRRORED TOO (2026-08-31), and it is worth saying why it
+  // was not before and what the gap cost. This block used to list job title
+  // among the facts that are "this file's own" — an honest disclosure, and the
+  // reason ten of these eleven records carried a title the Sandbox contradicts
+  // for the same employment id: Chris Lee was "Staff Engineer" here and is
+  // "Data Scientist" there, Emma Thompson "Customer Experience Manager" here
+  // and "Staff Photographer" there. Only Alex Morgan agreed.
+  //
+  // THAT IS A CONTRADICTION A DEMO SHOWS ON ONE PAGE, because the two surfaces
+  // read different sources for one person. The portal dispatches its Remote
+  // reads into this file; the UC-04/UC-01 sidebar panels read the live gateway
+  // when credentials are configured. So a specialist opening the sidebar for a
+  // request the portal had just described saw one name and two job titles, with
+  // nothing on the page saying which came from where.
+  //
+  // THE LADDER SETTLES IT, NOT A PREFERENCE (CLAUDE.md §3): a real value always
+  // wins, and rung 3 fills only what rung 2 left empty. Rung 2 answers this —
+  // `GET /v1/employments/{id}` returns `basic_information.job_title` for every
+  // one of these ids — so a fabricated title was a rung-3 substitution standing
+  // where a rung-2 fact was available the whole time. Each title below was read
+  // from the live Sandbox on 2026-08-31 and written back verbatim. Thomas Weber
+  // is the one exception and is deliberately left without one: the Sandbox
+  // returns null for him, and rung 3 may fill what rung 2 left empty but must
+  // not invent what rung 2 answered with nothing.
+  //
+  // WHAT IS *NOT* MIRRORED, AND MUST NOT BE READ AS SANDBOX FACT. Only the
+  // facts listed above (name, id, country, employment type + status) plus job
+  // title were captured. Email, salary, start date, legal entity, company id and
   // custom fields are this file's own, written to the same shape as the `emp_*`
   // fixtures beside them so the gates have something coherent to run on. They are
   // deliberately `.test` addresses and round numbers — no figure here should ever
@@ -289,11 +343,37 @@ export const EMPLOYMENTS = {
     legal_entity_id: "le_us_01",
     company_id: "co_amend_01",
     country_code: "US",
-    job_title: "Staff Engineer",
+    job_title: "Data Scientist",
     weekly_hours: 40,
     // UC-04 refuses every request without this (policyEngine.js:120), so a
     // traveller fixture without it can only ever demonstrate the refusal.
     custom_fields: { workation_permission: true },
+    // --- THE ONE FIXTURE THAT CARRIES AN IDENTITY DOCUMENT -----------------
+    // RUNG 4, AND IT SAYS SO IN ITS OWN ID (CLAUDE.md §3). The live Sandbox
+    // holds ZERO files of type `id` across all 112 employments — measured
+    // 2026-08-31: 333 files, `contract` 108, `expense` 221, `document_scan` 2,
+    // `background_check` 2, every `sub_type` null — so the populated branch of
+    // UC-04's fourth dimension cannot be demonstrated on real data at all.
+    // Rung 4 permits a fabricated fact only when it is named and marked, and
+    // `standin-` is the marker `summariseIdentityDocuments()` looks for: any
+    // surface rendering this prints "STAND-IN FIXTURE, not a document Remote
+    // returned" beside the finding. Nothing fabricated may reach a reader
+    // looking like something Remote said.
+    //
+    // THE SHAPE IS REMOTE'S OWN, not this file's invention — the `File` schema
+    // on GET /v1/employments/{id}, whose published example is
+    // `{name: "id.pdf", type: "id", sub_type: "personal_id"}`.
+    //
+    // IT DOES NOT CLEAR ANYTHING, which is the whole point of demonstrating it.
+    // Chris Lee's US employment holding a personal ID is evidence of right to
+    // work in the UNITED STATES; every UC-04 request about him is about
+    // somewhere else. The dimension stays `unavailable` with the document
+    // reported and the bound stated, so the demo shows the panel refusing to
+    // over-read its own evidence rather than showing a green tick.
+    files: [
+      { id: "standin-file-chris-id-01", name: "id.pdf", type: "id", sub_type: "personal_id", inserted_at: "2021-09-02T09:14:00Z" },
+      { id: "standin-file-chris-contract-01", name: "contract.pdf", type: "contract", sub_type: null, inserted_at: "2021-09-06T08:00:00Z" },
+    ],
   },
   "d73cff71-ced7-4bcf-b764-b9899abc6340": {
     id: "d73cff71-ced7-4bcf-b764-b9899abc6340",
@@ -310,9 +390,19 @@ export const EMPLOYMENTS = {
     legal_entity_id: "le_uk_01",
     company_id: "co_amend_01",
     country_code: "GB",
-    job_title: "Customer Experience Manager",
+    job_title: "Staff Photographer",
     weekly_hours: 40,
     custom_fields: { workation_permission: true },
+    // THE OTHER STATE, AND IT IS THE ONE REAL SANDBOX DATA PRODUCES. A record
+    // that carries files and none of them an identity document — which is what
+    // all 112 live employments look like. It exists so the demo can show the
+    // difference between "read, and none of this kind is filed" and Chris
+    // Lee's populated branch above; without it every offline run would take one
+    // path and the distinction would be untested where it is read.
+    // NOT MARKED `standin-`: a contract file on an employment is ordinary
+    // Sandbox shape, and the marker is reserved for a fabricated fact that
+    // could otherwise be mistaken for something Remote asserted.
+    files: [{ id: "file-emma-contract-01", name: "contract.pdf", type: "contract", sub_type: null, inserted_at: "2021-02-15T08:00:00Z" }],
   },
   "c2cd77da-d576-423f-b4f1-f9e40b313353": {
     id: "c2cd77da-d576-423f-b4f1-f9e40b313353",
@@ -330,7 +420,7 @@ export const EMPLOYMENTS = {
     legal_entity_id: "le_br_01",
     company_id: "co_amend_01",
     country_code: "BR",
-    job_title: "Frontend Developer",
+    job_title: "Operations Manager",
     weekly_hours: 40,
     custom_fields: { workation_permission: true },
   },
@@ -377,7 +467,7 @@ export const EMPLOYMENTS = {
     legal_entity_id: "le_de_01",
     company_id: "co_amend_01",
     country_code: "DE",
-    job_title: "Product Designer",
+    job_title: "Financial Advisor",
     weekly_hours: 40,
     custom_fields: { workation_permission: true },
   },
@@ -418,7 +508,7 @@ export const EMPLOYMENTS = {
     legal_entity_id: "le_uk_01",
     company_id: "co_amend_01",
     country_code: "GB",
-    job_title: "Account Manager",
+    job_title: "Senior Business Analyst",
     weekly_hours: 40,
     custom_fields: { workation_permission: true },
   },
@@ -437,7 +527,7 @@ export const EMPLOYMENTS = {
     legal_entity_id: "le_pt_01",
     company_id: "co_amend_01",
     country_code: "PT",
-    job_title: "Backend Developer",
+    job_title: "Operations Manager Boss",
     weekly_hours: 40,
     custom_fields: { workation_permission: true },
   },
@@ -539,7 +629,7 @@ export const EMPLOYMENTS = {
     // boundary being demonstrated.
     company_id: "co_northwind_02",
     country_code: "NL",
-    job_title: "Data Engineer",
+    job_title: "Sales Coordinator",
     weekly_hours: 40,
     custom_fields: { workation_permission: true },
   },
@@ -597,6 +687,54 @@ export const EMPLOYMENTS = {
     weekly_hours: 40,
     custom_fields: { workation_permission: true },
   },
+  // -- THE EOR EMPLOYEE WITH NO EMPLOYING ENTITY ON FILE --------------------
+  //
+  // WHY HE EXISTS, 2026-09-03. UC-03's rung 11 stops a travel letter that was
+  // ASKED FOR and ALLOWED and has nowhere to be written — `human_review` /
+  // `formal_letter_requested`, flag `letterhead_unavailable`, a record for a
+  // specialist to fix rather than a document to sign. That rung was reachable
+  // through exactly one persona, Alexandre, whose record carries the same
+  // absence — and the engagement gate added the same day now refuses him five
+  // rungs EARLIER, correctly, because Remote publishes both travel articles
+  // under "applicable to EOR customers only". Correct fix, real cost: the only
+  // live route to the letterhead rung closed with it, so the one outcome in
+  // UC-03 where a named specialist must act became unreachable from the portal.
+  // A gate nobody can drive is indistinguishable from a gate that does not work
+  // (CLAUDE.md §4's standing rule about UC-02's green tier).
+  //
+  // HE IS AN EOR EMPLOYEE, WHICH IS THE ENTIRE POINT. He passes the engagement
+  // gate that stops Alexandre, so he reaches rung 11 on the fact rung 11 is
+  // about and on nothing else. Everything else about him is ordinary: active,
+  // in the admin's own company, workation permission granted — an
+  // over-determined record would prove nothing about which gate fired, which is
+  // the property test/personas.test.js already asserts for Lars and Amanda.
+  //
+  // WHAT IS COMPOSED, SAID PLAINLY. `436cf2b4-…` is a genuine Sandbox
+  // employment (David Chen, USA, active, `type: "employee"`, read live
+  // 2026-09-03); the record below is this repo's mock like every other entry
+  // here, and the ABSENCE of the legal entity is this file's own — L3-08 §2
+  // read eight Sandbox records in full and all eight carry
+  // `engaged_by_legal_entity_id`. `normalizeEmployment()` ends its legal-entity
+  // line `?? null` (restClient.js), so null is the documented answer for a
+  // record naming neither entity field, not a parse failure.
+  "436cf2b4-d1e3-48bd-9a10-5311b01aa330": {
+    id: "436cf2b4-d1e3-48bd-9a10-5311b01aa330",
+    email: "david.chen@acme.test", // NOT the Sandbox address — see the block header
+    full_name: "David Chen",
+    status: "active",
+    contract_type: "full_time",
+    start_date: "2022-03-14",
+    probation: false,
+    base_salary: 8700000, // 87,000.00 (×100)
+    currency: "USD",
+    // THE ONE FACT THIS RECORD EXISTS FOR — no employing entity on file.
+    legal_entity_id: null,
+    company_id: "co_amend_01",
+    country_code: "US",
+    job_title: "Solutions Architect",
+    weekly_hours: 40,
+    custom_fields: { workation_permission: true },
+  },
   "e818418e-1db7-431d-a663-9f477addb8bd": {
     id: "e818418e-1db7-431d-a663-9f477addb8bd",
     email: "amanda.walker@acme.test", // NOT the Sandbox address
@@ -612,7 +750,7 @@ export const EMPLOYMENTS = {
     legal_entity_id: "le_us_01",
     company_id: "co_amend_01",
     country_code: "US",
-    job_title: "Operations Analyst",
+    job_title: "Project Coordinator Supervisor",
     weekly_hours: 40,
     // THE ONE FACT THIS RECORD EXISTS FOR — permission withheld.
     //
@@ -1443,6 +1581,40 @@ export const COUNTRIES = [
   { code: "POL", name: "Poland", region: "Europe", subregion: "Eastern Europe", alpha_2_code: "PL", eor_onboarding: true, contractor_products_available: ["standard", "plus", "cor"] },
   { code: "PRT", name: "Portugal", region: "Europe", subregion: "Southern Europe", alpha_2_code: "PT", eor_onboarding: true, contractor_products_available: ["standard", "plus", "cor"] },
   { code: "USA", name: "United States", region: "Americas", subregion: "Northern America", alpha_2_code: "US", eor_onboarding: true, contractor_products_available: ["standard", "plus", "cor"] },
+  // CANADA, ADDED 2026-09-02, AND WHAT ITS ABSENCE WAS COSTING.
+  //
+  // `docs/DEMO-COUNTRIES.md` declares FOUR demonstrable countries — NL · PT ·
+  // CA · US — and three of them were in this list. So every UC-03 question
+  // about Canada answered `escalate / destination_jurisdiction_excluded`,
+  // whose own words are "the destination could not be CONFIRMED as a country
+  // Remote supports". Canada is `eor_onboarding: true` on the live registry
+  // (224 rows, read 2026-09-02). A FIXTURE GAP WAS WEARING A JURISDICTION
+  // FINDING — the single most misleading failure shape in this repository,
+  // because "the gate refused" and "the mock had never heard of it" render
+  // identically. Found by a browser sweep of the deployment.
+  //
+  // THE FIXTURE ROLE ITS ABSENCE USED TO SERVE HAS MOVED, NOT VANISHED — see
+  // the Japan note below. A fail-closed test needs SOME country the registry
+  // does not confirm; it does not need that country to be one the demo set
+  // promises works.
+  //
+  // Fields copied verbatim from the live `GET /v1/countries` row.
+  { code: "CAN", name: "Canada", region: "Americas", subregion: "Northern America", alpha_2_code: "CA", eor_onboarding: true, contractor_products_available: ["standard", "plus", "cor"] },
+  // JAPAN IS DELIBERATELY ABSENT, and is now the fixture Canada used to be.
+  //
+  // This list is an illustrative subset — 21 rows against the live registry's
+  // 224 — so a country missing from it is the fail-closed case: the read
+  // succeeded, the destination was not in what came back, and UC-03 refuses to
+  // confirm it. `test/uc03.test.js` pins JPN's absence for exactly that, the
+  // way it used to pin CAN's.
+  //
+  // JAPAN RATHER THAN ANY OTHER, for one reason: it is a mainstream business
+  // destination that no document in this repository promises. The four demo
+  // countries are load-bearing promises; a fixture whose absence contradicts
+  // one of them is the trap this whole comment exists to record.
+  //
+  // Do NOT "complete" this list from the live registry. The gap is the point —
+  // it is what makes the unconfirmed-destination path demonstrable at all.
   // Switzerland is here because a mock EMPLOYMENT fixture sits in CH, and this
   // list is now what `RemoteClient.getCountrySchema()` resolves alpha-2 through
   // to reach the alpha-3 path the schema endpoint requires (finding F-27,
@@ -1488,12 +1660,13 @@ export const COUNTRIES = [
 // no extra days in Remote's data" distinguishable from "a subdivision code
 // Remote does not recognise".
 //
-// COUNTRIES: only four, and Canada is NOT in the mock's COUNTRIES registry
-// above (its absence is load-bearing for UC-03's unsupported-destination
-// fixture). That is faithful in its own way — it means a caller must pass
-// "CAN" rather than "CA" against this mock, exactly as a caller must against
-// the live API when the registry read fails. The route below keys on alpha-3
-// and does not consult COUNTRIES, because the live endpoint does not either.
+// COUNTRIES: only four. Canada IS now in the mock's COUNTRIES registry above
+// (added 2026-09-02 — it is one of the four demo countries, and its absence was
+// making every Canadian UC-03 question escalate as though Remote did not
+// support the country). The unsupported-destination fixture that absence used
+// to serve is now JAPAN; see the note beside the CAN row. The route below keys
+// on alpha-3 and does not consult COUNTRIES, because the live endpoint does not
+// either.
 const HOLIDAYS = {
   CAN: {
     national: [
@@ -2350,6 +2523,28 @@ export const EXPENSES = {
     expense_date: "2026-07-08", reviewed_at: null, reviewer: null,
     category: "meals", expense_category: CAT_MEALS,
     receipts: [receipt("f1a0c8d2-1111-4a01-9c11-a10000000401")],
+    reason: null, notes: null, invoice_period: null,
+  },
+  // [E-1] THE CLAIM THE DEMO RECEIPT ACTUALLY MATCHES.
+  //
+  // Its figures are the ones scripts/make-demo-receipt.mjs prints: $68.55 on
+  // 2026-08-12, in USD because the policy-cap corpus is denominated in USD and
+  // a receipt in any other currency stops at `policy_cap_currency_mismatch`
+  // before the cap is ever compared — so a demo built on one could only ever
+  // show a refusal.
+  //
+  // Keep this row and that script in step. If the receipt's line items change,
+  // its total changes, and this claim stops matching — which the demo will show
+  // as `receipt_does_not_support_claim`, correctly but confusingly.
+  "exp_demo_receipt_501": {
+    id: "exp_demo_receipt_501", employment_id: "8ab12460-b568-4c1e-af9d-09b1fabd8f46", status: "pending",
+    title: "Team lunch at Cafe Verrocchio",
+    amount: 6855, currency: USD,
+    converted_amount: 6855, converted_currency: USD,
+    tax_amount: 566, converted_tax_amount: 566,
+    expense_date: "2026-08-12", reviewed_at: null, reviewer: null,
+    category: "meals", expense_category: CAT_MEALS,
+    receipts: [receipt("f1a0c8d2-5555-4a01-9c11-a10000000501")],
     reason: null, notes: null, invoice_period: null,
   },
   // Over the internal-meals cap (50000), same as exp_over_cap_201.

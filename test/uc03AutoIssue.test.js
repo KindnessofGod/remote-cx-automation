@@ -168,12 +168,19 @@ test("POSITIVE: a short qualified standard business trip gets its letter with no
   // WHICH GATES PASSED, NAMED ONE BY ONE. "All gates passed" is a claim; the
   // ladder is the evidence, and it is the only account of why this document
   // exists at all.
-  assert.equal(stoodIn.gatesPassed.length, 12, "every rung above the issuing one, of the 14 in the ladder");
+  // DERIVED, NOT RESTATED (2026-09-03). This read `12, "of the 14 in the
+  // ladder"` and both numbers moved when the engagement gate added five rungs.
+  // A hard-coded position tests the ladder's LENGTH, which no reader of this
+  // test cares about; what it means is "every rung above the issuing one", so
+  // that is what it now computes.
+  const issuingRung = GATE_SEQUENCE.find((r) => r.reason === "standard_letter_issued");
+  assert.equal(stoodIn.gatesPassed.length, issuingRung.position - 1, "every rung above the issuing one");
   assert.deepEqual(
     stoodIn.gatesPassed.map((g) => g.position),
-    [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    Array.from({ length: issuingRung.position - 1 }, (_, i) => i + 1),
+    "an unbroken 1..N-1 run — no rung skipped on the way to the letter"
   );
-  assert.equal(stoodIn.decidedAt.position, 13);
+  assert.equal(stoodIn.decidedAt.position, issuingRung.position);
   assert.equal(stoodIn.decidedAt.of, GATE_SEQUENCE.length);
   assert.equal(stoodIn.letterScope.standard, true, "the scope verdict, in the positive");
   assert.ok(stoodIn.letterScope.checked.includes("non_standard_asks_scan"));

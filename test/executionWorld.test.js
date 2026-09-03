@@ -134,11 +134,17 @@ test("0a. sourceAwareRemote is ADDITIVE — every existing method still reaches 
   assert.deepEqual(real.names(), ["getEmployment"]);
 });
 
-test("0b. forSource is one-directional — only the portal tag yields the mock, and nothing yields the mock for anything else", () => {
+test("0b. forSource is one-directional — only the two mock-world tags yield the mock, and nothing yields the mock for anything else", () => {
   const real = recordingRealRemote();
   const rc = sourceAwareRemote(real);
   assert.notEqual(rc.forSource(PORTAL_SOURCE), real, "a portal record must not get the real client");
-  for (const source of [null, undefined, "", "webhook", "zaf", "remoteui", "PORTAL", "portal ", "seed"]) {
+  // `remoteui` moved to this side on 2026-09-02: the Remote-product stand-in
+  // decides against the in-process mock exactly as the portal does, and a row
+  // it filed was being read back (employee card, freshness re-check) against
+  // the gateway — "NO SUCH EMPLOYMENT RECORD" on ten of ten live cases.
+  assert.notEqual(rc.forSource("remoteui"), real, "a stand-in record must not get the real client");
+  assert.equal(rc.forSource("remoteui"), rc.forSource(PORTAL_SOURCE), "one mock per request, shared by both tags");
+  for (const source of [null, undefined, "", "webhook", "zaf", "REMOTEUI", "remoteui ", "PORTAL", "portal ", "seed"]) {
     assert.equal(rc.forSource(source), real, `source ${JSON.stringify(source)} must resolve to the real client`);
   }
 });
@@ -365,7 +371,10 @@ test("6. POSITIVE — a portal-originated UC-06 amendment IS executable end to e
 
 test("7. CONVERSE — a non-portal UC-06 amendment still executes against the REAL client", async () => {
   const amendmentStore = new AmendmentStore();
-  const submitted = await submitPortalAmendment(amendmentStore, { source: "remoteui" });
+  // `zendesk`, not `remoteui`: the stand-in's tag joined the mock world on
+  // 2026-09-02 (see test 0b), so it can no longer stand for "an ordinary
+  // record". A ticket-driven amendment is the genuinely real-world case.
+  const submitted = await submitPortalAmendment(amendmentStore, { source: "zendesk" });
 
   // The contract id comes off the record the freshness re-read just returned,
   // so the fake must answer with the id the mock's own fixture carries or the

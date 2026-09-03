@@ -86,6 +86,10 @@
 // ---------------------------------------------------------------------------
 
 import "dotenv/config";   // credentials live in .env; without this this check
+
+/** n8n prunes params equal to the node default; the Supabase node defaults to row/create. */
+const SUPABASE_RESOURCE_NODE_DEFAULT = "row";
+const SUPABASE_OPERATION_NODE_DEFAULT = "create";
                           // exits 2 on a machine that HAS them, and an exit 2 is
                           // indistinguishable from genuinely being unable to reach
                           // n8n — the confusion this file exists to prevent
@@ -239,8 +243,25 @@ for (const t of TRACE_TARGETS) {
     if (p.tableId !== TRACE_TABLE) {
       problems.push(`"${WRITE}" writes to table "${p.tableId}", not "${TRACE_TABLE}"`);
     }
-    if (p.operation !== "create" || p.resource !== "row") {
-      problems.push(`"${WRITE}" is ${p.resource}/${p.operation}, not row/create — a trace row may only ever be inserted`);
+    // ABSENT MEANS DEFAULT. n8n PRUNES any parameter equal to the node's own
+    // default, and the Supabase node's defaults ARE `row` / `create` — which is
+    // exactly what this project wants — so a node written through the editor or
+    // by an API PUT that omits defaults stores neither key. Comparing strictly
+    // called all nine healthy graphs defective on 2026-08-29 while
+    // `audit_trace` was demonstrably being written (execution 10068, row
+    // 942ed9df, correct parent_id).
+    //
+    // This is the SECOND time this exact trap has been paid for; the first was
+    // the Webhook node's `responseMode`, fixed via RESPONSE_MODE_NODE_DEFAULT
+    // in workflows/nodes/webhookResponseSpec.js. Defaulting here is safe for the
+    // same reason it is there: the default and the required value are the same
+    // string, so "absent" and "correct" are genuinely the same state — and any
+    // OTHER value still fails, which is what stops this becoming "accept
+    // anything".
+    const resource = p.resource ?? SUPABASE_RESOURCE_NODE_DEFAULT;
+    const operation = p.operation ?? SUPABASE_OPERATION_NODE_DEFAULT;
+    if (operation !== "create" || resource !== "row") {
+      problems.push(`"${WRITE}" is ${resource}/${operation}, not row/create — a trace row may only ever be inserted`);
     }
     const fields = (p.fieldsUi?.fieldValues ?? []).map((f) => f.fieldId);
     for (const col of TRACE_FIELDS) {

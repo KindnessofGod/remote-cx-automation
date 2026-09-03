@@ -146,10 +146,27 @@ function positionOf(root, pattern) {
   return -1;
 }
 
-function firstControlPosition(root) {
+/* WHERE "READ TO DECIDE" ENDS AND "READ TO TRACE" BEGINS.
+ *
+ * This used to be the position of the first <button> on the page, and for UC-04
+ * there is no longer one to find (2026-08-30). The employer's approval was
+ * `approved_by_manager`, which Remote's schema gives to the CUSTOMER'S own
+ * manager, so it moved to the customer-facing surface; and Remote's own review
+ * stage, the one this sidebar belongs to, has no endpoint anywhere, so it could
+ * not be replaced by a different button either.
+ *
+ * THE RULE THESE TESTS PIN DID NOT CHANGE, only its landmark. Everything above
+ * the DECISION card is something you read to decide; everything below it is
+ * something you read to trace a decision afterwards. The card is the better
+ * landmark in any case: it exists on every case in every state, whereas a
+ * button existed only on the ones that happened to be actionable — so a fixture
+ * drifting out of an actionable state used to silently turn these ordering
+ * assertions into comparisons against -1 that could not fail.
+ */
+function decisionCardPosition(root) {
   const nodes = inReadingOrder(root);
   for (let i = 0; i < nodes.length; i += 1) {
-    if (nodes[i].tagName === "button") return i;
+    if (String(nodes[i].className || "") === "card actions") return i;
   }
   return -1;
 }
@@ -182,10 +199,37 @@ async function renderUc05() {
 }
 
 // ---------------------------------------------------------------------------
+// A NULL CAVEAT MUST NOT TAKE THE PANEL DOWN (2026-09-02)
+// ---------------------------------------------------------------------------
+// Every UK and Polish case arrived with `basis.notice.sources[0].caveats:
+// [null]` — three register ids referenced, never defined — and main.js threw
+// on `caveat.weight`, ending rendering after the identity box: no findings, no
+// ladder, no Sign off button, while the API said actionable. The server no
+// longer publishes the null; this pins that the bundle survives one anyway.
+
+test("a null caveat in the served basis does not stop the panel rendering", async () => {
+  const { handler } = await seedUc05Escalated();
+  const view = await viewFor(handler, "/api/resignations/by-ticket/9105");
+  const notice = (view.basis = view.basis || {}).notice || (view.basis.notice = {});
+  const groups = Array.isArray(notice.sources) && notice.sources.length ? notice.sources : (notice.sources = [{ title: "A source group", citations: [], caveats: [] }]);
+  groups[0].caveats = [null, ...(groups[0].caveats || [])];
+
+  const { root } = await renderSidebar({
+    settings: { apiBaseUrl: "", uc05ApiBaseUrl: UC05_BASE },
+    ticketId: 9105,
+    respond: servedBy(UC05_BASE, view),
+  });
+  const text = textOf(root);
+  // The roles card is composed AFTER the basis in reading order; if the caveat
+  // loop had thrown, it would not be here.
+  assert.match(text, /Nothing is written to Remote either way/, "rendering stopped before the roles card — the null caveat threw");
+});
+
+// ---------------------------------------------------------------------------
 // THE ORDER
 // ---------------------------------------------------------------------------
 
-test("what needs weighing comes before the controls, and the provenance comes after", async () => {
+test("what needs weighing comes before the DECISION card, and the provenance comes after", async () => {
   // THE MEASUREMENT THAT PROMPTED THIS: 4,001 rendered pixels stood between the
   // top of the panel and the Approve button on this exact case, and the two
   // findings a specialist actually had to weigh were most of the way down them,
@@ -195,24 +239,27 @@ test("what needs weighing comes before the controls, and the provenance comes af
   // something you read TO DECIDE, and everything below it is something you read
   // to TRACE a decision afterwards.
   const { root } = await renderUc04();
-  const control = firstControlPosition(root);
-  assert.ok(control > 0, "the UC-04 case rendered no control at all");
+  const control = decisionCardPosition(root);
+  assert.ok(control > 0, "the UC-04 case rendered no DECISION card at all");
 
   // Above: the finding that has to be weighed.
   const weighed = positionOf(root, /past the 183-day watch line/);
   assert.ok(weighed > -1, "the deciding finding is not on the page");
-  assert.ok(weighed < control, "a finding the specialist must weigh renders BELOW the controls");
+  assert.ok(weighed < control, "a finding the specialist must weigh renders BELOW the DECISION card");
 
   // Below: the gate order, the audit slug, the record. None of these is read to
   // make a decision.
   for (const [label, pattern] of [
-    ["the gate order", /^Decided by gate \d+ of \d+/],
+    // "check N of M", not "gate N of M" since 2026-08-31: a position in this
+    // ladder is one CHECK, and the gate is the stage it belongs to — UC-04 runs
+    // 18 checks across 8 gates, ten of them named `risk_matrix`.
+    ["the gate order", /^Decided by check \d+ of \d+/],
     ["the case record", /^The case record$/],
     ["the cleared checks", /^Every check that cleared/],
   ]) {
     const at = positionOf(root, pattern);
     assert.ok(at > -1, `${label} disappeared from the page entirely`);
-    assert.ok(at > control, `${label} renders ABOVE the controls`);
+    assert.ok(at > control, `${label} renders ABOVE the DECISION card`);
   }
 });
 
@@ -264,13 +311,13 @@ test("a flag code is not repeated in words the page has already said", async () 
   // CODE survives — it is the routing vocabulary and the audit string — but it
   // survives once, with the other audit strings, below the controls.
   const { root, view } = await renderUc04();
-  const control = firstControlPosition(root);
+  const control = decisionCardPosition(root);
   const flags = view.authorization.flags || [];
   assert.ok(flags.length >= 2, "the fixture no longer raises the flags under test");
   for (const flag of flags) {
     const at = positionOf(root, new RegExp("^" + flag + "$"));
     assert.ok(at > -1, `the flag code ${flag} is not on the page at all`);
-    assert.ok(at > control, `the flag code ${flag} still renders above the controls`);
+    assert.ok(at > control, `the flag code ${flag} still renders above the DECISION card`);
     assert.equal(occurrences(textOf(root), flag), 1, `${flag} appears more than once`);
   }
 });
@@ -312,7 +359,7 @@ test("the subject line names the person, and never prints the same identifier tw
 // ONE RISK STATEMENT
 // ---------------------------------------------------------------------------
 
-test("one risk verdict stands above the controls, and the other two are below them", async () => {
+test("one risk verdict stands above the DECISION card, and the other two are below it", async () => {
   // FOUR STATEMENTS, THREE VALUES, ONE WORD. "🟡 Medium-risk use case", "This
   // request: high risk", the panel's own "Risk level: medium" row and "Risk
   // rollup: medium" all rendered above the Approve button. Each was correct
@@ -324,18 +371,18 @@ test("one risk verdict stands above the controls, and the other two are below th
   // and the routing rollup are still on the page, in the case record, where a
   // rollup belongs.
   const { root } = await renderUc04();
-  const control = firstControlPosition(root);
+  const control = decisionCardPosition(root);
 
   const request = positionOf(root, /^This request: /);
-  assert.ok(request > -1 && request < control, "the request's own risk verdict is not above the controls");
+  assert.ok(request > -1 && request < control, "the request's own risk verdict is not above the DECISION card");
 
   const rollupAt = positionOf(root, /^Risk rollup: /);
   assert.ok(rollupAt > -1, "the routing rollup was dropped from the page rather than moved");
-  assert.ok(rollupAt > control, "the routing rollup still competes with the request's own risk above the controls");
+  assert.ok(rollupAt > control, "the routing rollup still competes with the request's own risk above the DECISION card");
 
   // The tier headline is gone as a headline — the risk sentence names the
   // baseline itself, so nothing needs a rival one.
-  assert.equal(positionOf(root, /^Medium-risk use case$/), -1, "the tier headline is back above the controls");
+  assert.equal(positionOf(root, /^Medium-risk use case$/), -1, "the tier headline is back above the DECISION card");
 
   // rca-iih7 / D-31: "Classified as a medium-risk use case" used to repeat the
   // SAME baseline the risk sentence above already names — a round-6 specialist
@@ -407,7 +454,7 @@ test("a cleared check is collapsed; a check with no verdict is not", async () =>
   // a design choice; collapsing an `unknown` or a `suppressed` one would be the
   // defect the five-state vocabulary exists to prevent.
   const { root, view } = await renderUc04();
-  const control = firstControlPosition(root);
+  const control = decisionCardPosition(root);
   const dimensions = view.basis.dimensions || [];
 
   const cleared = dimensions.filter((d) => d.state === "cleared");
@@ -467,7 +514,7 @@ test("a state this file has never seen is shown, never filed under cleared", asy
     ticketId: 9106,
     respond: servedBy(UC04_BASE, view),
   });
-  const control = firstControlPosition(root);
+  const control = decisionCardPosition(root);
   const at = positionOf(root, /A dimension in a state this bundle predates/);
   assert.ok(at > -1, "a finding in an unrecognised state was dropped entirely");
   assert.ok(at < control, "a finding in an unrecognised state was filed away as if it had cleared");
@@ -501,7 +548,60 @@ test("the panel states its gaps and never its engineering backlog", async () => 
 
   // The gaps themselves survive, in both cases, in their own words.
   const uc04 = textOf((await renderUc04()).root);
-  assert.match(uc04, /absence of a recorded gap, not a record of coverage/);
+  /* THE GAP SENTENCE HAS TWO BRANCHES SINCE §3.100, and this fixture takes the
+     EU one. The unconditional version claimed "this system holds no register of
+     pairs that ARE covered" — which on an intra-EU pair was FALSE while the same
+     page cited Regulation (EC) No 883/2004 with its three operative articles a
+     few inches above. What must survive is the GAP, not a particular spelling of
+     it, so both branches are pinned: this one names what IS settled and what is
+     not, and the non-EU branch below keeps the original words. */
+  /* THE FIXTURE'S OWN PAIR NO LONGER TAKES EITHER GAP BRANCH (2026-08-31).
+     The dimension now reads UC-08's SOCIAL_SECURITY_COVERAGE and UC-07's
+     TAX_CONVENTION_BY_PAIR, and NL–PT is in both, so this route reports the two
+     instruments rather than an absence. The gap sentences are NOT dead — they
+     are what an unregistered pair still gets — so both are pinned below on
+     pairs the registers genuinely do not hold, which is the only way this test
+     can tell "the gap survived" from "the gap became unreachable". */
+  assert.match(uc04, /is coordinated for social security by Regulation \(EC\) No 883\/2004/);
+  assert.match(uc04, /The tax side is a separate bilateral instrument/);
+  assert.match(uc04, /is not on record here/, "the gap itself must still be stated");
+  assert.doesNotMatch(uc04, /What it would take:/);
+
+  // The gap branches survive on pairs no register holds — and the covered
+  // branch is driven alongside them, so this test can tell "the gap sentence
+  // survived" from "the gap sentence became the only thing reachable".
+  {
+    const { describeDecisionBasis } = await import("../src/uc04/decisionFacts.js");
+    const { classifyRisk } = await import("../src/uc04/riskMatrix.js");
+    const coverageFor = (homeCountry, nationality, destinationCountry) => {
+      const factors = {
+        homeCountry, nationality, destination: { country: destinationCountry },
+        startDate: "2026-09-01", endDate: "2026-09-14", visaType: "schengen_short_stay",
+        jobDuties: "engineering", hasContractSigningAuthority: false, priorTravel: [],
+      };
+      const risk = classifyRisk({
+        sourceCountry: homeCountry, homeCountry, nationality, destinationCountry,
+        startDate: factors.startDate, endDate: factors.endDate, visaType: factors.visaType,
+        jobDuties: factors.jobDuties, hasContractSigningAuthority: false, priorTravel: [],
+      });
+      const basis = describeDecisionBasis({
+        authorizationRow: { factors, risk, flags: (risk.flags ?? []).map((f) => f.code ?? f), tripDays: 14 },
+      });
+      return basis.dimensions.find((d) => d.key === "treaty_coverage");
+    };
+
+    // A pair BOTH registers answer for: the two instruments, not an absence.
+    const covered = coverageFor("PT", "PT", "CA");
+    assert.equal(covered.state, "cleared");
+    assert.match(covered.finding, /Both limbs are covered for Portugal → Canada/);
+    assert.match(covered.finding, /No certificate of coverage is confirmed for this trip/);
+
+    // The non-EU gap branch, on a pair with neither an entry nor a recorded gap.
+    const other = coverageFor("DE", "DE", "MX");
+    assert.equal(other.state, "unknown");
+    assert.match(other.finding, /absence of a recorded gap, not a record of coverage/);
+    assert.match(other.finding, /Where the sources below name an instrument for this pair, read it there/);
+  }
   const uc05 = textOf((await renderUc05()).root);
   assert.match(uc05, /gap in our own table/);
 });
@@ -515,7 +615,12 @@ test("the state gloss is printed where a state can be misread, and not where it 
   const { root } = await renderUc04();
   const text = textOf(root);
   assert.match(text, /its answer is not evidence in either direction/, "the `unknown` gloss was dropped");
-  assert.match(text, /nothing was ever consulted/, "the `unavailable` gloss was dropped");
+  // The `unavailable` gloss was reworded on 2026-08-31: it claimed "nothing was
+  // ever consulted", which was false for both of its users once UC-04's
+  // immigration dimension began reading the employment record. The property
+  // under test is unchanged — an absence-of-verdict state prints its
+  // definition, so it cannot be skim-read as a pass.
+  assert.match(text, /Read the finding for what was consulted/, "the `unavailable` gloss was dropped");
   assert.doesNotMatch(text, /Measured against the limit and past it\./, "a verdict is being restated as a definition");
 });
 

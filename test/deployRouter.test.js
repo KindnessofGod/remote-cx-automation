@@ -32,6 +32,7 @@ import { readFileSync } from "node:fs";
 import {
   PORTAL,
   AUDIT_VIEW,
+  REMOTE_UI,
   THIRD_PARTY_DOOR,
   resolveRoute,
   resolveAllowedOrigin,
@@ -46,9 +47,11 @@ import {
   llmPosture,
   buildPortalHandler,
   buildAuditViewHandler,
+  buildRemoteUiHandler,
   buildThirdPartyDoorHandler,
   PORTAL_BASE_PATH,
   AUDIT_BASE_PATH,
+  REMOTEUI_BASE_PATH,
   THIRD_PARTY_BASE_PATH,
 } from "../deploy/cx-apis/deps.js";
 import { AuditReadStore } from "../src/auditview/readStore.js";
@@ -1045,6 +1048,106 @@ test("an unknown prefix's listing now includes the door", async () => {
   const handler = createCxHandler({ getPool: () => fakePool(), env: BARE_ENV, buildVerifier: async () => null });
   const { json } = await call(handler, fakeReq("GET", "/api?__cx_path=review/tickets"));
   assert.ok(json.knownPrefixes.includes(THIRD_PARTY_BASE_PATH));
+});
+
+// --- 11. the Remote-product stand-in, mounted at /remoteui -----------------
+//
+// A THIRTEENTH surface, and the last one that could only be reached from a
+// clone. src/remoteui/ stands in for the two flows that START inside Remote's
+// own product — a customer admin requesting a contract amendment (UC-06) and a
+// customer's manager deciding a work-authorization request (UC-04, stage 2) —
+// so with it unmounted, the one part of this system that begins where the real
+// work begins was absent from every browser demo of the deployment.
+//
+// It WRITES, so the tests below are about the gate as much as the route: the
+// same shared key as /portal, applied by the delegated surface itself, failing
+// CLOSED when it is required and unconfigured.
+
+test("the Remote-product stand-in is routed by prefix, and is not a tenth use case", () => {
+  assert.equal(resolveRoute("/api?__cx_path=remoteui").kind, "remoteui");
+  assert.equal(resolveRoute("/api?__cx_path=remoteui/api/work-authorizations").url, "/api/work-authorizations");
+  assert.equal(resolveRoute("/api?__cx_path=remoteui/work-authorizations").url, "/work-authorizations");
+  assert.equal(resolveRoute("/api?__cx_path=remoteui/workauth.js").url, "/workauth.js");
+  assert.ok(!USE_CASES.some((u) => u.prefix === REMOTE_UI.prefix));
+  assert.equal(REMOTEUI_BASE_PATH, "/" + REMOTE_UI.prefix);
+  assert.equal(REMOTE_UI.writes, true, "it creates Zendesk tickets and can PATCH a work authorization");
+});
+
+test("the index page and the unknown-prefix listing both name it", async () => {
+  const handler = createCxHandler({ getPool: () => null, env: BARE_ENV, buildVerifier: async () => null });
+  const { json } = await call(handler, fakeReq("GET", "/api?__cx_path="));
+  assert.ok(json.surfaces.some((s) => s.prefix === REMOTEUI_BASE_PATH));
+
+  const gone = await call(handler, fakeReq("GET", "/api?__cx_path=review/tickets"));
+  assert.ok(gone.json.knownPrefixes.includes(REMOTEUI_BASE_PATH));
+});
+
+test("the page is served under the prefix, with a <base> so its relative assets resolve", async () => {
+  const handler = createCxHandler({ getPool: () => null, env: { VERCEL: "1" }, buildVerifier: async () => null });
+  // NOT through call(): that helper JSON-parses, and this response is a page.
+  const res = fakeRes();
+  await handler(fakeReq("GET", "/api?__cx_path=remoteui/work-authorizations"), res);
+  assert.equal(res.statusCode, 200);
+  const html = String(res.body);
+  assert.ok(html.includes('<base href="/remoteui/" />'), "a mounted page needs a <base> or every relative URL 404s");
+  assert.ok(!html.includes("<!--"), "public pages are served with their comments stripped");
+});
+
+test("FAILS CLOSED: key required and unconfigured refuses every API call under it", async () => {
+  // The window a first deploy lands in — VERCEL set, PORTAL_ACCESS_KEY not yet.
+  // This surface writes, so it must survive that window from the safe side.
+  const handler = createCxHandler({ getPool: () => null, env: { VERCEL: "1" }, buildVerifier: async () => null });
+  const { res, json } = await call(
+    handler,
+    fakeReq("GET", "/api?__cx_path=remoteui/api/work-authorizations", { headers: { "x-remoteui-session": "admin" } })
+  );
+  assert.equal(res.statusCode, 401);
+  assert.equal(json.code, "portal_access_key_not_configured");
+});
+
+test("with the key set, the delegated surface answers — gate included, nothing stubbed", async () => {
+  const env = { VERCEL: "1", [PORTAL_KEY_ENV]: "s3cret" };
+  const handler = createCxHandler({ getPool: () => null, env, buildVerifier: async () => null });
+
+  const wrong = await call(
+    handler,
+    fakeReq("GET", "/api?__cx_path=remoteui/api/work-authorizations", {
+      headers: { "x-remoteui-session": "admin", [PORTAL_KEY_HEADER]: "guess" },
+    })
+  );
+  assert.equal(wrong.json.code, "portal_access_key_invalid");
+
+  const right = await call(
+    handler,
+    fakeReq("GET", "/api?__cx_path=remoteui/api/work-authorizations", {
+      headers: { "x-remoteui-session": "admin", [PORTAL_KEY_HEADER]: "s3cret" },
+    })
+  );
+  assert.equal(right.res.statusCode, 200);
+  assert.equal(right.json.ok, true);
+  assert.equal(right.json.companyId, "co_amend_01");
+  assert.equal(right.json.stage, 2);
+  // The real gates ran: the company boundary excluded the one persona employed
+  // elsewhere, and no request from that company is listed.
+  assert.ok(!right.json.requests.some((r) => r.id === "standin-wa-0003"));
+});
+
+test("the mount points BOTH halves of the work-authorization surface at the same Remote", async () => {
+  // Scoping against one Remote and acting against another is the defect
+  // src/shared/remoteWorld.js exists to close. Proved by construction rather
+  // than by a request: the builder passes one client to both seams.
+  const seen = [];
+  const probe = new Proxy(
+    {},
+    {
+      get(_t, prop) {
+        seen.push(prop);
+        return () => null;
+      },
+    }
+  );
+  const handlerFn = buildRemoteUiHandler({ pgPool: null, env: BARE_ENV, remote: probe, zendesk: null });
+  assert.equal(typeof handlerFn, "function");
 });
 
 // --- 9. is anything here read by a model? ----------------------------------

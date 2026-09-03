@@ -66,7 +66,10 @@ import { formatMoney, toRemoteInteger } from "../shared/money.js";
 export const DECIDERS = Object.freeze([
   Object.freeze({
     role: "customer_admin",
-    label: "Customer admin",
+    // THE LABEL IS THE EMPLOYER'S SIGNATORY; THE ROLE ID IS NOT RENAMED. See
+    // src/remoteui/amendmentStatus.js's SLOTS note — `customer_admin` is a live
+    // entitlement key and stays; the word a reader sees is the person meant.
+    label: "Employer's signatory",
     decides:
       "whether this is the right change to this person's contract — the right old and new values, on the right effective date.",
   }),
@@ -346,6 +349,15 @@ function payrollBasis(row) {
 
   const hours = isRealNumber(cutoff.hoursUntilCutoff) ? cutoff.hoursUntilCutoff : null;
   const timeToLock = humanDuration(hours);
+  // THE LOCK INSTANT, STATED. Remote's `cutoff_date` is a calendar day; the
+  // engine reads it as 00:00 UTC at the START of that day — the conservative
+  // reading, since every hour of the cutoff day is then already past the lock.
+  // No screen said which reading was taken (2026-09-02, expert review D5); the
+  // sentence below does whenever the lock is date-only.
+  const lockIsDateOnly = typeof cycle?.cutoffAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cycle.cutoffAt);
+  const lockReading = lockIsDateOnly
+    ? " The lock is read as 00:00 UTC at the start of that day — the whole cutoff day counts as after the lock."
+    : "";
   const candidates = Array.isArray(cutoff.ambiguousCycles)
     ? cutoff.ambiguousCycles.map((a) => ({
         id: a.id ?? null,
@@ -405,7 +417,8 @@ function payrollBasis(row) {
       sentence:
         `The lock for the cycle covering ${effective ?? "the requested effective date"}${cycle?.id ? ` (${cycle.id})` : ""} closed at ${cycle?.cutoffAt ?? "an unstated time"}` +
         (timeToLock ? ` — ${timeToLock} ago` : "") +
-        `. Applying the change now would be a retroactive correction against a period that has already been processed${cycle?.payDate ? `, paid on ${cycle.payDate}` : ""}.`,
+        `. Applying the change now would be a retroactive correction against a period that has already been processed${cycle?.payDate ? `, paid on ${cycle.payDate}` : ""}.` +
+        lockReading,
     };
   }
 
@@ -424,6 +437,7 @@ function payrollBasis(row) {
         ? ". That is inside the 48-hour urgent window, so both approvals have to be in before the lock or the change misses this run."
         : ".") +
       (cycle?.payDate ? ` Pay date ${cycle.payDate}.` : "") +
+      lockReading +
       (cycle?.projected
         ? " NOTE: this cycle id begins `standin-`, meaning it is a PROJECTED continuation of the observed cadence rather than a cycle Remote published. Confirm it against the real calendar before relying on the lock time."
         : ""),

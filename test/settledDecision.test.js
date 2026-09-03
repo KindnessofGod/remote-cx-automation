@@ -119,7 +119,7 @@ test("UC-04 already_decided names which, who, when and whether the Remote record
   // "UPDATED at Remote", not "created" — nothing in this system creates a work
   // authorization. The request is raised by the employee in Remote's Request
   // Hub; there is no `POST /v1/work-authorization-requests` to create one with.
-  assert.match(verdict.reason, /updated at Remote \(wa_1\)/);
+  assert.match(verdict.reason, /updated at Remote \(reference wa_1\)/);
   assert.match(verdict.reason, /documents checked/);
   assert.notEqual(verdict.reason, UC04_REFUSALS.already_decided.reason);
 });

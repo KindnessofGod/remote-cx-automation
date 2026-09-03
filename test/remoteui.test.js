@@ -259,7 +259,10 @@ test("POST /api/submit (ordinary, before cutoff): real gates pass, ticket create
   assert.deepEqual(res.body.flags, []);
   assert.equal(res.body.amendmentType, "SALARY_INCREASE");
   assert.equal(res.body.summary, "Amendment: change salary from 50000 to 60000 EUR, effective 2026-07-15.");
-  assert.deepEqual(res.body.tags, [MARKER_TAG, OUTCOME_TAGS.dual_approval_required]);
+  // ROUTED AS WELL AS TAGGED (contract [A-30], 2026-09-02): the queue tag from
+  // the shared routing table rides beside the outcome tag, so the ticket lands
+  // in Payroll Ops's view instead of nobody's.
+  assert.deepEqual(res.body.tags, [MARKER_TAG, OUTCOME_TAGS.dual_approval_required, "queue_payroll_ops"]);
   assert.equal(res.body.actionable, true);
   assert.ok(res.body.ticketId, "a ticket id must be returned");
   assert.ok(res.body.amendmentId, "an amendment id must be returned");
@@ -270,7 +273,7 @@ test("POST /api/submit (ordinary, before cutoff): real gates pass, ticket create
   // dual-approval flow with nothing else to gather.
   const ticket = await zendesk.getTicket(res.body.ticketId);
   assert.equal(ticket.status, "new");
-  assert.deepEqual(ticket.tags, [MARKER_TAG, OUTCOME_TAGS.dual_approval_required]);
+  assert.deepEqual(ticket.tags, [MARKER_TAG, OUTCOME_TAGS.dual_approval_required, "queue_payroll_ops"]);
   assert.deepEqual(ticket.custom_fields, [{ id: Number(EMPLOYMENT_ID_FIELD_ID), value: "emp_nl_amend_001" }]);
   assert.match(ticket.description, /Amendment: change salary from 50000 to 60000 EUR/);
   assert.match(ticket.description, /Decision: dual_approval_required \(all_gates_passed\)/);
@@ -303,10 +306,10 @@ test("POST /api/submit after the cutoff: escalate — visible but not actionable
   assert.deepEqual(res.body.flags, ["cutoff_lock_passed", "retroactive_change"]);
   assert.equal(res.body.actionable, false); // the REAL dualApprovalPolicy answer
   assert.match(res.body.actionableReason, /no approve\/decline path/);
-  assert.deepEqual(res.body.tags, [MARKER_TAG, OUTCOME_TAGS.escalate]);
+  assert.deepEqual(res.body.tags, [MARKER_TAG, OUTCOME_TAGS.escalate, "queue_payroll_ops", "escalation_payroll_ops"]);
 
   const ticket = await zendesk.getTicket(res.body.ticketId);
-  assert.deepEqual(ticket.tags, [MARKER_TAG, OUTCOME_TAGS.escalate]);
+  assert.deepEqual(ticket.tags, [MARKER_TAG, OUTCOME_TAGS.escalate, "queue_payroll_ops", "escalation_payroll_ops"]);
 });
 
 test("POST /api/submit for a terminated employee: the employment-active gate escalates", async () => {
@@ -641,10 +644,18 @@ test("a refusal for a country with no amendment form explains itself, and a real
   // The explanation is scoped to the reason it explains. A cutoff refusal is a
   // decision about THIS request and must not be dressed up as an environment
   // limitation — that would be the mirror of the bug, hiding a real refusal
-  // behind "the form does not exist".
+  // behind "the form does not exist". Since 2026-09-02 it gets its OWN
+  // sentence instead of none: the cycle, the lock, and how late — the same
+  // words the payroll specialist reads in the sidebar (describeAmendmentBasis).
   const cutoff = await callApi(handler, { method: "POST", path: "/api/submit", body: AFTER_CUTOFF, headers: ADMIN_SESSION });
   assert.equal(cutoff.body.reason, "cutoff_lock_passed");
-  assert.equal(cutoff.body.explanation, null);
+  assert.match(cutoff.body.explanation, /run_nl_2026_06/, "names the governing cycle");
+  assert.match(cutoff.body.explanation, /closed at 2026-06-10/, "names the lock");
+  assert.doesNotMatch(cutoff.body.explanation, /no contract-amendment form/);
+  // And the clock the gates ran on is echoed, pinned, so the page can say so.
+  assert.equal(cutoff.body.evaluatedAt, AFTER_CUTOFF.now);
+  assert.equal(cutoff.body.clockPinned, true);
+  assert.deepEqual(cutoff.body.owner, { team: "Payroll Ops", escalated: true });
 });
 
 test("a schema read that failed is never recorded as a 404 about the record", async () => {

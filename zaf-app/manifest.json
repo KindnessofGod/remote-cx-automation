@@ -1,7 +1,7 @@
 {
-  "name": "Remote CX Review",
+  "name": "Gatehouse CX Review",
   "author": {
-    "name": "Remote CX Automation",
+    "name": "Gatehouse CX Automation",
     "email": "cx-automation@example.com"
   },
   "defaultLocale": "en",
@@ -14,7 +14,7 @@
       }
     }
   },
-  "version": "1.10.10",
+  "version": "1.11.4",
   "frameworkVersion": "2.0",
   "parameters": [
     {

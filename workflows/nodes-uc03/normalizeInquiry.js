@@ -12,8 +12,8 @@
 // unidentifiable travel inquiry must never proceed automatically.
 //
 // FIELD ID 9990000000001 is the "Remote Employment ID" custom field on the
-// CURRENT Zendesk account (`your-subdomain`). The retired account's id
-// (99900000000006) does not exist here.
+// CURRENT Zendesk account (`your-subdomainhelp`, migrated 2026-08-29). Neither
+// retired account's id (99900000000006, then 9990000000001) exists here.
 // ---------------------------------------------------------------------------
 
 const EMPLOYMENT_FIELD_ID = 9990000000001;

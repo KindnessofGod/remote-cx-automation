@@ -551,19 +551,26 @@ test("UC-02: the category key and the confidence reach Finance Ops, not the clai
 // extra line, so where the two compete the line stays.
 
 test("a stated LIMIT or ABSENCE is never tidied off the requester's panel", async () => {
-  const { results } = await driveEveryScenario();
+  const { results, tickets } = await driveEveryScenario();
   const found = { floor: 0, noRule: 0, notCounted: 0, notReached: 0 };
 
   for (const r of decided(results)) {
     const text = JSON.stringify(r.payload.details ?? []);
     if (/this is a floor, not a count/.test(text)) found.floor += 1;
-    if (/no statutory rule on file for this country/.test(text)) found.noRule += 1;
     if (/not counted|NOT COUNTED/.test(text)) found.notCounted += 1;
     if (/Not reached —/.test(text)) found.notReached += 1;
   }
+  // [N-14] "no statutory rule on file for this country" is UC-05's Brazil limit,
+  // and since 2026-09-02 it is the SPECIALIST's line, not the requester's: §11 of
+  // the acceptance contract withholds the reason for an escalation from the
+  // employee while Local HR & Legal is deciding it (the owner's ruling,
+  // DRIFT-064). Not tidied off — routed. It is asserted on the note HR Ops
+  // opens, which the same drive recorded, so a deletion still fails here.
+  const notes = tickets.map((t) => t?.comment?.html_body ?? "").join("\n");
+  if (/no statutory rule on file for this country/.test(notes)) found.noRule += 1;
 
   assert.ok(found.floor > 0, "a cumulative day count with no history behind it no longer says it is a floor");
-  assert.ok(found.noRule > 0, "a country with no rule on file no longer says so");
+  assert.ok(found.noRule > 0, "a country with no rule on file no longer says so — to anyone");
   assert.ok(found.notCounted > 0, "an uncounted presence figure no longer says it was not counted");
   assert.ok(found.notReached > 0, "a window that was never measured no longer says it was not reached");
 });
@@ -669,10 +676,21 @@ test("no requester-facing fact prints a bare country code", async () => {
       // in for a name — parenthesised after one, either side of an arrow, or
       // the whole value — and nothing else. It is narrower on purpose: it will
       // miss a code smuggled into prose, and it will not be ignored.
+      // ONE EXCLUSION, AND IT IS NARROW ENOUGH THAT IT CANNOT HIDE A REAL LEAK.
+      // "Regulation (EC) No 883/2004" is the formal citation form of an EU legal
+      // act, and EC is also Ecuador's ISO code — so when the dossier corpus
+      // started citing real instruments (2026-08-30), this guard reported four
+      // Ecuador leaks in citation titles that name no country at all.
+      //
+      // The exclusion is `(EC)` or `(EU)` FOLLOWED BY " No ", which is the
+      // citation form and nothing else. "Ecuador (EC)" still fails. A bare
+      // "(EC)" still fails. Only the instrument-naming form passes, and it
+      // passes because it is not a country reference in the first place.
+      const withoutActCitations = value.replace(/\((?:EC|EU)\)(?=\s+No\s)/g, "(—)");
       const presented = [
-        ...(value.match(/\(([A-Z]{2})\)/g) ?? []).map((m) => m.slice(1, 3)),
-        ...(value.match(/\b([A-Z]{2})\b(?=\s*(?:→|->))/g) ?? []),
-        ...(value.match(/(?<=(?:→|->)\s*)\b([A-Z]{2})\b/g) ?? []),
+        ...(withoutActCitations.match(/\(([A-Z]{2})\)/g) ?? []).map((m) => m.slice(1, 3)),
+        ...(withoutActCitations.match(/\b([A-Z]{2})\b(?=\s*(?:→|->))/g) ?? []),
+        ...(withoutActCitations.match(/(?<=(?:→|->)\s*)\b([A-Z]{2})\b/g) ?? []),
         ...(/^[A-Z]{2}$/.test(value.trim()) ? [value.trim()] : []),
       ];
       for (const token of presented) {
@@ -683,6 +701,20 @@ test("no requester-facing fact prints a bare country code", async () => {
     }
   }
   assert.deepEqual(offences, [], `a country code reached a requester:\n  ${offences.join("\n  ")}`);
+});
+
+test("the EU-act exclusion cannot hide a real country-code leak", () => {
+  // NEGATIVE CONTROL for the one exclusion the guard above carries. An
+  // exclusion added to silence a false positive is exactly the change that
+  // quietly widens into a hole, so the boundary is asserted rather than
+  // described: only `(EC)`/`(EU)` in the act-citation form is excused.
+  const excuse = (value) => value.replace(/\((?:EC|EU)\)(?=\s+No\s)/g, "(—)");
+  assert.equal(excuse("Regulation (EC) No 883/2004"), "Regulation (—) No 883/2004");
+  // Everything a real leak looks like still survives the replacement.
+  assert.equal(excuse("Ecuador (EC)"), "Ecuador (EC)");
+  assert.equal(excuse("relocating to (EC) next year"), "relocating to (EC) next year");
+  assert.equal(excuse("Spain (ES)"), "Spain (ES)");
+  assert.equal(excuse("the Netherlands (NL) → Portugal (PT)"), "the Netherlands (NL) → Portugal (PT)");
 });
 
 // ---------------------------------------------------------------------------

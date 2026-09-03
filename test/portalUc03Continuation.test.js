@@ -855,14 +855,36 @@ test("the page reaches the continuation route, and only ever with a case id", ()
   assert.ok(!app.includes('"/api/requests/uc03/continue"'), "the continue route must be addressed relatively");
 });
 
-test("the admin persona is found, never written down", () => {
+// INVERTED 2026-08-30, and the old assertion is quoted here because it was
+// right about the wrong thing.
+//
+// It read: "the admin persona is found, never written down" — asserting that
+// applyContinuation() locates the company admin by `kind` rather than by a
+// hard-coded key. That was a sound rule about HOW to find a persona, and it
+// sat on top of a defect about WHETHER to switch to one at all. UC-04's
+// identity gate was `session.companyId === employment.company_id`, an
+// admin-only shape, so a traveller continuing from UC-03 was silently swapped
+// into somebody else. Remote's own object has the employee SUBMIT and the
+// customer's manager APPROVE; the gate had the employer's test applied to the
+// employee's act, and `submissionIdentity.js` now accepts either party.
+//
+// So the traveller stays themselves, and the thing to pin is the absence.
+test("continuing into UC-04 does NOT change who is signed in", () => {
   const app = read("app.js");
+  const fn = app.slice(app.indexOf("function applyContinuation"), app.indexOf("function renderContinuationBanner"));
+  assert.ok(fn.length > 0, "applyContinuation must still exist");
   assert.ok(
-    /p\.kind === "company_admin"/.test(app),
-    "the assessment's persona must be found by kind — a literal key would be a second copy of personas.js"
+    !/p\.kind === "company_admin"/.test(fn),
+    "the continuation must not select a company-admin persona — the traveller files their own request"
   );
+  assert.ok(
+    !/picker\.value\s*=/.test(fn),
+    "the continuation must not write to the persona picker at all"
+  );
+  // The roster still HAS an admin — they file on an employee's behalf, which is
+  // a real workflow and a separate chip. This is about the continuation only.
   const adminKeys = Object.values(PERSONAS).filter((p) => p.kind === "company_admin");
-  assert.ok(adminKeys.length >= 1, "the roster must offer a company admin for the assessment step");
+  assert.ok(adminKeys.length >= 1, "an admin persona must still exist for the file-on-behalf path");
 });
 
 // ---------------------------------------------------------------------------
@@ -985,4 +1007,101 @@ test("the result panel no longer narrates Remote's product or our API surface", 
   assert.match(answers, /here or anywhere else in this system/);
   assert.match(contCode, /nothing is submitted until you send that form/);
   assert.match(contCode, /asked rather than filled in for you/);
+});
+
+// ---------------------------------------------------------------------------
+// THE REQUESTER'S HALF OF THE SUBSTITUTION (2026-08-31)
+// ---------------------------------------------------------------------------
+// The tests above pin that the server files a continuation under the travel
+// request's reference and refuses a redelivery at the key. Both were right and
+// both were invisible: the page reported the id IT generated, so a requester
+// saw "Reference sent: uc04-…-4tyos" and then, on their next attempt,
+// "Reference already claimed: 59" — two ids with no stated relationship, the
+// second never shown to them before.
+//
+// The owner hit it exactly that way, having corrected the prior-stay boxes and
+// resubmitted: "i tried doing it myself, but could not go through." Nothing
+// they could do with the reference control would have helped, because on this
+// path the control is not in play — and the control said so nowhere.
+
+test("a continuation's duplicate says the trip already has a work authorization, not that a delivery repeated", async () => {
+  const { handler } = ledgerBackedPortal();
+  const routed = await post(handler, "uc03", { persona: "chris", text: WORKATION_TEXT, externalRef: "cont-words-1" });
+  await continueTo(handler, { persona: "chris", caseId: routed.body.recordId });
+  await post(handler, "uc04", { ...ASSESSMENT, continuationOf: routed.body.recordId, externalRef: "first-try" });
+
+  const again = await post(handler, "uc04", {
+    ...ASSESSMENT,
+    continuationOf: routed.body.recordId,
+    externalRef: "second-try-genuinely-different",
+  });
+
+  assert.equal(again.body.alreadyHandled, true);
+  // THE WORDING THAT SENT THE REQUESTER TO A CONTROL THAT COULD NOT HELP THEM.
+  assert.doesNotMatch(
+    again.body.duplicateExplanation,
+    /This exact reference had already been processed/,
+    "a continuation is not a repeated delivery, and calling it one points the reader at the reference control"
+  );
+  assert.match(again.body.duplicateExplanation, /This travel request already has a work authorization/);
+  // The question a requester asks next, answered without being asked.
+  assert.match(again.body.duplicateExplanation, /details currently on the form were not used/);
+  assert.match(again.body.duplicateExplanation, /start a new travel request/);
+  // Still not a policy refusal, and still the same envelope shape.
+  assert.match(again.body.duplicateExplanation, /not a policy refusal/);
+  assert.equal(again.body.duplicateDelivery, true);
+  assert.equal(again.body.alreadyHandledKind, "delivery");
+});
+
+test("an ordinary admin-filed request keeps the repeated-delivery wording", async () => {
+  // THE NARROWING IS THE POINT. `deliveryFields()`'s wording is correct for a
+  // webhook that fired twice, where sending a different reference IS the
+  // remedy. Only the continuation, where it is not, gets different words.
+  const { handler } = ledgerBackedPortal();
+  await post(handler, "uc04", { ...ASSESSMENT, persona: "admin", externalRef: "plain-dupe" });
+  const again = await post(handler, "uc04", { ...ASSESSMENT, persona: "admin", externalRef: "plain-dupe" });
+
+  assert.equal(again.body.alreadyHandled, true);
+  assert.match(again.body.duplicateExplanation, /This exact reference had already been processed/);
+  assert.doesNotMatch(again.body.duplicateExplanation, /already has a work authorization/);
+});
+
+test("the reference the page must report is on the wire for both outcomes", async () => {
+  // `recordedRef` is what the browser now shows instead of its own guess, so a
+  // decided continuation and a refused one both have to carry it — a refusal
+  // that omitted it would send the reader straight back to the id that named
+  // nothing, which is the state this whole change exists to end.
+  const { handler } = ledgerBackedPortal();
+  const routed = await post(handler, "uc03", { persona: "chris", text: WORKATION_TEXT, externalRef: "cont-wire-1" });
+  await continueTo(handler, { persona: "chris", caseId: routed.body.recordId });
+
+  const first = await post(handler, "uc04", { ...ASSESSMENT, continuationOf: routed.body.recordId, externalRef: "wire-a" });
+  const second = await post(handler, "uc04", { ...ASSESSMENT, continuationOf: routed.body.recordId, externalRef: "wire-b" });
+
+  assert.equal(first.body.recordedRef, "cont-wire-1");
+  assert.equal(second.body.recordedRef, "cont-wire-1", "the refused delivery must report it too");
+  assert.equal(second.body.duplicateOf, "cont-wire-1", "and it must be the SAME id the page just showed");
+});
+
+test("the page reports the reference the server used, and names the one it discarded", () => {
+  // Source-reading, following this portal's own convention (see
+  // portalDecisionDialog.test.js): npm test never imports a browser asset, so
+  // a dropped guard here ships while the suite stays green.
+  const app = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "..", "src", "portal", "assets", "app.js"),
+    "utf8"
+  );
+  const code = app.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
+
+  // It must PREFER the server's value over its own.
+  assert.match(code, /result\.payload\.recordedRef/, "the page still reports the id it generated");
+  assert.match(code, /var effectiveRef = recordedRef \|\| sentRef;/);
+  // And everything the control does must key off the effective one, or "Reuse"
+  // repeats an id that was never used.
+  assert.match(code, /lastRef\[typeId\] = effectiveRef;/);
+  assert.match(code, /render\(box, result\.payload, effectiveRef\);/);
+  // The difference is stated, not left for the reader to spot.
+  assert.match(code, /recordedRef && sentRef && recordedRef !== sentRef \? sentRef : null/);
+  assert.match(code, /was not used/);
+  assert.match(code, /The reference control below does not apply to/);
 });

@@ -77,6 +77,12 @@ export const ZENDESK_NODE_TYPE = "n8n-nodes-base.zendesk";
 export const INTERNAL_NOTE_EXPRESSION = "={{ $json.internalNote }}";
 
 /**
+ * The part of the expression above that must SURVIVE. See noteNodeParamIssues()
+ * for why the check is containment rather than equality.
+ */
+export const INTERNAL_NOTE_INTERPOLATION = "{{ $json.internalNote }}";
+
+/**
  * F-11: both note nodes route through "Compose Internal Note" -> "Assign
  * Routing" -> "Route by Decision", so they read the routing tag/group off
  * "Assign Routing" BY NAME rather than off `$json` directly — `$json` at
@@ -109,6 +115,12 @@ export const NOTE_NODE_QUEUE_TAG_EXPRESSION = "={{ $('Assign Routing').item.json
  * node name, unlike the two nodes above.
  */
 export const REPLY_CLOSE_ZENDESK_GROUP_EXPRESSION = "={{ $json.zendeskGroupId }}";
+
+/** Both accepted sources for the routed group id — see replyCloseParamIssues(). */
+export const REPLY_CLOSE_ZENDESK_GROUP_EXPRESSIONS = Object.freeze([
+  REPLY_CLOSE_ZENDESK_GROUP_EXPRESSION,
+  NOTE_NODE_ZENDESK_GROUP_EXPRESSION,
+]);
 export const REPLY_CLOSE_ROUTING_TAG_EXPRESSION = "={{ $json.routingTag }}";
 
 /**
@@ -135,10 +147,25 @@ export function noteNodeParamIssues(node) {
   const issues = [];
   const uf = node?.parameters?.updateFields ?? {};
 
-  if (uf.internalNote !== INTERNAL_NOTE_EXPRESSION) {
+  // MUST CARRY the composed note; need not be ONLY the composed note.
+  //
+  // Relaxed from exact equality on 2026-08-29, and the reason matters because
+  // loosening a regression guard usually weakens it. F-11's regression is the
+  // note being REPLACED by a hand-typed inline string, which LOSES "Compose
+  // Internal Note"'s gate-by-gate reasoning. `deploy-routing-nodes.mjs` now
+  // APPENDS the routing sentence to these nodes on all nine graphs, producing
+  // "={{ $json.internalNote }} {{ $('Assign Routing').item.json.routingNote }}"
+  // — strictly MORE than the spec demanded, never less. Exact equality called
+  // that a regression, so two of this repo's own tools disagreed and
+  // `verify-deployed` went red on three healthy nodes.
+  //
+  // Containment is the property F-11 actually cares about, and it still fails
+  // on the thing F-11 was written for: a note that does not interpolate
+  // `$json.internalNote` at all.
+  if (typeof uf.internalNote !== "string" || !uf.internalNote.includes(INTERNAL_NOTE_INTERPOLATION)) {
     issues.push(
-      `updateFields.internalNote is ${JSON.stringify(uf.internalNote)}, expected ` +
-        `${JSON.stringify(INTERNAL_NOTE_EXPRESSION)} — F-11's regression is an inline composed ` +
+      `updateFields.internalNote is ${JSON.stringify(uf.internalNote)}, expected to interpolate ` +
+        `${JSON.stringify(INTERNAL_NOTE_INTERPOLATION)} — F-11's regression is an inline composed ` +
         `string here, which silently stops carrying "Compose Internal Note"'s reasoning`
     );
   }
@@ -177,9 +204,19 @@ export function replyCloseParamIssues(node) {
   const issues = [];
   const uf = node?.parameters?.updateFields ?? {};
 
-  if (uf.group !== REPLY_CLOSE_ZENDESK_GROUP_EXPRESSION) {
+  // EITHER SOURCE of the routed group id is accepted; ABSENT is not.
+  //
+  // F-13's regression, stated in this file's own header, is the field being
+  // missing so the ticket lands in the account's default Support group. Reading
+  // the id off `$json` or off "Assign Routing" by name are two ways of getting
+  // the same value, and `deploy-routing-nodes.mjs` writes the by-name form.
+  // Proven live on 2026-08-29: ticket 15 (`blocked`/`engagement_not_eor_
+  // contractor`) was solved into HR Ops `99900000000009`, not the default group
+  // `99900000000009`, through the by-name form.
+  if (!REPLY_CLOSE_ZENDESK_GROUP_EXPRESSIONS.includes(uf.group)) {
     issues.push(
-      `updateFields.group is ${JSON.stringify(uf.group)}, expected ${JSON.stringify(REPLY_CLOSE_ZENDESK_GROUP_EXPRESSION)} — ` +
+      `updateFields.group is ${JSON.stringify(uf.group)}, expected one of ` +
+        `${JSON.stringify(REPLY_CLOSE_ZENDESK_GROUP_EXPRESSIONS)} — ` +
         `F-13's regression is this field ABSENT, which lands the ticket in the account's default Support group`
     );
   }

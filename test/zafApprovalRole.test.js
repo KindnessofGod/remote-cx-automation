@@ -226,13 +226,30 @@ test("a filled slot is reported from the API's own row, and an empty one is not 
   assert.doesNotMatch(uc06.roles[0].filledOn, /T\d\d:\d\d:\d\dZ?/);
   assert.equal(uc06.roles[1].filledBy, null, "an unsigned slot must stay empty");
 
-  // UC-04 records a DECLINE under different column names than an approval, and
-  // both are the same fact for this card: somebody has already answered.
+  /* UC-04 USED TO BE THE SECOND HALF OF THIS TEST, and it was asserting a
+     mis-attribution (corrected 2026-08-30).
+
+     `approver` / `declinedBy` on a UC-04 row are the record of the STAGE-2
+     decision — `approved_by_manager` / `declined_by_manager`, which Remote's
+     schema gives to `employer_approver`, the CUSTOMER'S own manager. The panel
+     was printing that name in the MOBILITY SPECIALIST'S slot, so a screen read
+     by Remote's mobility team said one of their own had reviewed a request when
+     what had actually happened is that the employer answered it.
+
+     The settlement itself is not hidden: it renders in full, with its own
+     labels, in the DECISION card's `settled` rows. What this slot must not do
+     is claim it. */
   const declined = CXPanelFor("UC-04").approvalRoles({
     case: { useCase: "UC-04", declinedBy: "sam@remote.com", declinedAt: "2026-08-19T10:00:00.000Z" },
   });
-  assert.equal(declined.roles[0].filledBy, "sam@remote.com");
-  assert.equal(declined.roles[0].filledAs, "Declined");
+  assert.equal(declined.roles.length, 1, "UC-04 still names exactly one Remote-side role");
+  assert.equal(declined.roles[0].roleId, "uc04:mobility_specialist");
+  assert.equal(
+    declined.roles[0].filledBy,
+    null,
+    "the employer's own decision is being reported as a Remote mobility specialist's"
+  );
+  assert.equal(declined.roles[0].filledAs, null);
 });
 
 test("the browser holds no roster and computes no entitlement", () => {
@@ -322,13 +339,37 @@ test("a live UC-04 case says which capacity the specialist is being asked to act
 
   assert.match(capacity, /Who decides this/);
   assert.match(capacity, /Mobility specialist/, "the role the agent is acting in is not named");
-  assert.match(capacity, /uc04:mobility_specialist/, "the grant to quote when asking for access is missing");
-  assert.match(capacity, /outstanding/i, "an unsigned slot is not reported as outstanding");
-  // The honest sentence, while no API answers entitlement. It has to name the
-  // refusal code, because that is the string the agent will actually see if it
-  // turns out they are not on the roster.
-  assert.match(capacity, /checked by the API when you submit/i);
-  assert.match(capacity, /approver_not_entitled/);
+  /* THE ROLE SLUG IS NO LONGER RENDERED (2026-08-31), and this assertion was
+     inverted with it. It used to demand `uc04:mobility_specialist` on the page,
+     defended in main.js as "the slug a specialist quotes when they ask what
+     this role IS". The panel is shown to people outside Remote, the row above
+     already names the role in words AND says what it decides, and an
+     entitlement-roster key nobody outside this system can look up clarifies
+     nothing. It is still checked server-side on submit, unchanged. */
+  assert.doesNotMatch(capacity, /uc04:mobility_specialist/);
+
+  /* "NOT OPEN HERE", NOT "OUTSTANDING" (2026-08-30). This assertion read
+     `/outstanding/i` for as long as the sidebar offered an Approve button, and
+     the word was right then: a signature was owed on this screen.
+
+     It is not any more. The employer's approval is the customer's own, made in
+     Remote's product; Remote's own mobility review has no endpoint anywhere. So
+     no signature is owed HERE by anybody, and "outstanding" would be a promise
+     the paragraph two lines above withdraws — which is the exact defect
+     renderApprovalRoles()'s third state was built for. */
+  assert.match(capacity, /not open here/i, "an unsignable slot is still advertised as work somebody owes here");
+  assert.doesNotMatch(capacity, /outstanding/i);
+
+  // ...and the submit-time entitlement sentence stands down with it. It
+  // describes what happens WHEN YOU SUBMIT, and nothing is submitted from this
+  // screen.
+  assert.doesNotMatch(capacity, /checked when you submit/i);
+
+  // THE ABSENCE IS EXPLAINED, NOT LEFT AS A GAP. A missing control and a broken
+  // one look identical, so both owners are named in words: the customer's
+  // manager, and the Remote stage with no API.
+  assert.match(capacity, /employer's approval is the customer's own/i);
+  assert.match(capacity, /no API this system can call/i);
 
   // NOT a claim about this specific human. That judgement is the server's, and
   // no API makes it yet. Case-sensitive and anchored on the VERDICT form: the
@@ -339,7 +380,9 @@ test("a live UC-04 case says which capacity the specialist is being asked to act
 
   // The rest of the screen is untouched, and this card is not a control.
   assert.equal(collect(block, (n) => n.tagName === "button").length, 0, "the capacity card grew a button");
-  assert.ok(buttons.length >= 2, "the real approve/decline controls disappeared");
+  // AND NEITHER DOES ANYTHING ELSE ON THE SCREEN. This line asserted
+  // `buttons.length >= 2` until 2026-08-30; those two buttons were the defect.
+  assert.equal(buttons.length, 0, "UC-04 rendered a control — the employer's decision is not made in this sidebar");
   // And the two rows this pass fixed, read off the real handler's response.
   const rows = textOf(root);
   assert.doesNotMatch(rows, /\[object Object\]/, "a raw object is still being printed");
@@ -475,13 +518,13 @@ test("a multi-role case says how many signatures are still outstanding", async (
   });
 
   const capacity = textOf(capacityBlock(root));
-  assert.match(capacity, /Customer Admin/);
-  assert.match(capacity, /Payroll Specialist/);
+  assert.match(capacity, /Employer's signatory/);
+  assert.match(capacity, /Remote payroll specialist/);
   assert.match(capacity, /Approved by admin_jane/);
   // NAMED, not counted — UC-06's own approval meter renders "1 of 2 approvals
   // recorded" a few lines below, and two "1 of 2"s meaning opposite things on
   // one screen is the ambiguity this card exists to remove, not to add.
-  assert.match(capacity, /Still to sign: Payroll Specialist\./);
+  assert.match(capacity, /Still to sign: Remote payroll specialist\./);
   assert.doesNotMatch(capacity, /1 of 2 roles/);
 });
 
@@ -676,7 +719,28 @@ test("a closed decision renders as labelled rows, not as a paragraph", async () 
     text.indexOf("b.person@gmail.com") === text.lastIndexOf("b.person@gmail.com"),
     "the approver's name is printed twice"
   );
-  assert.match(textOf(capacityBlock(root)), /recorded/i, "the capacity card stopped saying the slot is filled");
+  /* THE CAPACITY CARD NO LONGER CLAIMS THE SIGNATURE, and this assertion moved
+     with it (2026-08-30). It used to read `/recorded/i` — the slot's "filled"
+     state — because the panel put `authorization.approver` in the Mobility
+     specialist's slot. That name is the EMPLOYER's stage-2 approver, so the
+     card was attributing the customer's decision to Remote's own reviewer.
+     The rows above still state the settlement in full; the slot now says only
+     that nothing is decided here, which is the one thing that is true of it. */
+  assert.match(textOf(capacityBlock(root)), /not open here/i, "the slot claims a state it cannot be in");
+  /* NARROWED 2026-08-31, TO THE THING IT WAS ACTUALLY DEFENDING. This read
+     `doesNotMatch(/recorded/i)` — a word, standing in for the claim. Stage 3
+     (Remote's own mobility review) is now recordable on this screen, so the
+     panel's own prose legitimately contains the word "recorded" while the slot
+     itself is still, correctly, empty on this fixture: the view carries no
+     `mobilityReview`, so `filledBy` is null and the slot reads "not open here".
+     The claim to defend is that the EMPLOYER'S approver is not shown as a
+     Remote mobility specialist, so that is what is asserted — by name, which no
+     rewording can accidentally satisfy. */
+  assert.doesNotMatch(
+    textOf(capacityBlock(root)),
+    /b\.person@gmail\.com/,
+    "the capacity card is claiming the employer's signature again"
+  );
   // ...and the run-on string it replaces is nowhere on screen.
   assert.doesNotMatch(text, /Approved\.\s*Approved by:/);
 

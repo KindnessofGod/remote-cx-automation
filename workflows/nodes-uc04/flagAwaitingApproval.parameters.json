@@ -1,0 +1,15 @@
+{
+  "authentication": "oAuth2",
+  "operation": "update",
+  "id": "={{ $('Workation Gates').item.json.externalRef }}",
+  "updateFields": {
+    "group": "={{ $('Assign Routing').item.json.zendeskGroupId }}",
+    "internalNote": "={{ $('Workation Gates').item.json.internalNote }}\n\nWork authorization record: {{ $('Create Authorization Record').item.json.id }}\n{{ $('Assign Routing').item.json.routingNote }}",
+    "status": "pending",
+    "tags": [
+      "uc04_ready_for_approval",
+      "uc04_awaiting_employer_approval",
+      "={{ $('Assign Routing').item.json.routingTag }}"
+    ]
+  }
+}

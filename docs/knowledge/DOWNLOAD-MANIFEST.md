@@ -21,6 +21,16 @@
 >   [`layer-1-statutory/CONTRADICTIONS.md`](layer-1-statutory/CONTRADICTIONS.md) —
 >   now **27 items and 4 confirmations**, up from 16 and 2.
 >
+> **Updated 2026-09-02 — a fourth pass, on one question.** *What does the statute
+> require of a **resigning employee**?*, asked of the `NOTICE_PERIOD_TABLE`
+> countries whose statute had never been retrieved. **D-05 was retrieved and its
+> "JavaScript-only" classification was the error, not the site**; **D-41, D-42,
+> D-43, D-44** are new; **D-45 is a new blocked slot** — Germany's
+> `gesetze-im-internet.de` does not answer a TCP connection from this container,
+> so BGB § 622 is carried at agency strength only. **Retrieved: 40 of 44. Not
+> retrieved: 4** — D-12, D-13, D-30 unchanged, plus **D-45's statute**.
+> `CONTRADICTIONS.md` is now **35 contradictions and 6 confirmations**.
+>
 > **Three things the third pass changed that a reader of the old box would get
 > wrong:**
 >
@@ -318,7 +328,7 @@ rule forbids one anyway.
 | D-02 | Código do Trabalho art. 400 — denúncia | PT | UC-05 | (c) | **BLOCKING** | ✅ text · gazette PDF |
 | D-03 | Código do Trabalho — período experimental | PT | UC-05 | (c) | **BLOCKING** | ✅ text · gazette PDF |
 | D-04 | Canada Labour Code, Part III | CA | UC-05 | (b) | **BLOCKING** | ✅ **bytes** |
-| D-05 | Ontario Employment Standards Act, 2000 | CA | UC-05 | (b) | **BLOCKING** | ⛔ class C (JS) |
+| D-05 | Ontario Employment Standards Act, 2000 | CA | UC-05 | (b) | **BLOCKING** | ✅ **bytes** (2026-09-02) · ~~class C (JS)~~ — the page is a shell, the JSON endpoint is not |
 | D-06 | WARN Act + DOL guidance | US | UC-05 | (a) | **BLOCKING** | ✅ **bytes** |
 | D-07 | Schengen Borders Code, Reg. (EU) 2016/399 | NL, PT | UC-04, UC-03 | (a) | **BLOCKING** | ✅ text · no bytes (size) |
 | D-08 | Council Decisions — BG/RO Schengen accession | EU set | UC-04 | (a) | SUPPORTING | ✅ **bytes** · id corrected |
@@ -354,6 +364,11 @@ rule forbids one anyway.
 | D-38 | Consolidated Canadian Autonomous Sanctions List | CA regime | UC-03, UC-04 | (b) | **BLOCKING** | ✅ register only |
 | D-39 | UN Security Council Consolidated List | UN regime | UC-03, UC-04 | **(c)** — corrected | SUPPORTING | ✅ register only |
 | D-40 | BW Boek 7 art. 628a — on-call carve-out from art. 672(5) | NL | UC-05 | (b) **CC0** | **BLOCKING** | ✅ **bytes** (2026-08-20) |
+| D-41 | Employment Rights Act 1996 s. 86 — employer *and* employee notice | GB | UC-05 | (b) **OGL v3.0** | **BLOCKING ★** | ✅ **bytes** (2026-09-02) · **C-31** |
+| D-42 | Minimum Notice and Terms of Employment Act 1973 ss. 4, 6 | IE | UC-05 | (b) **Oireachtas Open Data PSI / CC BY 4.0** | **BLOCKING** | ✅ **bytes** (2026-09-02) · enacted + revised · **C-32** |
+| D-43 | Kodeks pracy arts. 30 § 2¹, 32, 34, 36 | PL | UC-05 | (b) — no copyright in normative acts, *pr. aut.* art. 4 | **BLOCKING** | ✅ text · gazette PDF · no bytes (2.0 MB) · **C-33**, **C-34**, **K-5** |
+| D-44 | Code civil du Québec arts. 2091–2092 — *délai de congé* | CA (QC) | UC-05 | (c) | **BLOCKING ★** | ✅ text · no bytes (5.8 MB, terms unread) · **C-35** |
+| D-45 | ~~BGB § 622~~ → BMAS *Arbeitsrecht* (agency substitute) | DE | UC-05 | (c) | **BLOCKING** | ⚠ **statute NOT retrieved** — `gesetze-im-internet.de` does not answer TCP. Agency text only, `[AGENCY]`. **K-6** |
 
 **★ = fetch these two first.** D-10 is the highest-value single document in the
 manifest (it is the only authority behind a control that *removes* a check).

@@ -41,6 +41,7 @@ const PAGES = [
   "src/playground/assets/index.html",
   "src/chatdemo/assets/index.html",
   "src/remoteui/assets/index.html",
+  "src/remoteui/assets/workauth.html",
   "src/livedemo/assets/index.html",
   "src/dashboard/assets/index.html",
   "zaf-app/assets/iframe.html",

@@ -121,6 +121,12 @@ body {
    still carry. */
 .decision-approved { --r-dot: var(--r-dot-settled); }
 .decision-rejected { --r-dot: var(--r-dot-stopped); }
+/* `declined`, NOT a second spelling of `rejected`. The review queue stores
+   `rejected`; a use case whose settlement lives on its own record publishes the
+   repo-wide verb (src/shared/declineVocabulary.js), and UC-04 is the first.
+   Both are listed rather than one being normalised in the browser, because a
+   missing rule here costs a dot colour and a wrong normalisation costs a word. */
+.decision-declined { --r-dot: var(--r-dot-stopped); }
 
 /* -- the posture rail --------------------------------------------------------
    ONE RISK SENTENCE AND ONE AUTHORITY SENTENCE, in one block.
@@ -386,6 +392,39 @@ body {
 .r-caveat { border-left-style: dashed; border-left-color: var(--r-dot-waiting); }
 .r-caveat-head { font-size: 12px; font-weight: 600; color: var(--r-warn); }
 
+/* A FINDING RESTING ON NO SOURCE — deliberately NOT a caveat. A caveat is a
+   contradiction the corpus records against a source it holds and carries the
+   warning colour to say so; this is the absence of any source at all, and
+   colouring it as a warning would claim the corpus found something wrong here
+   when what it found was nothing. Dotted rather than dashed, and in the
+   secondary text colour, so the three kinds of entry inside one disclosure —
+   citation, caveat, absence — are told apart by shape as well as by wording. */
+.r-uncited { padding-left: 8px; border-left: 2px dotted var(--r-border-strong); }
+.r-citation + .r-uncited, .r-caveat + .r-uncited, .r-uncited + .r-uncited { margin-top: 8px; }
+.r-uncited p { margin: 0; }
+.r-uncited p + p { margin-top: 2px; }
+.r-uncited-head { font-size: 12px; font-weight: 600; color: var(--r-text-secondary); }
+
+/* A CHECK THAT WAS TESTED AGAINST ITS AUTHORITY AND HELD. The settled rail,
+   because that is what it is — but note it is the only settled-coloured thing
+   inside a source disclosure, and it says nothing about the REQUEST. The
+   bounding sentence is the server's CONFIRMATION_FRAMING, rendered once for the
+   page above the findings. */
+.r-confirmation { padding-left: 8px; border-left: 2px solid var(--r-dot-settled); }
+.r-citation + .r-confirmation, .r-caveat + .r-confirmation, .r-confirmation + .r-confirmation { margin-top: 8px; }
+.r-confirmation p { margin: 0; }
+.r-confirmation p + p { margin-top: 2px; }
+.r-confirmation-head { font-size: 12px; font-weight: 600; color: var(--r-text); }
+
+/* The three framing sentences, once for the page. Prose, so it reads as prose. */
+.r-framings > p { margin: 6px 0 0; color: var(--r-text-secondary); }
+
+/* WHAT STILL HAS TO BE ESTABLISHED. The waiting rail, because that is what an
+   open question is: nothing has gone wrong and nothing has been settled. */
+.r-question { padding-left: 8px; border-left: 2px solid var(--r-dot-waiting); }
+.r-question + .r-question { margin-top: 10px; }
+.r-question-code { font-family: var(--r-mono); font-size: 11px; overflow-wrap: anywhere; }
+
 /* The decision facts bundle (UC-02/UC-03), same row grammar as a finding. */
 .r-facts { display: flex; flex-direction: column; gap: 6px; }
 .r-fact { padding-left: 10px; border-left: 2px solid var(--r-border); }
@@ -393,6 +432,10 @@ body {
 .r-fact-head { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
 .r-fact-label { color: var(--r-text-secondary); }
 .r-fact-value { font-weight: 600; overflow-wrap: anywhere; min-width: 0; font-variant-numeric: tabular-nums; }
+/* A raw session id, drawn as an identifier rather than as a name. Same face as
+   .r-case-id and .r-capacity-id, which is where a reader already meets ids on
+   this panel, so the cue is one they have been taught rather than a new one. */
+.r-fact-id { font-family: var(--r-mono); font-size: 11px; font-weight: 500; color: var(--r-text-secondary); }
 .r-fact.is-unknown { border-left-style: dashed; border-left-color: var(--r-border-strong); }
 .r-fact.is-unknown .r-fact-value { font-weight: 600; color: var(--r-text-secondary); font-style: italic; }
 
@@ -584,6 +627,16 @@ body {
 .r-settled-headline { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
 .r-capacity + .r-settled-headline { margin-top: 4px; }
 .r-settled-finality { margin-top: 8px; }
+/* A DECISION ALREADY MADE, SHOWN ABOVE ONE STILL OPEN. Set apart with a rule
+   rather than a colour: it is not a warning and not an outcome badge — it is a
+   fact about an earlier stage, and it must not compete with the control below
+   it for the reader's attention. It must equally not be mistaken FOR that
+   control, which is what a flat run of rows directly above the form would be. */
+.r-settled-earlier {
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--r-border);
+}
 
 /* -- 5. everything else, collapsed -------------------------------------------
    main.js's renderDetails(). The cleared checks, the gate order, the audit
@@ -683,6 +736,10 @@ details > *:not(summary) { margin-bottom: 8px; }
 .gate-rung.is-decided .gate-rung-status { color: var(--r-warn); font-weight: 700; }
 .gate-rung.is-not_reached { border-left-style: dashed; border-left-color: var(--r-border-strong); }
 .gate-rung.is-not_reached .gate-rung-name { color: var(--r-text-secondary); font-weight: 400; }
+/* Reached, evaluated nothing: dotted, not the settled colour. The comparison
+   rung when Remote's figure was never read (see qualifyGateLadder). */
+.gate-rung.is-not_evaluated { border-left-style: dotted; border-left-color: var(--r-border-strong); }
+.gate-rung.is-not_evaluated .gate-rung-status { color: var(--r-warn); }
 
 /* The routing rollup, where a rollup belongs: with the provenance, not beside
    the verdict about the request. It travels with the server's own sentence
@@ -775,3 +832,37 @@ details > *:not(summary) { margin-bottom: 8px; }
    session, which this sidebar does not have and must not appear to. */
 .r-letter-offer .rows { margin: 10px 0; }
 .r-letter-offer p + p { margin-top: 8px; }
+
+/* THE COUNTS, ABOVE THE CAVEATS. A decision strip, not a dashboard: one line
+   per measurement, the figure set in the panel's mono face so "67 of 90 days"
+   is scannable down the column, and the state word kept beside it so a number
+   never appears without its verdict. Deliberately quiet — it is the reader's
+   entry point into the full findings below, not a replacement for them. */
+.r-numbers {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--r-border);
+  border-radius: var(--r-radius);
+  background: var(--r-surface-subtle);
+}
+.r-numbers-head {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--r-text-muted);
+}
+.r-numbers-list { list-style: none; margin: 0; padding: 0; }
+.r-numbers-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.r-numbers-row + .r-numbers-row { border-top: 1px solid var(--r-border); }
+.r-numbers-label { flex: 1 1 auto; min-width: 0; color: var(--r-text-secondary); }
+.r-numbers-value { font-family: var(--r-mono); font-weight: 600; white-space: nowrap; }
+.r-numbers-headroom { font-size: 12px; color: var(--r-text-muted); white-space: nowrap; }

@@ -338,13 +338,15 @@
           </label>
 
           <div class="upload-field">
-            <!-- No OCR runs anywhere in this repo, and the fingerprint below
-                 is computed from the file's real bytes (see wireReceiptUpload()
-                 in app.js) — so uploading the same receipt twice is a genuine
-                 duplicate rather than a staged one. The reader needs both
-                 halves of that, and neither needs the word OCR. -->
+            <!-- The file now does TWO independent jobs, and the copy says both.
+                 (1) Its real bytes are fingerprinted in the browser, so
+                 uploading the same receipt twice is a genuine duplicate rather
+                 than a staged one. (2) [E-1] It is read, and what it says is
+                 shown beside what the claim records — never merged into it.
+                 The two are separate promise chains in wireReceiptUpload(): one
+                 failing must not take the other down. -->
             <span class="r-label">Receipt
-              <span class="r-hint">(optional. Nothing is read out of the picture — the file is only used to recognise the same receipt being claimed twice.)</span>
+              <span class="r-hint">(optional. The file is read on screen so you can see what it says, and fingerprinted so the same receipt cannot be claimed twice.)</span>
             </span>
             <label class="upload-drop" for="uc02-receiptFile">
               <input type="file" id="uc02-receiptFile" class="upload-input" accept="image/*,.pdf" />
@@ -352,6 +354,14 @@
               <span class="upload-drop-name" id="uc02-receiptFileName"></span>
             </label>
           </div>
+
+          <!-- [E-1] Filled in live by readReceiptFile(). Two readings are shown
+               as two readings: this panel is what the DOCUMENT says, and the
+               gate ladder in the result below is what the CLAIM records. They
+               are never merged — a merged figure has already made the decision
+               that belongs to the reviewer (acceptance contract §13). -->
+          <div class="receipt-reading" id="uc02-receiptReading" hidden></div>
+          <input type="hidden" id="uc02-receiptReadingJson" />
 
           <label class="r-field">
             <span class="r-label">Receipt fingerprint
@@ -511,9 +521,14 @@
                  to here is the mock's fixture; the sidebar and the home
                  disclosure both say so, once, for every form on the page. -->
             <span class="r-label">Travelling employee
-              <span class="r-hint">(their id in Remote — Chris Lee by default)</span>
+              <span class="r-hint">(their id in Remote — the person the trip is about, who is not always the person filing it)</span>
             </span>
             <input type="text" id="uc04-employmentId" class="r-input" value="8ab12460-b568-4c1e-af9d-09b1fabd8f46" />
+            <!-- Filled by renderTravellerName() from the box's own value. A work
+                 authorization is one of the few requests where the filer and the
+                 subject are routinely different people, and an identifier does
+                 not say whose it is. See app.js. -->
+            <span class="r-hint traveller-name" id="uc04-traveller-name"></span>
           </label>
 
           <div class="field-grid">
@@ -616,6 +631,57 @@
             <span class="r-label">Can sign contracts on the company's behalf
               <span class="r-hint">(this changes the answer — please do not tick it as a formality)</span>
             </span>
+          </label>
+
+          <!-- WHAT YOU WILL ACTUALLY BE DOING THERE (W-2).
+               These are not this project's questions. Remote's own Mobility
+               Team publishes what it assesses — "Nature of intended
+               activities" is one of five items — and Remote's own remote-work-
+               authorization form asks for exactly these three, verbatim
+               (Help Center article 37802834593805, retrieved 2026-08-18):
+               "Activities to be performed", "Institutions or organizations
+               visiting", "Special worksites (e.g., laboratories,
+               manufacturing sites, etc.)". The fourth, where you will be
+               working, is `work_location` on Remote's own request object.
+
+               NOTHING SCORES ANY OF IT. No gate, matrix or model reads these
+               fields — src/uc04/activityProfile.js's header argues why, and
+               test/uc04ActivityProfile.test.js enforces it by reading the gate
+               files. They are here so the specialist reads what the traveller
+               wrote, and a rule keyed on the word "laboratory" would be one
+               anybody can pass by rephrasing and an honest person can fail by
+               being specific.
+
+               THE HINTS ARE IN THE REQUESTER'S TERMS. Somebody filling in this
+               form does not know what a permanent establishment is and must
+               not have to; the same rule the signing-authority checkbox above
+               already follows. -->
+          <span class="r-label">What you will be doing there
+            <span class="r-hint">(Remote's Mobility Team asks for these — nothing here is scored, a person reads it)</span>
+          </span>
+          <label class="r-field">
+            <span class="r-label">Activities to be performed</span>
+            <textarea id="uc04-activities" class="r-textarea" rows="2" maxlength="2000"
+                      placeholder="e.g. design reviews with the Madrid team, one client workshop"></textarea>
+          </label>
+          <label class="r-field">
+            <span class="r-label">Institutions or organizations you will visit
+              <span class="r-hint">("none" is an answer)</span>
+            </span>
+            <input type="text" id="uc04-institutions" class="r-input" maxlength="2000"
+                   placeholder="e.g. none / Acme Iberia SL, Universidad Complutense" />
+          </label>
+          <label class="r-field">
+            <span class="r-label">Special worksites
+              <span class="r-hint">(laboratories, manufacturing or industrial sites, hospitals — "none" is an answer)</span>
+            </span>
+            <input type="text" id="uc04-worksites" class="r-input" maxlength="2000"
+                   placeholder="e.g. none" />
+          </label>
+          <label class="r-field">
+            <span class="r-label">Where you will be working</span>
+            <input type="text" id="uc04-workLocation" class="r-input" maxlength="2000"
+                   placeholder="e.g. the client's office in Madrid / my own accommodation" />
           </label>
 
           <!-- PRIOR STAYS — the day-count inputs, stated by the traveller.
@@ -762,7 +828,23 @@
               </label>
               <label class="r-field">
                 <span class="r-label">Currency</span>
-                <input type="text" id="uc05-currency" class="r-input" value="USD" />
+                <!-- A PLACEHOLDER, NEVER A `value` — the form must not answer this
+                     question on the requester's behalf.
+
+                     `value="USD"` shipped here, so the box arrived filled and every
+                     hand-filled resignation submitted "USD" whatever the country.
+                     Measured on the live deployment 2026-09-02: a BRITISH employee's
+                     holiday settlement rendered `1920.00 USD`, and a Portuguese one
+                     `2704.00 USD` — on the deployment that already carried the
+                     server-side fix for exactly this. Clearing the box by hand
+                     produced the correct GBP, so the server derives it properly and
+                     the FORM was overriding it. The digits are identical either way,
+                     which is what made it invisible.
+
+                     UC-07's currency box two hundred lines below has always used a
+                     placeholder. This one is the odd row out, and it is the only one
+                     whose value becomes a figure somebody signs. -->
+                <input type="text" id="uc05-currency" class="r-input" placeholder="from the employment record" />
               </label>
             </div>
             <p class="r-hint field-note">

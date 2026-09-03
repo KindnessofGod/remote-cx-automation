@@ -250,10 +250,32 @@
    * Called only after the request has gone, so it can never show a value that
    * was generated and then not sent.
    */
-  function showSentRef(typeId, ref) {
+  function showSentRef(typeId, ref, overriddenRef) {
     var line = byId("refsent-" + typeId);
     if (!line || !ref) return;
     clear(line);
+    if (overriddenRef) {
+      /* THE HONEST VERSION OF THIS LINE WHEN THE CONTROL WAS NOT IN PLAY. Say
+         which id was discarded, which one the record is under, and — the part
+         that actually unblocks a reader — that this control cannot change it,
+         so they stop trying. The word "refused" is avoided on purpose: nothing
+         was refused here, a different id was used. */
+      line.appendChild(el("span", null, "Filed under the travel request's own reference: "));
+      line.appendChild(el("code", "tag-chip", ref));
+      line.appendChild(
+        el(
+          "span",
+          null,
+          " — the id this form generated (" +
+            overriddenRef +
+            ") was not used. A work authorization continued from a travel request is filed beside it, under one" +
+            " reference, so the two decisions can be read together. The reference control below does not apply to" +
+            " this submission: to file a different work authorization, start a new travel request."
+        )
+      );
+      line.hidden = false;
+      return;
+    }
     line.appendChild(el("span", null, "Last reference sent: "));
     line.appendChild(el("code", "tag-chip", ref));
     line.appendChild(
@@ -422,6 +444,21 @@
         persona: persona,
         expenseId: freshCopyOf(value("uc02-expenseId")),
         receiptHash: orNull("uc02-receiptHash"),
+        // [E-1] what the page already showed the employee, verbatim — carried
+        // through a hidden field like every other value on this form, so the
+        // builder stays a pure function of the DOM. It used to read a closure
+        // variable, which broke the moment BUILDERS was lifted into a sandbox
+        // by the tests: a builder that reaches outside the form is a builder
+        // nothing can test in isolation.
+        receiptReading: (function () {
+          var raw = orNull("uc02-receiptReadingJson");
+          if (!raw) return null;
+          try {
+            return JSON.parse(raw);
+          } catch (err) {
+            return null;
+          }
+        })(),
         externalRef: reference("uc02"),
       };
     },
@@ -470,6 +507,17 @@
         visaType: orNull("uc04-visaType"),
         jobDuties: orNull("uc04-jobDuties"),
         hasContractSigningAuthority: checked("uc04-hasContractSigningAuthority"),
+        // WHAT THEY WILL ACTUALLY BE DOING (W-2) — the three questions Remote's
+        // own form asks, plus the work location Remote's own request object
+        // carries. Sent verbatim; the server normalises and bounds them, and
+        // nothing scores them. Blank fields are sent blank rather than omitted,
+        // so "asked and left empty" stays distinguishable from "never asked".
+        activityProfile: {
+          activitiesToBePerformed: value("uc04-activities"),
+          institutionsVisited: value("uc04-institutions"),
+          specialWorksite: value("uc04-worksites"),
+          workLocation: value("uc04-workLocation"),
+        },
         // PRIOR STAYS, stated by the traveller. Two rows always, blank or not:
         // src/portal/server.js's `buildTravelHistory()` drops a row nobody
         // touched, so an untouched pair sends exactly what the hard-coded `[]`
@@ -774,8 +822,8 @@
         label: "Short business trip",
         persona: "chris",
         fields: {
-          "uc03-text": "I'm travelling to Spain for a client meeting from September 14 to October 2, 2026. Can you confirm business travel is fine?",
-          "uc03-destinationCountry": "ES",
+          "uc03-text": "I'm travelling to the Netherlands for a client meeting from September 14 to October 2, 2026. Can you confirm business travel is fine?",
+          "uc03-destinationCountry": "NL",
           "uc03-startDate": "2026-09-14",
           "uc03-endDate": "2026-10-02",
           "uc03-addressee": "",
@@ -788,19 +836,82 @@
         // inventing a fortnight for it would hide the routing the scenario
         // exists to demonstrate — a workation is routed on WHAT is being asked,
         // not on how long it lasts.
+        // THE DESTINATION MOVED PT -> NL ON 2026-08-31, AND IT IS NOT A
+        // PREFERENCE. This is the one UC-03 row that routes on to UC-04, so it
+        // chooses what the whole continuation demonstrates — and pointed at
+        // Portugal it chose to demonstrate nothing. Two links, both measured:
+        //
+        //   1. `suggestedVisa()` (src/portal/uc03Continuation.js) answers
+        //      `digital_nomad_visa` for PT for one reason — PT is in
+        //      DNV_COUNTRIES. So the continuation filled in a residence visa
+        //      for a 21-day holiday trip that needs no visa at all: a US
+        //      national has 90 days visa-free in the Schengen area.
+        //   2. `classifyRisk()` guards its Schengen block with
+        //      `!DNV_COUNTRIES.has(dest)`, so the SAME five-entry list then
+        //      cancelled the count. The sidebar rendered "Excused, not
+        //      measured" over UC-04's single most substantive computation.
+        //
+        // One uncited list — `[PROPOSED]`, no authority, no version, never
+        // reviewed — both picked the document and suppressed the measurement.
+        // Changing the visa does not help: measured, `schengen_short_stay` to
+        // PT is STILL suppressed, because the suppression keys on the
+        // destination and not on the document.
+        //
+        // NL IS THE ONLY ONE OF THE FOUR DEMO COUNTRIES THAT CAN PRODUCE THE
+        // NUMBER. PT is suppressed; CA and US are not in SCHENGEN at all and
+        // hard-block anything but a work permit. And the allowance genuinely
+        // governs Chris Lee: Art. 6(1) binds visa-exempt third-country
+        // nationals, which a US passport holder in the Netherlands is.
+        //
+        // PT -> NL WAS THE RICHER ALTERNATIVE AND WAS REJECTED. It cites three
+        // real instruments instead of one and raises `a1_certificate_recommended`
+        // — but it applies the 90/180 allowance to an EU citizen exercising free
+        // movement, whom it does not bind, and the row carries no nationality
+        // caveat. That is the same defect as the DNV suppression pointing the
+        // other way, and trading one for the other is not a fix.
         id: "uc03-workation",
         turnsOn: "what",
-        label: "Workation from Portugal",
+        label: "Workation from the Netherlands",
         persona: "chris",
         note:
           "This request names no dates, so the date boxes are left empty on purpose — what is being asked is enough to answer it.",
         fields: {
-          "uc03-text": "I'd like to work remotely from Portugal for a month while on holiday — can I do my normal job from there?",
-          "uc03-destinationCountry": "PT",
+          "uc03-text": "I'd like to work remotely from the Netherlands for a month while on holiday — can I do my normal job from there?",
+          "uc03-destinationCountry": "NL",
           "uc03-startDate": "",
           "uc03-endDate": "",
           "uc03-addressee": "",
           "uc03-externalRef": "9002",
+        },
+      },
+      {
+        // THE ONE OUTCOME THE OTHER FIVE CANNOT REACH: a hard refusal at gate
+        // 7, before anything is drafted and before the router even considers a
+        // letter. Added 2026-08-30 because the five scenarios above covered
+        // answered / routed / issued / identity, and every one of them ends in
+        // the system DOING something. A router that has only ever been seen
+        // saying yes has not been seen working -- the same argument
+        // scripts/make-demo-receipt.mjs makes for its wrong-total variant.
+        //
+        // Iran rather than an invented country code: the restricted set is
+        // imported from UC-03 by UC-04 rather than copied (CLAUDE.md §7's
+        // standing-issues 2), so this chip exercises the real list. Nothing
+        // about the destination is decided here -- this fixture only types
+        // into the boxes a person would type into.
+        id: "uc03-restricted",
+        turnsOn: "what",
+        label: "Trip to a restricted country",
+        persona: "chris",
+        note:
+          "This one is turned down, and that is the point: the destination is on a restricted list, so the request is handed to Global Mobility instead of being answered here.",
+        fields: {
+          "uc03-text":
+            "I need a travel support letter for a business trip to Iran next month to meet a supplier.",
+          "uc03-destinationCountry": "IR",
+          "uc03-startDate": "2026-09-10",
+          "uc03-endDate": "2026-09-20",
+          "uc03-addressee": "",
+          "uc03-externalRef": "9006",
         },
       },
       {
@@ -809,8 +920,8 @@
         label: "Visa support letter",
         persona: "chris",
         fields: {
-          "uc03-text": "I need a travel letter for my visa application for a conference in Germany from September 20 to September 26, 2026.",
-          "uc03-destinationCountry": "DE",
+          "uc03-text": "I need a travel letter for my visa application for a conference in Portugal from September 20 to September 26, 2026.",
+          "uc03-destinationCountry": "PT",
           "uc03-startDate": "2026-09-20",
           "uc03-endDate": "2026-09-26",
           "uc03-addressee": "",
@@ -819,31 +930,73 @@
       },
       {
         // THE SAME REQUEST, WORD FOR WORD, FROM SOMEBODY ELSE. `uc03-letter`
-        // above is issued on the spot; this one stops for a specialist — and
-        // the only difference between the two submissions is which person is
-        // signed in. Alexandre Tremblay is a contractor whose record names no
-        // employing entity, so there is no letterhead the letter could be
-        // written on. Verified against the mock rather than assumed:
-        // `auto_resolve / standard_letter_issued` as Chris Lee,
-        // `human_review / formal_letter_requested` as Alexandre.
+        // above is issued on the spot; this one is refused outright — and the
+        // only difference between the two submissions is which person is
+        // signed in.
+        //
+        // WHAT THIS PAIR TURNS ON CHANGED ON 2026-09-03, and the new fact is
+        // the one that was always underneath the old one. It used to stop at
+        // the letterhead rung: Alexandre's record names no employing entity, so
+        // there was no letterhead to write on. That is TRUE and it is a
+        // SYMPTOM — his record names no employing entity BECAUSE he is a
+        // contractor, and Remote publishes both travel articles under "This is
+        // applicable to EOR customers only". Telling a contractor "we could not
+        // find a letterhead" is a technical accident of the record; telling him
+        // Remote is not his legal employer is the answer, and it comes with the
+        // documents that do work for him. Verified against the mock rather than
+        // assumed: `auto_resolve / standard_letter_issued` as Chris Lee,
+        // `blocked / engagement_not_eor_contractor` as Alexandre.
         id: "uc03-letter-no-entity",
         turnsOn: "who",
         label: "…the same letter, asked by Alexandre",
         fails: true,
         persona: "alexandre",
         note:
-          "The very same words as \u201cVisa support letter\u201d. Alexandre\u2019s record names no employing entity, so there is no letterhead to write his letter on and a specialist has to.",
+          "The very same words as \u201cVisa support letter\u201d. Alexandre is engaged as an independent contractor, and Remote issues the travel support letter for employees it is the legal employer of \u2014 so this one is refused outright, with the documents that do work for a contractor named instead.",
         // THE SAME WORDS MEANS THE SAME BOXES. This scenario's text is
         // `uc03-letter`'s word for word, so its trip values are that
         // scenario's — leaving them blank here would make the one thing this
         // pair is FOR (only the person changed) untrue of the form.
         fields: {
-          "uc03-text": "I need a travel letter for my visa application for a conference in Germany from September 20 to September 26, 2026.",
-          "uc03-destinationCountry": "DE",
+          "uc03-text": "I need a travel letter for my visa application for a conference in Portugal from September 20 to September 26, 2026.",
+          "uc03-destinationCountry": "PT",
           "uc03-startDate": "2026-09-20",
           "uc03-endDate": "2026-09-26",
           "uc03-addressee": "",
           "uc03-externalRef": "9005",
+        },
+      },
+      {
+        // THE ONE UC-03 OUTCOME WHERE A NAMED SPECIALIST MUST ACT, and until
+        // 2026-09-03 nobody could click to it. Rung 11 stops a letter that was
+        // asked for and allowed and has NOWHERE TO BE WRITTEN — the employment
+        // names no employing legal entity — so it is drafted and handed to a
+        // Travel & Mobility Support specialist to sign. It used to be reachable
+        // through Alexandre, whose record carries the same absence; the
+        // engagement gate now refuses him five rungs earlier and correctly, and
+        // the letterhead rung closed with him. David Chen is an EOR EMPLOYEE
+        // with the same missing entity, so he passes the gate that stops
+        // Alexandre and reaches this rung on the fact this rung is about.
+        //
+        // NOT MARKED `fails`. It is not a refusal — it is the request working
+        // and stopping for a person, which is the distinction this chip exists
+        // to show. Compare "Visa support letter" as Chris Lee: identical words,
+        // issued outright, because his record names an entity.
+        id: "uc03-letter-needs-signature",
+        turnsOn: "who",
+        label: "\u2026the same letter, asked by David",
+        persona: "david",
+        note:
+          "The very same words as \u201cVisa support letter\u201d, asked by an employee whose Remote record names no employing legal entity. Every check about the trip passed and there is no letterhead to write the letter on, so it is drafted and stopped for a Travel & Mobility Support specialist to fix the record and release it.",
+        // THE SAME WORDS MEANS THE SAME BOXES — `uc03-letter`'s text and trip,
+        // word for word, so the only thing that changed is who asked.
+        fields: {
+          "uc03-text": "I need a travel letter for my visa application for a conference in Portugal from September 20 to September 26, 2026.",
+          "uc03-destinationCountry": "PT",
+          "uc03-startDate": "2026-09-20",
+          "uc03-endDate": "2026-09-26",
+          "uc03-addressee": "",
+          "uc03-externalRef": "9006",
         },
       },
       {
@@ -853,8 +1006,8 @@
         fails: true,
         persona: "thomas",
         fields: {
-          "uc03-text": "I'm travelling to Spain for a client meeting from September 14 to October 2, 2026.",
-          "uc03-destinationCountry": "ES",
+          "uc03-text": "I'm travelling to the Netherlands for a client meeting from September 14 to October 2, 2026.",
+          "uc03-destinationCountry": "NL",
           "uc03-startDate": "2026-09-14",
           "uc03-endDate": "2026-10-02",
           "uc03-addressee": "",
@@ -874,10 +1027,37 @@
     // company_id (identity), status, and custom_fields.workation_permission —
     // while homeCountry/nationality/destination are FORM fields the risk matrix
     // judges. So the subject changes whether the request is admissible at all,
-    // never which square of the matrix it lands in. Anna Müller is used for the
-    // three matrix scenarios so the record's own country (DE) agrees with the
-    // home country the form states; the previous subject was Nigerian while the
-    // form said DE, which read as a contradiction on screen and was one.
+    // never which square of the matrix it lands in.
+    //
+    // THE RULE THIS SET FOLLOWS: A SCENARIO NEVER STATES A HOME COUNTRY ITS
+    // SUBJECT'S OWN RECORD CONTRADICTS. It was established the first time this
+    // went wrong — a Nigerian subject under a form saying DE — and then broken
+    // again, in the other direction, when eleven rows moved to João Silva (PT)
+    // and four rows that name SOMEBODY ELSE kept the PT the sweep had written.
+    // So Chris Lee (US), Amanda J Walker (US), Lars van der Berg (NL) and Anna
+    // Müller (DE) were each filed as Portuguese. Corrected 2026-08-31; pinned by
+    // test/portalCopy.test.js, which reads every subject's country out of the
+    // mock rather than restating it here.
+    //
+    // WHY IT MATTERS MORE HERE THAN ON ANY OTHER FORM. Nothing in the gates
+    // compares the stated home country to the record — src/uc04/decisionFacts.js
+    // says so on the screen, in the sidebar, beside the value: "it is not read
+    // from the Remote employment record and is never compared to it, so a wrong
+    // country here is not caught anywhere". A demo whose data exercises exactly
+    // the hole the system discloses is teaching the wrong lesson twice: the
+    // sidebar renders "Stated home country: Portugal" over a US employment and
+    // is telling the truth both times.
+    //
+    // THE COST, PAID DELIBERATELY: the three "who" rows are no longer the
+    // IDENTICAL trip. They cannot be — a workation's origin is where the person
+    // works, and this fixture set holds exactly one Portuguese employment, one
+    // person without workation permission (US) and one person at another
+    // company (NL). Inventing Portuguese doubles for the second and third would
+    // be fabricating people to make a demo tidier, with real data available one
+    // rung up (CLAUDE.md §3's ladder). What is still identical is the
+    // destination, the dates, the visa type, the duties and the reason, and
+    // each refusal names its own gate — so the comparison survives while the
+    // false statement does not.
     uc04: [
       {
         id: "uc04-low",
@@ -885,104 +1065,178 @@
         label: "Low-risk Schengen trip",
         persona: "admin",
         fields: {
-          // Anna Müller — DE, employee, active (real Sandbox id).
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          // João Silva — PT, employee, active (real Sandbox id). The subject is
+          // arbitrary in this scenario, so it is the one whose RECORD country
+          // agrees with the home country stated below: the sidebar prints both,
+          // side by side, precisely so a specialist can compare them.
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
+          /* WHAT THEY WILL BE DOING THERE. Named on EVERY scenario, blanks
+             included, for the reason the prior-stay rows above are: a
+             quick-fill only sets the keys it lists, so a scenario that
+             omitted these would show whatever the previously clicked one
+             left in the boxes — and these four are free text, so the
+             carry-over would be a sentence about the wrong trip rather
+             than a stale country code. NOTHING HERE IS SCORED; no gate,
+             matrix or model reads any of it (src/uc04/activityProfile.js,
+             enforced by test/uc04ActivityProfile.test.js). They exist so
+             the mobility specialist reads what the traveller actually
+             wrote, which is also why the sanctioned row below names an
+             industrial worksite and a partner facility and is still blocked
+             by an earlier gate that never looks at either. */
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
           // Blank, and named rather than omitted — the same convention UC-08's
           // period rows already follow. A quick-fill only sets the keys it
           // lists, so a row left out here would keep whatever the previously
           // clicked scenario put in it and quietly change this one's counts.
-          "uc04-h1-country": "",
-          "uc04-h1-startDate": "",
-          "uc04-h1-endDate": "",
+          /* A PRIOR STAY, ADDED 2026-08-31, BECAUSE BLANK IS NOT NEUTRAL HERE.
+             Left empty, the rolling-window check reports `unknown` — "0 across
+             0 trips, a FLOOR, not a measurement" — which is the check working
+             correctly and is still an Unknown on the two scenarios a demo shows
+             SUCCEEDING. The owner's words: "our demo is not meant to have
+             unknown". With this stay the same page reports 60 of 183 days
+             against the residency watch line and 60 of 90 in the Schengen
+             window, so both counters print a figure instead of an absence.
+
+             THE SAME STAY THE UC-03 CONTINUATION ALREADY OFFERS
+             (`DEMO_PRIOR_STAY`, src/portal/uc03Continuation.js), so the two
+             routes into this form do not disagree about the traveller's
+             history. It is a WORKED EXAMPLE in an editable box, not a fact read
+             from Remote — the finding it feeds says so itself, and the boxes
+             stay editable so a tester can clear them and watch `unknown` come
+             back. The refusal scenarios are deliberately left blank: an earlier
+             gate decides those, and giving them history would risk moving which
+             gate that is. */
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-05-31",
+          "uc04-h1-endDate": "2026-07-15",
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "Two weeks working alongside the Madrid team.",
+          "uc04-reasonText": "Two weeks working alongside the Amsterdam team.",
           "uc04-externalRef": "4001",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
-        // THE SAME TRIP, THE SAME FORM, A DIFFERENT TRAVELLER. "Low-risk
-        // Schengen trip" above is prepared for a mobility specialist; naming
-        // Amanda Walker instead blocks it outright, because her employer has
-        // not granted workation permission — a fact on HER record, not on this
-        // form. Nothing else about the request changes. Verified against the
-        // mock: `ready_for_approval / all_gates_passed` for Anna Müller,
-        // `blocked / employer_permission_not_granted` for Amanda.
+        // THE SAME DESTINATION, THE SAME DATES, A DIFFERENT TRAVELLER.
+        // "Low-risk Schengen trip" above is prepared for a mobility specialist;
+        // naming Amanda Walker instead blocks it outright, because her employer
+        // has not granted workation permission — a fact on HER record, not on
+        // this form, and the reason the refusal names itself.
+        //
+        // SHE TRAVELS FROM THE UNITED STATES, because that is where she works.
+        // This row said PT until 2026-08-31 — the sweep that moved eleven rows
+        // to João Silva wrote PT here too, over a US employment. Verified by
+        // driving it: `blocked / employer_permission_not_granted` before and
+        // after, because the permission gate reads the record and asks nothing
+        // about the route. (The comment here also claimed the contrasting row
+        // clears "for Anna Müller"; that row has been João Silva's for weeks.)
         id: "uc04-no-permission",
         turnsOn: "who",
         label: "…the same trip, for Amanda",
         fails: true,
         persona: "admin",
         note:
-          "Identical to \u201cLow-risk Schengen trip\u201d except for who is travelling. Amanda\u2019s employer has not agreed to her working from another country, so this is refused outright rather than sent to anyone.",
+          "The same fortnight in Amsterdam, for a different traveller. Amanda\u2019s employer has not agreed to her working from another country, so this is refused outright rather than sent to anyone \u2014 nothing about the trip is looked at.",
         fields: {
           // Amanda J Walker — US, global-payroll employee, active (real
           // Sandbox id), whose record carries no workation permission.
           "uc04-employmentId": "e818418e-1db7-431d-a663-9f477addb8bd",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-homeCountry": "US",
+          "uc04-nationality": "US",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
-          "uc04-h1-country": "",
-          "uc04-h1-startDate": "",
-          "uc04-h1-endDate": "",
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          // The same prior stay as the scenario this one is PAIRED with, so the
+          // pair still turns on who is travelling and nothing else — the
+          // invariant test/portalCopy.test.js asserts. It changes no decision
+          // here: this scenario refuses at a gate that runs before the risk
+          // matrix, so the history is never counted.
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-05-31",
+          "uc04-h1-endDate": "2026-07-15",
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "Two weeks working alongside the Madrid team.",
+          "uc04-reasonText": "Two weeks working alongside the Amsterdam team.",
           "uc04-externalRef": "4013",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
-        // AND THE SAME TRIP FOR SOMEBODY AT ANOTHER COMPANY. Lars van der Berg
-        // is the one person on the picker who does not work for Acme, so the
-        // admin filing this has no standing over his record at all — refused on
-        // identity, before any question about the trip is reached. It is the
-        // company boundary being shown, which is a different refusal from
-        // Amanda's and reads identically on the form.
+        // AND THE SAME REQUEST FOR SOMEBODY AT ANOTHER COMPANY. Lars van der
+        // Berg is the one person on the picker who does not work for Acme, so
+        // the admin filing this has no standing over his record at all —
+        // refused on identity, before any question about the trip is reached.
+        // It is the company boundary being shown, which is a different refusal
+        // from Amanda's.
+        //
+        // HIS TRIP IS THE MIRROR OF JOÃO'S: NL → PT, two weeks, same dates.
+        // Two things were wrong here until 2026-08-31 and the second one
+        // followed from fixing the first. The form said he travels from
+        // Portugal; he works in the Netherlands. Correcting that to NL made the
+        // destination — also NL — a same-country request, which is nonsense on
+        // its face and is NOT what this row refuses on: identity is checked
+        // first, so the screen would have shown a self-contradictory trip
+        // turned away for an unrelated reason. Reversing the route keeps a
+        // clean, assessable Schengen trip whose only fault is the one being
+        // demonstrated. Driven both ways: `escalate / identity_not_verified`
+        // either way, because nothing about the route is ever reached.
         id: "uc04-other-company",
         turnsOn: "who",
-        label: "…the same trip, for Lars",
+        label: "…the same request, for Lars",
         fails: true,
         persona: "admin",
         note:
-          "Identical again, for the one person here who does not work for this company. Jane Doe cannot file anything for him \u2014 refused on identity, before the trip itself is looked at.",
+          "The same request again, for the one person here who does not work for this company. Jane Doe cannot file anything for him \u2014 refused on identity, before the trip itself is looked at.",
         fields: {
           // Lars van der Berg — NL, EOR employee, active (real Sandbox id),
           // employed by co_northwind_02 rather than by the admin's Acme.
           "uc04-employmentId": "673a1884-86fb-4101-83d3-b6c544d93bca",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-homeCountry": "NL",
+          "uc04-nationality": "NL",
+          "uc04-destinationCountry": "PT",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
-          "uc04-h1-country": "",
-          "uc04-h1-startDate": "",
-          "uc04-h1-endDate": "",
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          // The same prior stay as the scenario this one is PAIRED with, so the
+          // pair still turns on who is travelling and nothing else — the
+          // invariant test/portalCopy.test.js asserts. It changes no decision
+          // here: this scenario refuses at a gate that runs before the risk
+          // matrix, so the history is never counted.
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-05-31",
+          "uc04-h1-endDate": "2026-07-15",
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "Two weeks working alongside the Madrid team.",
+          "uc04-reasonText": "Two weeks working alongside the Lisbon team.",
           "uc04-externalRef": "4014",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
@@ -997,15 +1251,19 @@
           // destination country", which is country-agnostic, and no Sandbox
           // person is Nigerian. `blocked / same_country_workation` is
           // unchanged, verified by running it.
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "DE",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "PT",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
+          "uc04-activities": "My usual engineering work, from another city in Portugal.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "A co-working space in Porto.",
           // Blank, and named rather than omitted — the same convention UC-08's
           // period rows already follow. A quick-fill only sets the keys it
           // lists, so a row left out here would keep whatever the previously
@@ -1018,10 +1276,22 @@
           "uc04-h2-endDate": "",
           "uc04-reasonText": "Working from another city at home.",
           "uc04-externalRef": "4002",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
+        // MOVED OFF DE → GB 2026-08-30, with the whole prefill set, onto the
+        // agreed demo countries. This is the ONE scenario in the fifteen whose
+        // output changed, and the change is additive: the decision is still
+        // `high` on `pe_risk_dape`, which is the variable it exists to isolate,
+        // and it now ALSO shows an A1 consideration and a Schengen row (peak 10
+        // against 90, well inside). The other fourteen are verdict-identical.
+        //
+        // The visa moved from `business_visa` to `schengen_short_stay` because
+        // it had to: every non-Schengen country in the demo set hard-blocks a
+        // business visa on its own work-permit rule (`us_requires_work_permit`,
+        // `ca_requires_work_permit`), which would decide the case at the
+        // document gate and never reach the duties this scenario is about.
         id: "uc04-pe",
         turnsOn: "what",
         label: "Sales role, signing authority",
@@ -1029,15 +1299,19 @@
         persona: "admin",
         fields: {
           // Anna Müller — DE, employee, active.
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "GB",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-10",
-          "uc04-visaType": "business_visa",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-10",
+          "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "sales",
           "uc04-hasContractSigningAuthority": true,
+          "uc04-activities": "Customer meetings and contract negotiations with Dutch prospects.",
+          "uc04-institutions": "Acme Benelux BV, and two prospect offices in Amsterdam",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "Remote's Amsterdam office and customer premises.",
           // Blank, and named rather than omitted — the same convention UC-08's
           // period rows already follow. A quick-fill only sets the keys it
           // lists, so a row left out here would keep whatever the previously
@@ -1048,9 +1322,9 @@
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "Closing deals from the London office.",
+          "uc04-reasonText": "Closing deals from the Amsterdam office.",
           "uc04-externalRef": "4003",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
@@ -1066,15 +1340,19 @@
         persona: "admin",
         fields: {
           // Anna Müller — DE, employee, active.
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
           "uc04-destinationCountry": "US",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "work_permit",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
+          "uc04-activities": "Two weeks of engineering work alongside the Austin team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The Austin office.",
           // Blank, and named rather than omitted — the same convention UC-08's
           // period rows already follow. A quick-fill only sets the keys it
           // lists, so a row left out here would keep whatever the previously
@@ -1087,7 +1365,7 @@
           "uc04-h2-endDate": "",
           "uc04-reasonText": "Two weeks with the Austin team, work permit already issued.",
           "uc04-externalRef": "4004",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
@@ -1103,15 +1381,25 @@
         fails: true,
         persona: "admin",
         fields: {
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "PT",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
-          "uc04-visaType": "digital_nomad_visa",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
+          // schengen_short_stay, as every other PT → NL scenario here uses. While the
+          // destination was PT this field said `digital_nomad_visa` and was NEVER
+          // EXAMINED — PT is in DNV_COUNTRIES, which SUPPRESSES the Schengen check
+          // outright — so it demonstrated nothing. On a real Schengen destination it
+          // correctly raises `schengen_visa_unverified`, which is a medium flag about
+          // the VISA and pure noise in a scenario whose whole subject is PE risk.
+          "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "executive",
           "uc04-hasContractSigningAuthority": true,
+          "uc04-activities": "Leadership meetings, and signing off two supplier agreements.",
+          "uc04-institutions": "the company's Dutch entity, and two supplier offices",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "Remote's Amsterdam office.",
           // Blank, and named rather than omitted — the same convention UC-08's
           // period rows already follow. A quick-fill only sets the keys it
           // lists, so a row left out here would keep whatever the previously
@@ -1122,9 +1410,9 @@
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "Two weeks running the business from Lisbon.",
+          "uc04-reasonText": "Two weeks running the business from Amsterdam.",
           "uc04-externalRef": "4005",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
@@ -1139,15 +1427,19 @@
         fails: true,
         persona: "admin",
         fields: {
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
           "uc04-destinationCountry": "IR",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "business_visa",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
+          "uc04-activities": "A site visit to a partner facility.",
+          "uc04-institutions": "a partner facility in Tehran",
+          "uc04-worksites": "an industrial site",
+          "uc04-workLocation": "The partner's site.",
           // Blank, and named rather than omitted — the same convention UC-08's
           // period rows already follow. A quick-fill only sets the keys it
           // lists, so a row left out here would keep whatever the previously
@@ -1160,12 +1452,12 @@
           "uc04-h2-endDate": "",
           "uc04-reasonText": "Site visit.",
           "uc04-externalRef": "4006",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
         // THE TWO DAY-COUNTS DISAGREEING, HONESTLY — the one thing no other
-        // row here can show. Two prior stays in Spain: one falls inside both
+        // row here can show. Two prior stays in the Netherlands: one falls inside both
         // counting windows, the other inside the 365-day one and outside the
         // 180-day one. So the Schengen count reads 59 of 90 (still inside)
         // while the tax-residency count reads 210 of 183 (already past), and
@@ -1178,31 +1470,35 @@
         label: "Two counts, two answers",
         persona: "admin",
         fields: {
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
-          "uc04-h1-country": "ES",
-          "uc04-h1-startDate": "2026-07-01",
-          "uc04-h1-endDate": "2026-08-14",
-          "uc04-h2-country": "ES",
-          "uc04-h2-startDate": "2025-10-01",
-          "uc04-h2-endDate": "2026-02-28",
-          "uc04-reasonText": "Another fortnight in Madrid, after a long stretch there earlier.",
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-07-31",
+          "uc04-h1-endDate": "2026-09-13",
+          "uc04-h2-country": "NL",
+          "uc04-h2-startDate": "2025-10-31",
+          "uc04-h2-endDate": "2026-03-30",
+          "uc04-reasonText": "Another fortnight in Amsterdam, after a long stretch there earlier.",
           "uc04-externalRef": "4007",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
         // THE COUNT THAT CHANGES NOTHING, and it is here because the four
         // scenarios below it would otherwise be the only ones with a history at
         // all — leaving "a number appeared" and "a number mattered"
-        // indistinguishable. Twenty prior days in Spain, a fourteen-day trip:
+        // indistinguishable. Twenty prior days in the Netherlands, a fourteen-day trip:
         // the Schengen peak reads 34 of 90 and the 183/365 count reads 34, so
         // both windows are consulted, both report a real measurement, and
         // neither moves the decision. Contrast with "Low-risk Schengen trip",
@@ -1213,26 +1509,30 @@
         label: "Prior stays, well inside",
         persona: "admin",
         note:
-          "Twenty days already spent in Spain \u2014 a real count, and it changes nothing.",
+          "Twenty days already spent in the Netherlands \u2014 a real count, and it changes nothing.",
         fields: {
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
-          "uc04-h1-country": "ES",
-          "uc04-h1-startDate": "2026-04-01",
-          "uc04-h1-endDate": "2026-04-20",
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-05-01",
+          "uc04-h1-endDate": "2026-05-20",
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "A fortnight in Madrid, after a short spring visit.",
+          "uc04-reasonText": "A fortnight in Amsterdam, after a short spring visit.",
           "uc04-externalRef": "4009",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
@@ -1251,24 +1551,28 @@
         note:
           "Ninety days of ninety, and it clears \u2014 the limit is exceeding it, not reaching it.",
         fields: {
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
-          "uc04-h1-country": "ES",
-          "uc04-h1-startDate": "2026-06-01",
-          "uc04-h1-endDate": "2026-08-15",
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-07-01",
+          "uc04-h1-endDate": "2026-09-14",
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "A fortnight in Madrid, straight after a long summer there.",
+          "uc04-reasonText": "A fortnight in Amsterdam, straight after a long summer there.",
           "uc04-externalRef": "4010",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
@@ -1288,24 +1592,28 @@
         note:
           "Forty-five days and forty-one, but only seventy-one distinct days \u2014 a day spent once is counted once.",
         fields: {
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
-          "uc04-h1-country": "ES",
-          "uc04-h1-startDate": "2026-06-01",
-          "uc04-h1-endDate": "2026-07-15",
-          "uc04-h2-country": "ES",
-          "uc04-h2-startDate": "2026-07-01",
-          "uc04-h2-endDate": "2026-08-10",
-          "uc04-reasonText": "A fortnight in Madrid, after two stays that ran into each other.",
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-07-01",
+          "uc04-h1-endDate": "2026-08-14",
+          "uc04-h2-country": "NL",
+          "uc04-h2-startDate": "2026-07-31",
+          "uc04-h2-endDate": "2026-09-09",
+          "uc04-reasonText": "A fortnight in Amsterdam, after two stays that ran into each other.",
           "uc04-externalRef": "4011",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
@@ -1326,66 +1634,173 @@
         note:
           "One hundred and twenty-one days of ninety \u2014 over by thirty-one, and the block prints the figure it refused on.",
         fields: {
-          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
+          "uc04-homeCountry": "PT",
+          "uc04-nationality": "PT",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
-          "uc04-h1-country": "ES",
-          "uc04-h1-startDate": "2026-05-01",
-          "uc04-h1-endDate": "2026-08-15",
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-05-31",
+          "uc04-h1-endDate": "2026-09-14",
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "A fortnight in Madrid, after most of the summer there.",
+          "uc04-reasonText": "A fortnight in Amsterdam, after most of the summer there.",
           "uc04-externalRef": "4012",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
         },
       },
       {
+        // THIS ROW USED TO BE A REFUSAL, AND THE REFUSAL WAS WRONG (2026-08-30).
+        // It read "Filed by the employee — refused", on the strength of one
+        // sentence in the portal saying a workation request is filed by the
+        // company admin on the employee's behalf. Remote's own object says the
+        // opposite — a work authorization request is "submitted by an employee
+        // who needs authorization to work in a different country" — and so does
+        // this project's UC-04.md §1. The refusal existed because UC-04's
+        // identity gate compared a session's COMPANY id to the employment's,
+        // and only an admin session carries one, so an employee filing their
+        // own trip failed a check about who represents the company. The gate
+        // now accepts either party to the record, and Chris Lee filing his own
+        // fortnight in Amsterdam is prepared for a mobility specialist exactly as
+        // the admin-filed version above it is.
+        //
+        // IT NAMES ALL EIGHTEEN BOXES, like every other scenario on every form.
+        // A quick-fill only sets what it lists, so a row left out here keeps
+        // whatever the previously clicked scenario put in it — values nobody
+        // chose and nobody can see are stale. test/portalCopy.test.js checks
+        // the key set, and test/portalUc04TravelScenarios.test.js drives this
+        // row as its own persona and fails if the button's promise and the
+        // decision disagree.
         id: "uc04-persona",
         turnsOn: "who",
-        label: "Filed by the employee",
-        fails: true,
+        label: "Filed by the employee themselves",
         persona: "chris",
-        // Chris Lee filing for himself — his own real Sandbox id as the
-        // subject, so the refusal is plainly about the ROLE and not about a
-        // subject nobody recognises. Refused at the persona gate (403) before
-        // any record is read.
-        //
-        // IT NAMES ALL EIGHTEEN BOXES ANYWAY, and used to name two. A quick-fill
-        // only sets what it lists, so clicking any scenario above and then this
-        // one left that scenario's dates, visa, duties and prior stays sitting
-        // in the form under a different requester — values nobody chose and
-        // nobody could see were stale. Being refused before anything is read is
-        // a reason the LEFTOVERS DO NOT MATTER TO THE VERDICT; it is not a
-        // reason to leave them on screen. Every scenario in every request type
-        // now names the same key set, and test/portalCopy.test.js checks it.
         note:
-          "Every box is filled in, and it is still turned away \u2014 on who is asking, before any of it is read.",
+          "The traveller files their own trip \u2014 which is how Remote\u2019s own request works \u2014 and it is prepared for a mobility specialist, exactly as the admin-filed request above it is.",
         fields: {
+          // Chris Lee — US, employee, active (real Sandbox id). HE TRAVELS FROM
+          // THE UNITED STATES, because that is where he works; this row said PT
+          // until 2026-08-31, written by the sweep that moved the eleven
+          // admin-filed rows onto João Silva. Driven before and after:
+          // `ready_for_approval / all_gates_passed` both times, so the pair
+          // with the row above still turns on WHO FILED IT and nothing else.
+          //
+          // ONE FLAG CORRECTLY DISAPPEARS. As Portuguese this request raised
+          // `a1_certificate_recommended`; a US worker travelling to the
+          // Netherlands is outside the EU coordination regulation entirely, so
+          // there is no A1 to recommend. The flag was an artefact of the wrong
+          // country, and losing it is the fix working rather than coverage
+          // going down — `uc04-low` still demonstrates the A1 recommendation on
+          // a route where it genuinely applies.
+          //
+          // `schengen_short_stay` IS STILL THE RIGHT STAY TYPE for a US
+          // national, and this is not an oversight. Art. 6(1) of the Borders
+          // Code applies the same 90-in-180 allowance to visa-exempt
+          // third-country nationals as to visa holders; the field is the stay
+          // category, not a claim that a visa was issued.
           "uc04-employmentId": "8ab12460-b568-4c1e-af9d-09b1fabd8f46",
-          "uc04-homeCountry": "DE",
-          "uc04-nationality": "DE",
-          "uc04-destinationCountry": "ES",
-          "uc04-startDate": "2026-09-01",
-          "uc04-endDate": "2026-09-14",
+          "uc04-homeCountry": "US",
+          "uc04-nationality": "US",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
           "uc04-visaType": "schengen_short_stay",
           "uc04-jobDuties": "engineering",
           "uc04-hasContractSigningAuthority": false,
-          "uc04-h1-country": "",
-          "uc04-h1-startDate": "",
-          "uc04-h1-endDate": "",
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          /* A PRIOR STAY, ADDED 2026-08-31, BECAUSE BLANK IS NOT NEUTRAL HERE.
+             Left empty, the rolling-window check reports `unknown` — "0 across
+             0 trips, a FLOOR, not a measurement" — which is the check working
+             correctly and is still an Unknown on the two scenarios a demo shows
+             SUCCEEDING. The owner's words: "our demo is not meant to have
+             unknown". With this stay the same page reports 60 of 183 days
+             against the residency watch line and 60 of 90 in the Schengen
+             window, so both counters print a figure instead of an absence.
+
+             THE SAME STAY THE UC-03 CONTINUATION ALREADY OFFERS
+             (`DEMO_PRIOR_STAY`, src/portal/uc03Continuation.js), so the two
+             routes into this form do not disagree about the traveller's
+             history. It is a WORKED EXAMPLE in an editable box, not a fact read
+             from Remote — the finding it feeds says so itself, and the boxes
+             stay editable so a tester can clear them and watch `unknown` come
+             back. The refusal scenarios are deliberately left blank: an earlier
+             gate decides those, and giving them history would risk moving which
+             gate that is. */
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-05-31",
+          "uc04-h1-endDate": "2026-07-15",
           "uc04-h2-country": "",
           "uc04-h2-startDate": "",
           "uc04-h2-endDate": "",
-          "uc04-reasonText": "Two weeks with the Madrid team.",
+          "uc04-reasonText": "Two weeks with the Amsterdam team.",
           "uc04-externalRef": "4008",
-          "uc04-now": "2026-08-15",
+          "uc04-now": "2026-09-14",
+        },
+      },
+      {
+        // THE PERSONA REFUSAL THAT IS STILL TRUE, and it is a sharper one than
+        // the row above ever was. An employee may file about their own trip and
+        // about nobody else's: the same words, the same dates, sent by Chris
+        // Lee about ANNA MÜLLER'S employment, are turned away before any of it
+        // is read. Filing for somebody else is an admin's act — the row two up
+        // does exactly that and succeeds — so this pair shows a boundary rather
+        // than a role nobody has.
+        //
+        // The subject is a real person on the picker on purpose: refusing a
+        // recognisable colleague is plainly about the RELATIONSHIP, where an
+        // unrecognised id would read as "no such employee".
+        id: "uc04-persona-other",
+        turnsOn: "who",
+        label: "\u2026the same trip, filed about a colleague",
+        fails: true,
+        persona: "chris",
+        note:
+          "The same request again, still sent by Chris Lee, but about somebody else\u2019s employment. You can ask for your own trip; asking for a colleague\u2019s is the company admin\u2019s to do.",
+        fields: {
+          // Anna Müller — DE, employee, active (real Sandbox id), and NOT the
+          // person whose session this is. THE COUNTRY IS HERS, not the filer's:
+          // this form is about HER employment, which is the entire reason it is
+          // refused. It said PT until 2026-08-31 and was wrong about both
+          // people at once.
+          "uc04-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
+          "uc04-homeCountry": "DE",
+          "uc04-nationality": "DE",
+          "uc04-destinationCountry": "NL",
+          "uc04-startDate": "2026-10-01",
+          "uc04-endDate": "2026-10-14",
+          "uc04-visaType": "schengen_short_stay",
+          "uc04-jobDuties": "engineering",
+          "uc04-hasContractSigningAuthority": false,
+          "uc04-activities": "Design reviews and pair programming with the local platform team.",
+          "uc04-institutions": "none",
+          "uc04-worksites": "none",
+          "uc04-workLocation": "The local team's office, and my accommodation.",
+          // The same prior stay as the scenario this one is PAIRED with, so the
+          // pair still turns on who is travelling and nothing else — the
+          // invariant test/portalCopy.test.js asserts. It changes no decision
+          // here: this scenario refuses at a gate that runs before the risk
+          // matrix, so the history is never counted.
+          "uc04-h1-country": "NL",
+          "uc04-h1-startDate": "2026-05-31",
+          "uc04-h1-endDate": "2026-07-15",
+          "uc04-h2-country": "",
+          "uc04-h2-startDate": "",
+          "uc04-h2-endDate": "",
+          "uc04-reasonText": "Two weeks with the Amsterdam team.",
+          "uc04-externalRef": "4015",
+          "uc04-now": "2026-09-14",
         },
       },
     ],
@@ -1524,14 +1939,25 @@
           "uc05-externalRef": "5013",
         },
       },
-      // A second country whose rule is a SLIDING SCALE rather than two brackets:
-      // the United Kingdom adds a week per year of service (Employment Rights
-      // Act 1996 §86), and Emma's five and a half years land her on 35 days.
+      // A second country whose notice is NOT STATUTORY AT ALL, which is the most
+      // instructive row in this set and the one no other country here can show.
+      // Canada has no statutory employee minimum, so the table answers
+      // `basis: "customary"` and its citation SAYS SO — "Common-law customary
+      // notice (no statutory employee minimum; varies by province)". It states
+      // the absence inside the citation instead of manufacturing a statute,
+      // which is the whole reason the table carries a `basis` field.
+      //
+      // MOVED OFF THE UNITED KINGDOM 2026-08-30 with the rest of the prefills.
+      // The UK row demonstrated a sliding scale (Employment Rights Act 1996
+      // §86, a week per year) and NO country in the demo set has that shape —
+      // so this is a genuine substitution, not a rename: a different rule shape
+      // is on screen now. It is the better one to show, because "the system did
+      // not invent a statute" is harder to demonstrate than arithmetic.
       {
-        id: "uc05-sandbox-gb",
+        id: "uc05-sandbox-ca",
         turnsOn: "who",
-        label: "UK, within statute",
-        persona: "emma",
+        label: "Canada, customary not statutory",
+        persona: "alexandre",
         fields: {
           "uc05-proposedEndDate": "2026-10-15",
           "uc05-now": "2026-08-16",
@@ -1541,27 +1967,44 @@
           "uc05-ptoDaysAccrued": "12",
           "uc05-ptoDaysUsed": "3",
           "uc05-ptoHourlyRate": "40.00",
-          "uc05-currency": "GBP",
+          "uc05-currency": "CAD",
           "uc05-externalRef": "5005",
         },
       },
-      // Germany's rule is an ANCHOR, not a bracket: four weeks landing on the
-      // 15th or the end of a month (BGB §622).
+      // The Netherlands' rule is an ANCHOR, not a bracket: one flat month landing
+      // on the END of a month (Burgerlijk Wetboek art. 7:672 lid 4 with lid 1).
       //
-      // ITS NOTE USED TO SAY SOMETHING THE PAGE DOES NOT DO. It claimed the
-      // empty holiday boxes make the result "say the balance is unknown rather
-      // than showing a zero nobody worked out" — driven through the real
-      // handler, the payout row reads exactly `0.00 EUR (no_time_off_records)`.
-      // The tag is the honest half and the zero is real; what is not true is
-      // that a reader is shown anything other than a zero. The note now says
-      // what is on the screen, and test/portalUc05Success.test.js pins it.
+      // MOVED OFF GERMANY 2026-08-30 with the rest of the prefills, and the rule
+      // SHAPE is preserved deliberately — BGB §622 anchors on the 15th or the end
+      // of a month, art. 7:672 anchors on the end of one — so this row still
+      // demonstrates "a leaving date has to LAND on something" rather than
+      // "clear a bracket", which is the distinction it exists for.
+      //
+      // The flat one month is load-bearing and is NOT the ladder at the top of
+      // art. 7:672: that ladder is the EMPLOYER's (lid 2), and CONTRADICTIONS
+      // C-14/C-20/C-28 record this table falling into exactly that trap once
+      // already, for Portugal.
+      //
+      // ITS NOTE HAS NOW BEEN TRUE TWICE AND FALSE ONCE, AND THE HISTORY IS
+      // THE POINT. It first claimed the empty holiday boxes make the result
+      // "say the balance is unknown rather than showing a zero nobody worked
+      // out"; driven through the real handler, the payout row read exactly
+      // `0.00 EUR — no leave balances are recorded for this employee`. The note
+      // was rewritten to describe the zero — which made the NOTE honest and
+      // left the SCREEN wrong, because a zero settlement shown to a resigning
+      // employee is a figure nobody derived, and "no leave balances are
+      // recorded for this employee" is a claim about an employment record read
+      // from an empty leave-policy list. Both are fixed at the source now
+      // (src/portal/server.js's ptoPayoutLine, src/uc05/payoutWorking.js): the
+      // row says the balance is not known and says which silence it is. The
+      // note describes THAT, and test/portalUc05Success.test.js pins it.
       {
-        id: "uc05-de",
+        id: "uc05-nl",
         turnsOn: "who",
-        label: "Germany, month-anchored",
-        persona: "anna",
+        label: "Netherlands, month-anchored",
+        persona: "lars",
         note:
-          "The holiday boxes are left empty on purpose \u2014 the payout row then reads 0.00 and names no records as its source, which is not the same fact as a balance somebody counted.",
+          "The holiday boxes are left empty on purpose \u2014 the payout row then says the balance is not known, and names which silence that is, rather than printing a zero nobody worked out.",
         fields: {
           "uc05-proposedEndDate": "2026-10-31",
           "uc05-now": "2026-08-10",
@@ -1805,10 +2248,18 @@
         label: "Review: immigration + PE + PTO risk",
         fails: true,
         fields: {
-          // Emma Thompson — GB, employee, active. Story moved FR -> GB with
-          // her; the parsed route reads GB → DE and the verdict stays REVIEW.
-          "uc07-text": "Relocating our product manager from the United Kingdom to Germany. She can work there, but the immigration assessment isn't done, dates overlap by two weeks, PTO won't transfer, and we're unsure about seniority continuity.",
-          "uc07-employmentId": "d73cff71-ced7-4bcf-b764-b9899abc6340",
+          // Chris Lee — US, employee, active. The parsed route reads US → NL
+          // and the verdict stays REVIEW: the verdict comes from the gate
+          // fields below, not from the countries, so moving the route changes
+          // which instruments the dossier can cite and nothing else.
+          //
+          // MOVED OFF THE UNITED KINGDOM → GERMANY 2026-08-30. Neither is in
+          // the demo set and the corpus holds no bilateral instrument for the
+          // pair. US → NL reaches D-20, the SSA's own status-of-totalization
+          // table, whose US–Netherlands row is the governing instrument for
+          // exactly this question.
+          "uc07-text": "Relocating our product manager from the United States to the Netherlands. She can work there, but the immigration assessment isn't done, dates overlap by two weeks, PTO won't transfer, and we're unsure about seniority continuity.",
+          "uc07-employmentId": "8ab12460-b568-4c1e-af9d-09b1fabd8f46",
           "uc07-externalRef": "7003",
           "uc07-salary": "72000",
           "uc07-minimumVisaSalary": "57600",
@@ -1839,12 +2290,20 @@
       {
         id: "uc08-dual",
         turnsOn: "what",
-        label: "Dual residency: Germany / Spain",
+        label: "Dual residency: United States / Portugal",
         fields: {
-          // Anna Müller — DE, employee, active. One of the two countries in
-          // the question is genuinely hers.
-          "uc08-text": "I've been splitting my time between Germany and Spain this year and I think I may be a dual resident of both countries for tax purposes. Can you help?",
-          "uc08-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
+          // Chris Lee — US, employee, active. One of the two countries in the
+          // question is genuinely his.
+          //
+          // MOVED OFF GERMANY/SPAIN 2026-08-30. The pair is not cosmetic here:
+          // the retriever is country-filtered against the documents this repo
+          // actually holds (docs/BUILD-LOG.md §3.95), and there is no German or
+          // Spanish tax instrument in the corpus — so a DE/ES question can only
+          // ever reach the multilateral EU regulations, which is the weakest
+          // dossier this use case can produce. US↔PT reaches the US–Portugal
+          // income tax convention (D-28, IRS) and Portugal's own CIRS art. 16.
+          "uc08-text": "I've been splitting my time between the United States and Portugal this year and I think I may be a dual resident of both countries for tax purposes. Can you help?",
+          "uc08-employmentId": "8ab12460-b568-4c1e-af9d-09b1fabd8f46",
           "uc08-externalRef": "8001",
           "uc08-targetCountry": "",
           "uc08-windowStart": "",
@@ -1860,19 +2319,34 @@
       {
         id: "uc08-183",
         turnsOn: "what",
-        label: "183-day threshold: UK assignment",
+        label: "183-day threshold: Canada assignment",
         fields: {
-          // João Silva — PT, employee, active. Deliberately NOT one of the two
-          // GB people: the question is whether a visitor crosses the UK's
-          // 183-day threshold, which only makes sense asked by someone whose
-          // own country is not the UK.
-          "uc08-text": "I've been asked to work from our London office for a few months. Do we need to withhold UK payroll tax for this?",
+          // João Silva — PT, employee, active. Deliberately NOT a Canadian:
+          // the question is whether a visitor crosses the destination's 183-day
+          // threshold, which only makes sense asked by someone whose own
+          // country is not the destination.
+          //
+          // MOVED OFF THE UNITED KINGDOM 2026-08-30, for the reason in
+          // uc08-dual: the corpus holds no UK instrument, so the strongest
+          // possible answer was a multilateral one. PT→CA reaches the
+          // Canada–Portugal income tax convention (D-26) and Canada's own
+          // deemed-residence rule, Income Tax Act s. 250 (D-33) — which is a
+          // sojourn test measured in days, so it is the rule this question is
+          // actually about.
+          // NAMES BOTH COUNTRIES AND THE THRESHOLD, and that is not padding.
+          // The retriever filters citations by jurisdiction, so a question that
+          // mentions only the destination reaches only the destination's
+          // documents — the shorter draft of this sentence retrieved ONE
+          // citation where this retrieves three, including Canada's own
+          // deemed-residence rule (ITA s. 250), which is the sojourn test this
+          // question is actually about.
+          "uc08-text": "I'm employed in Portugal and I've been asked to work from our Toronto office for a few months. Will I cross the 183-day residence threshold in Canada, and do we need to withhold Canadian tax on my employment income?",
           "uc08-employmentId": "378eee6b-c6db-4484-ba32-7283bd0e2de9",
           "uc08-externalRef": "8002",
-          "uc08-targetCountry": "GB",
+          "uc08-targetCountry": "CA",
           "uc08-windowStart": "2026-01-01",
           "uc08-windowEnd": "2026-12-31",
-          "uc08-p1-country": "GB",
+          "uc08-p1-country": "CA",
           "uc08-p1-startDate": "2026-03-01",
           "uc08-p1-endDate": "2026-05-31",
           "uc08-p2-country": "",
@@ -1885,11 +2359,19 @@
         turnsOn: "what",
         label: "Totalization: A1 certificate",
         fields: {
-          // Anna Müller — DE, employee, active. An A1 keeps someone on their
-          // HOME country's social security, so the subject needs a home
-          // country inside the EU coordination rules; Germany is hers.
-          "uc08-text": "We need an A1 certificate of coverage for a short-term assignment to France so the employee stays on home-country social security.",
-          "uc08-employmentId": "09b65526-643b-4956-959b-916e6429bd23",
+          // Lars van der Berg — NL, employee, active. An A1 keeps someone on
+          // their HOME country's social security, so the subject needs a home
+          // country inside the EU coordination rules; the Netherlands is his.
+          //
+          // MOVED OFF GERMANY→FRANCE 2026-08-30. This one was already
+          // answerable — Reg. 883/2004 and 987/2009 are multilateral and cover
+          // DE and FR — but NL→PT adds what DE→FR cannot: the
+          // Netherlands–Portugal double taxation convention (D-24), the one
+          // bilateral instrument both non-US demo countries share. So the same
+          // question now shows a specialist the coordination regulation AND the
+          // convention, instead of the regulation alone.
+          "uc08-text": "We need an A1 certificate of coverage for a short-term assignment to Portugal so the employee stays on home-country social security.",
+          "uc08-employmentId": "673a1884-86fb-4101-83d3-b6c544d93bca",
           "uc08-externalRef": "8003",
           "uc08-targetCountry": "",
           "uc08-windowStart": "",
@@ -1913,10 +2395,10 @@
           "uc08-text": "",
           "uc08-employmentId": "8ab12460-b568-4c1e-af9d-09b1fabd8f46",
           "uc08-externalRef": "8004",
-          "uc08-targetCountry": "GB",
+          "uc08-targetCountry": "CA",
           "uc08-windowStart": "2026-01-01",
           "uc08-windowEnd": "2026-12-31",
-          "uc08-p1-country": "GB",
+          "uc08-p1-country": "CA",
           "uc08-p1-startDate": "2026-03-01",
           "uc08-p1-endDate": "",
           "uc08-p2-country": "",
@@ -2129,6 +2611,9 @@
         // prefill that ran first would silently land on "".
         renderCountrySelects(data.countries || [], data.demoCountries || []);
         wireForms();
+        // After renderPersonas(), which is what personaNameForEmployment()
+        // resolves against, and after the form exists to bind to.
+        wireTravellerName();
         upgradeReferenceFields(data.requestTypes || []);
         markRequiredFields();
         attachCounters();
@@ -2138,6 +2623,10 @@
         wireReceiptUpload();
         showHome();
         startConsentBadgePolling();
+        // Started once the session is real -- a persona exists and the access
+        // key was accepted -- so the watch never fires against a page that
+        // would only get 401s. See startDecisionWatch's header.
+        startDecisionWatch();
       })
       .catch(function (err) {
         byId("boot-error").hidden = false;
@@ -2367,6 +2856,9 @@
     // PREVIOUS persona's count after "Signed in as" changes, which is worse
     // than showing nothing at all.
     select.addEventListener("change", refreshConsentBadge);
+    // A quick-fill's note is a statement about the session AT CLICK TIME, and
+    // changing the picker by hand is the one gesture that gesture invites.
+    select.addEventListener("change", invalidateScenarioNote);
     renderPersonaNote();
   }
 
@@ -2389,6 +2881,44 @@
   function renderPersonaNote() {
     var current = personaById(byId("persona").value);
     byId("persona-note").textContent = current ? current.note : "";
+    syncEmploymentIdToPersona(current);
+  }
+
+  /**
+   * When the reader becomes somebody else, the box naming WHO the request is
+   * about has to follow them — or it does not.
+   *
+   * THE TRAP, reported 2026-09-02 by an approving manager driving the live
+   * deployment: switching the persona picker to João Silva and filing a UC-04
+   * left `uc04-employmentId` holding CHRIS LEE'S id, so the request was refused
+   * `not_your_employment`. The refusal is correct — an employee may file only
+   * about their own employment — and it is unhelpful, because nothing on the
+   * form had changed to show the mismatch. The reader believes they are João;
+   * one hidden box still says Chris.
+   *
+   * ONLY FOR AN EMPLOYEE, AND THAT ASYMMETRY IS THE WHOLE RULE. UC-04 is the
+   * one request type in `SELF_OR_ON_BEHALF_OF` (src/portal/ownership.js): an
+   * employee may file about themselves and NOBODY ELSE, so for them there is
+   * exactly one correct value and filling it in cannot take a choice away. A
+   * company admin legitimately files on behalf of any of their people, so their
+   * box is left alone — overwriting it would be this fix causing the very
+   * defect it removes, one persona over.
+   *
+   * A TYPED VALUE IS NEVER DESTROYED. Nothing here runs unless the box holds
+   * either nothing or another persona's id; a value the reader entered by hand
+   * that belongs to no persona is theirs and survives. Same rule as
+   * `suggestIfEmpty` on the continuation completions.
+   */
+  function syncEmploymentIdToPersona(persona) {
+    var field = byId("uc04-employmentId");
+    if (!field || !persona || persona.kind !== "employee" || !persona.employmentId) return;
+    var current = String(field.value || "").trim();
+    if (current === persona.employmentId) return;
+    // Only replace an empty box or one still naming a DIFFERENT persona — which
+    // is exactly the stale-carry-over this exists to clear.
+    if (current !== "" && !personaNameForEmployment(current)) return;
+    setFieldValue(field, persona.employmentId);
+    refreshGapMarks();
   }
 
   function renderExpenses(expenses) {
@@ -2556,7 +3086,43 @@
       if (node.type === "checkbox") node.checked = false;
       else node.value = "";
     }
+    // A BLANKED FORM WAS NOT "FILLED IN FROM" ANYTHING (2026-08-30).
+    //
+    // The quick-fill row lives OUTSIDE the <form>, so the loop above never
+    // reached it: the chip stayed pressed and its note kept reading "Filled in
+    // from <scenario>" over a grid of empty boxes. Reported as "I am still so
+    // confused as to why this did not prefill", and the confusion was the
+    // page's fault rather than the reader's — two mechanisms were both claiming
+    // the form, and the one making the louder claim had been undone.
+    //
+    // It belongs HERE and not in applyContinuation(), because the claim is
+    // falsified by the blanking, whoever asked for it. A caller that empties
+    // the boxes and leaves the label is the defect, in any future caller too.
+    clearScenarioSelection(typeId);
     syncRefField(typeId);
+  }
+
+  /**
+   * Un-press every quick-fill for one request type and hide its note.
+   *
+   * Deliberately says nothing about WHY — it is not this function's business
+   * whether the form was blanked for a continuation, a reset or something
+   * later. It only makes the row stop asserting something untrue.
+   */
+  function clearScenarioSelection(typeId) {
+    var row = document.querySelector('[data-scenarios="' + typeId + '"]');
+    if (!row) return;
+    var buttons = row.querySelectorAll("button");
+    for (var i = 0; i < buttons.length; i += 1) buttons[i].setAttribute("aria-pressed", "false");
+    // The note is the row's sibling (renderScenarios appends it to the row's
+    // parent), so it is found from the row rather than by an id this file would
+    // otherwise have to invent and keep in step.
+    if (!row.parentNode) return;
+    var note = row.parentNode.querySelector(".scenario-note");
+    if (note) {
+      clear(note);
+      note.hidden = true;
+    }
   }
 
   function setFieldValue(node, raw) {
@@ -2634,6 +3200,56 @@
    * reader can check against the result. It is prose, not a mechanism: nothing
    * reads it, and a scenario without one behaves identically.
    */
+  /**
+   * THE QUICK-FILL'S NOTE IS A SNAPSHOT, AND THE PICKER CAN OUTLIVE IT.
+   *
+   * THE REPORT, 2026-09-03, with a screenshot: the note read "Signed in as
+   * Jane Doe (company admin) now, not Amanda J Walker" directly above a sidebar
+   * plainly showing Lars van der Berg. Both sentences were true about different
+   * moments. showScenarioNote() writes a PRESENT-TENSE clause once, at click
+   * time — "Signed in as X NOW" — and changing the picker by hand afterwards
+   * leaves it asserting a session that has moved on.
+   *
+   * AND IT IS THE ONE GESTURE THE NOTE ITSELF INVITES. The `turnsOn: "who"`
+   * sentence ends *"change the person in the sidebar and the same request comes
+   * back differently"*. So the action the note asks the reader to take is
+   * precisely the action that falsifies it, which is why this could not be left
+   * as a rare edge.
+   *
+   * THE WHOLE NOTE GOES, NOT JUST THE MOVED CLAUSE. A scenario's own prose is
+   * about who is asking too — Lars's reads *"Jane Doe cannot file anything for
+   * him — refused on identity"*, which is the OPPOSITE of what happens once the
+   * reader is Lars, and his own persona note says so in the same sidebar.
+   * Dropping the last sentence and keeping the rest would leave the
+   * confidently wrong half on screen and look deliberate.
+   *
+   * THE CHIP'S `is-chosen` MARK IS DELIBERATELY LEFT ALONE. The boxes really do
+   * still hold that scenario's trip; what stopped being true is the
+   * demonstration it named, not the contents of the form.
+   *
+   * ONLY A HUMAN CHANGE REACHES HERE. Assigning `select.value` from JS fires no
+   * `change` event, so applyScenario()'s own persona switch never lands in this
+   * function — which is what makes it safe to bind with no flag to suppress it,
+   * and is the same discriminator setFieldValue() relies on in the other
+   * direction.
+   */
+  function invalidateScenarioNote() {
+    var notes = document.querySelectorAll(".scenario-note");
+    var who = personaById(byId("persona").value);
+    for (var i = 0; i < notes.length; i += 1) {
+      if (notes[i].hidden) continue;
+      clear(notes[i]);
+      notes[i].appendChild(
+        document.createTextNode(
+          "You changed who is signed in" +
+            (who ? " to " + who.name : "") +
+            ". The quick-fill\u2019s note described this request as it loaded, so it no longer applies \u2014 " +
+            "submit it and see how this person\u2019s own record changes the answer."
+        )
+      );
+    }
+  }
+
   function showScenarioNote(note, scenario, movedFrom) {
     clear(note);
     note.appendChild(document.createTextNode("Filled in from \u201c" + scenario.label + "\u201d."));
@@ -2738,14 +3354,34 @@
       var disclosure = node.closest ? node.closest(".manual-fields") : null;
       if (disclosure) disclosure.open = true;
 
-      // A scenario that fills a REFERENCE means that reference, so switch the
-      // form to reuse mode and reveal the box. Otherwise the fill would be
-      // silently discarded in favour of a generated ref, and clicking the same
-      // scenario twice — which is how several of them demonstrate the
-      // duplicate-delivery refusal — would stop demonstrating anything.
-      if (/-externalRef$/.test(id) && scenario.fields[id]) {
-        setRefMode(id.replace("-externalRef", ""), "reuse");
-      }
+      // A SCENARIO'S PINNED REFERENCE IS THE REUSE BOX'S PREFILL, NOT THE MODE.
+      //
+      // This used to call setRefMode(..., "reuse"), so every quick-fill
+      // submitted its own hard-coded reference — `4001`…`4015` on UC-04, and 41
+      // pinned refs across five use cases. On a laptop that is fine. ON A
+      // SHARED, LONG-LIVED DEPLOYMENT IT MEANS THE PRIMARY PATH IS DEAD: those
+      // references were claimed weeks ago, so `workflow_claims` refuses the
+      // insert and the FIRST click any new reader makes returns a
+      // duplicate-delivery REPLAY of a stranger's decision. Measured live
+      // 2026-09-01: all fifteen UC-04 quick-fills replayed rather than decided.
+      // It is the same failure CLAUDE.md §6 already records one use case over —
+      // "every portal scenario was a one-shot… a tester who generated a new
+      // reference and expected a new decision got the replay and read the
+      // reference control as broken."
+      //
+      // THE JUSTIFICATION THAT WAS HERE DESCRIBED A THING NOTHING DID. It said
+      // pinning is "how several of them demonstrate the duplicate-delivery
+      // refusal". No scenario in this file is that demonstration — not one
+      // label, note or id names duplication. So the pin cost the main path and
+      // bought nothing.
+      //
+      // NOTHING IS LOST, AND THE DUPLICATE DEMO IS BETTER FOR IT. The value is
+      // still written to the box, so switching to "Reuse a reference" shows it
+      // and submits it — one radio click away. And submitting normally first,
+      // THEN switching, replays your OWN request: syncRefField() prefills the
+      // box from `lastRef`, which is a genuine redelivery of the thing you just
+      // watched succeed, rather than a collision with a stranger's.
+      void id;
     });
 
     // Assigning `.value` from script fires neither `input` nor `change`, so the
@@ -2835,6 +3471,23 @@
    * input either way — uploading is one way to fill it, typing is the other,
    * and neither is disabled by the presence of the other.
    */
+  /**
+   * The reading currently on screen, or null.
+   *
+   * Sent with the submission so the decision is made against the SAME
+   * transcription the employee was shown. Re-reading server-side would risk the
+   * page showing one total and the gate comparing another, which is the worst
+   * of both: a visible number nobody decided on.
+   */
+  var lastReceiptReading = null;
+
+  /** Mirror the reading into the hidden field the builder reads. */
+  function storeReading(reading) {
+    lastReceiptReading = reading;
+    var field = byId("uc02-receiptReadingJson");
+    if (field) field.value = reading ? JSON.stringify(reading) : "";
+  }
+
   function wireReceiptUpload() {
     var input = byId("uc02-receiptFile");
     if (!input) return;
@@ -2866,6 +3519,113 @@
         .catch(function (err) {
           nameEl.textContent = file.name + " — could not hash it (" + err.message + "); type one below instead";
         });
+
+      // [E-1] AND read what the receipt actually says. Independent of the hash
+      // above on purpose: the fingerprint answers "have we seen this file
+      // before" and the reading answers "what does this document say". One
+      // failing must not take the other down, so this is a separate promise
+      // chain rather than another .then() on the hash.
+      readReceiptFile(file);
+    });
+  }
+
+  /**
+   * Ask the server to transcribe the receipt, and show the answer AS IT
+   * ARRIVES — this is the "process it live on screen" half.
+   *
+   * WHAT THIS DELIBERATELY DOES NOT DO: decide anything, or write the receipt's
+   * numbers into the claim's fields. The reading is displayed BESIDE what the
+   * record holds; merging them would hand the reviewer a corrected figure, and
+   * a corrected figure has already made the decision that is theirs to make
+   * (acceptance contract §13).
+   */
+  function readReceiptFile(file) {
+    var panel = byId("uc02-receiptReading");
+    if (!panel) return;
+    storeReading(null);
+    panel.hidden = false;
+    setReadingPanel(panel, "reading", "Reading the receipt…", []);
+
+    file
+      .arrayBuffer()
+      .then(function (buf) {
+        var bytes = new Uint8Array(buf);
+        var binary = "";
+        for (var i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+        return api("api/receipts/read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+          persona: byId("persona").value,
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          dataBase64: window.btoa(binary),
+          }),
+        }).then(function (r) { return r.json(); });
+      })
+      .then(function (res) {
+        if (!res || !res.ok) {
+          setReadingPanel(panel, "unread", "The receipt could not be read.", []);
+          return;
+        }
+        if (!res.extracted) {
+          // Say WHICH kind of not-read this is. "Nobody tried" and "tried and
+          // failed" send a reader after different things.
+          var why =
+            res.reason === "extraction_not_configured"
+              ? "Receipt reading is not switched on for this deployment, so nothing was read."
+              : res.reason === "unsupported_receipt_format"
+                ? "That file type cannot be read. Upload a PDF or a photo."
+                : "The receipt was uploaded but could not be read. A person will check it.";
+          setReadingPanel(panel, "unread", why, []);
+          return;
+        }
+        storeReading(res);
+        setReadingPanel(panel, "read", "This is what the receipt says. It has not been compared with your claim yet — the checks below do that.", [
+          ["Merchant", res.extracted.merchant],
+          ["Date", res.extracted.date],
+          ["Total", formatReadTotal(res.extracted)],
+          ["Currency", res.extracted.currency],
+        ]);
+      })
+      .catch(function () {
+        setReadingPanel(panel, "unread", "The receipt could not be read.", []);
+      });
+  }
+
+  /** Minor units -> a human figure. Never rounded into the claim's fields. */
+  function formatReadTotal(extracted) {
+    if (!extracted || typeof extracted.total !== "number") return null;
+    return (extracted.total / 100).toFixed(2);
+  }
+
+  function setReadingPanel(panel, state, message, rows) {
+    panel.className = "receipt-reading receipt-reading-" + state;
+    while (panel.firstChild) panel.removeChild(panel.firstChild);
+
+    var head = document.createElement("div");
+    head.className = "receipt-reading-head";
+    head.textContent = state === "reading" ? "Reading the receipt…" : state === "read" ? "What the receipt says" : "Receipt not read";
+    panel.appendChild(head);
+
+    var note = document.createElement("div");
+    note.className = "receipt-reading-note";
+    note.textContent = message;
+    panel.appendChild(note);
+
+    rows.forEach(function (pair) {
+      if (pair[1] === null || pair[1] === undefined || pair[1] === "") return;
+      var row = document.createElement("div");
+      row.className = "receipt-reading-row";
+      var k = document.createElement("span");
+      k.className = "receipt-reading-key";
+      k.textContent = pair[0];
+      var v = document.createElement("span");
+      v.className = "receipt-reading-value";
+      v.textContent = String(pair[1]);
+      row.appendChild(k);
+      row.appendChild(v);
+      panel.appendChild(row);
     });
   }
 
@@ -2956,6 +3716,318 @@
     startPolling();
   }
 
+  // -------------------------------------------------------------------------
+  // "TELL ME WHEN A PERSON DECIDES" — the decision pop-up
+  // -------------------------------------------------------------------------
+  // A requester declined a claim in the sidebar, opened this page, and asked
+  // where the effect was. The row was there and correct; nothing announced it.
+  // A status table answers "what happened to my requests" only for someone
+  // already looking at it, and the person who filed a request is by definition
+  // waiting for one specific answer.
+  //
+  // THIS COMPOSES NO VERDICT. Every word in the dialog is a string the server
+  // sent -- `status.label`, `status.note`, `status.decidedBy`, `resolution` --
+  // for the same reason this page composes no other sentence: a second place
+  // that phrases a decision is a second place that can phrase it differently
+  // from the record. The only thing decided here is WHETHER to open, and that
+  // is read from the server's own `settled` flag, never re-derived from a
+  // status string.
+  //
+  // WHY IT CANNOT SHOUT ON ARRIVAL. The first successful read FOR A PERSONA
+  // SEEDS that persona's seen-set without announcing anything. Otherwise
+  // someone opening the portal with twenty already-decided requests would be
+  // met with twenty dialogs about things they settled last week. Only a
+  // transition observed while this page was open is news.
+  //
+  // AND THE SEED IS PER PERSONA, WHICH IS THE WHOLE OF A REAL BUG. It used to
+  // be one set for the page. Every request the picker offers belongs to a
+  // different person, so switching persona replaced the list wholesale and not
+  // one key in it matched — which made every one of the new persona's
+  // already-decided requests look like a transition just observed, and the
+  // queue opened a dialog for each. Reported 2026-09-03 by the owner: "I'll
+  // open the portal and there'll be a thousand of them, I keep clicking close
+  // close close." The dialog in the screenshot announced a decision made the
+  // PREVIOUS DAY, which is the proof it was never news. A quick-fill scenario
+  // moves the persona too (`byId("persona").value = scenario.persona`), so
+  // this fired on the intake form as well, twenty seconds later, with no
+  // switch the reader would connect it to.
+  //
+  // THE PERSONA IS THE ONE THE READ WAS MADE FOR, carried in rather than read
+  // back off the picker when the answer lands. This read was measured at 21
+  // seconds on a real account, which is long enough to change persona twice
+  // while it is in flight; comparing A's rows against B's seen-set is the same
+  // bug through a smaller door.
+  var seenSettled = {}; // persona id -> announced keys. Absent = not yet seeded.
+  var announceQueue = [];
+  var announcing = false;
+
+  /** Stable identity for a request across polls. */
+  function requestKey(request) {
+    return String(request.type || "") + ":" + String(request.recordId || request.externalRef || "");
+  }
+
+  function noteDecisions(requests, persona) {
+    // No persona, no comparison: a set that is not somebody's is a set that
+    // announces the next person's history.
+    if (!persona) return;
+    var settledNow = {};
+    var fresh = [];
+    for (var i = 0; i < requests.length; i += 1) {
+      var request = requests[i];
+      // The SERVER's flag. Not `status.state === "declined"` -- that would be
+      // this file maintaining its own list of which states count as finished,
+      // which is the re-derivation the portal exists not to do.
+      if (request.settled !== true) continue;
+      var key = requestKey(request);
+      settledNow[key] = true;
+      if (seenSettled[persona] && !seenSettled[persona][key]) fresh.push(request);
+    }
+    if (!seenSettled[persona]) {
+      // Seed only. Nothing on this first read is news.
+      seenSettled[persona] = settledNow;
+      return;
+    }
+    // Carry forward everything already seen, so a request that drops out of
+    // the page limit cannot be announced a second time if it comes back.
+    for (var key2 in settledNow) if (settledNow.hasOwnProperty(key2)) seenSettled[persona][key2] = true;
+    for (var j = 0; j < fresh.length; j += 1) announceQueue.push(fresh[j]);
+    drainAnnouncements();
+  }
+
+  /**
+   * ONE DIALOG, HOWEVER MANY DECISIONS -- changed 2026-09-03, and the previous
+   * policy is worth naming because it sounds like the safe one.
+   *
+   * This used to show them one at a time and open the next as each was closed.
+   * That is defensible per decision and indefensible in aggregate: three
+   * decisions meant three dismissals, and the reader cannot tell a queue that
+   * is three long from one that will not stop. The owner, on the deployment:
+   * "as if everything is coming out close, as one." So the queue is drained
+   * WHOLE into a single dialog with a single Close, and anything that arrives
+   * while it is open waits for the next one rather than interrupting.
+   */
+  function drainAnnouncements() {
+    if (announcing || !announceQueue.length) return;
+    announcing = true;
+    showDecisions(announceQueue.splice(0, announceQueue.length));
+  }
+
+  /**
+   * True when the server's own sentence already carries this fact.
+   *
+   * The dialog prints `resolution`, and `status.note` and `status.decidedBy`
+   * are frequently INSIDE it -- the screenshot that prompted this said
+   * "Approved by: admin_jane" in the sentence, then "They added: ..." for a
+   * note the sentence had already quoted, then "Decided by admin_jane on
+   * 01/09/2026, 21:48:55" for a time the sentence had already given as
+   * "1 Sep 2026 at 20:48 UTC". The same decision, three times, twice in two
+   * time zones -- which reads as three decisions.
+   *
+   * A CONTAINMENT TEST, NEVER A SPELLING ONE. This asks whether the server's
+   * sentence contains the server's own field; it does not guess at wording. If
+   * the server rephrases so the field no longer appears, the separate line
+   * comes back. The failure mode is a repeat, never a fact going missing.
+   */
+  function alreadySaid(sentence, fact) {
+    if (!sentence || !fact) return false;
+    var value = String(fact).trim();
+    if (value.length < 4) return false; // too short to match on meaningfully
+    return String(sentence).indexOf(value) !== -1;
+  }
+
+  /**
+   * One decision, as a block. `withTitle` is false for the only item in a
+   * single-decision dialog, where the heading is already the server's label.
+   */
+  function decisionBlock(request, withTitle) {
+    var status = request.status || {};
+    var item = el("li", "decision-item");
+
+    // THE VERDICT WORD IS THE SERVER'S. `status.label` is "Approved",
+    // "Declined", "Answered" -- already the requester-facing vocabulary
+    // (src/portal/requestStatus.js), already the string the table prints.
+    if (withTitle && status.label) item.appendChild(el("p", "decision-item-title", String(status.label)));
+
+    // WHICH request, before what happened to it. Someone with several open
+    // requests cannot act on a verdict they cannot attach to one of them.
+    var what = el("p", "small r-secondary");
+    what.textContent =
+      (request.useCase || "") +
+      " — " +
+      (request.recordLabel || "request") +
+      (request.externalRef ? " (Zendesk ticket #" + request.externalRef + ")" : "");
+    item.appendChild(what);
+
+    // WHAT HAPPENED, THROUGH THE TABLE'S OWN RENDERER. resolutionBlock() draws
+    // the server's LABELLED FACTS where the deciding use case publishes them
+    // and its one sentence where it does not. It exists because the owner read
+    // a settled approval rendered as prose -- who, when, their note, that
+    // Remote was not updated, why, and that it was final, run together -- and
+    // asked "why all this story". The same paragraph was still arriving here,
+    // which is what made this dialog a wall of text.
+    //
+    // REUSED, NEVER REIMPLEMENTED. A second renderer would be a second thing
+    // free to drift from the table it is supposed to agree with, on the same
+    // row, for the same reader.
+    //
+    // The three facts settledFactsFor() DROPS -- who decided, when, and their
+    // note -- are dropped because the TABLE has a column for each. This dialog
+    // has no columns, and prints all three itself, below.
+    var asFields = Boolean(request.resolutionFacts && request.resolutionFacts.facts);
+    var block = resolutionBlock(request);
+    if (block) item.appendChild(block);
+    else if (status.detail) item.appendChild(el("p", "decision-item-body", String(status.detail)));
+    // The paragraph that was actually drawn, or "" when fields were. Only a
+    // sentence on screen can repeat anything.
+    var sentence = asFields ? "" : request.resolution || status.detail || "";
+
+    // WHAT THE PERSON WROTE, kept apart from the system's own sentence and
+    // quoted rather than blended into it -- it is somebody's words, not the
+    // platform's, and a reader is entitled to see which is which.
+    if (status.note && !alreadySaid(sentence, status.note)) {
+      var note = el("p", "small decision-item-note");
+      note.textContent = "They added: “" + String(status.note) + "”";
+      item.appendChild(note);
+    }
+
+    // WHO AND WHEN. A decision with no attributable person is exactly the
+    // thing this system refuses to produce, so when the server names one the
+    // dialog says so -- unless the sentence above already named them.
+    if ((status.decidedBy || status.decidedAt) && !alreadySaid(sentence, status.decidedBy)) {
+      var by = el("p", "small r-secondary");
+      by.textContent =
+        "Decided" +
+        (status.decidedBy ? " by " + String(status.decidedBy) : "") +
+        (status.decidedAt ? " on " + new Date(status.decidedAt).toLocaleString() : "");
+      item.appendChild(by);
+    }
+    return item;
+  }
+
+  function showDecisions(requests) {
+    var existing = document.querySelector("dialog.decision-dialog");
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    if (!requests || !requests.length) {
+      announcing = false;
+      return;
+    }
+
+    var dialog = el("dialog", "interstitial-dialog decision-dialog");
+    var panel = el("div", "interstitial-panel decision-panel");
+
+    // A COUNT, NEVER A VERDICT. With one decision the heading is the server's
+    // own label, exactly as before. With several there is no single label that
+    // would be true of all of them, so the heading counts them and every
+    // verdict word stays inside its own block, in the server's spelling.
+    var single = requests.length === 1;
+    var headingText = single
+      ? (requests[0].status || {}).label || "Your request has been decided"
+      : requests.length + " of your requests have been decided";
+    var heading = el("h3", "interstitial-title", headingText);
+    heading.id = "portal-decision-title";
+    dialog.setAttribute("aria-labelledby", heading.id);
+    panel.appendChild(heading);
+
+    var list = el("ol", "decision-list");
+    for (var i = 0; i < requests.length; i += 1) list.appendChild(decisionBlock(requests[i], !single));
+    panel.appendChild(list);
+
+    var buttons = el("div", "interstitial-buttons");
+    var close = el("button", "r-btn r-btn-primary", "Close");
+    close.type = "button";
+    buttons.appendChild(close);
+    panel.appendChild(buttons);
+    dialog.appendChild(panel);
+
+    function finish() {
+      if (dialog.parentNode) dialog.parentNode.removeChild(dialog);
+      announcing = false;
+      // Anything that settled while this was open follows as its own single
+      // dialog -- never as an interruption of the one being read.
+      drainAnnouncements();
+    }
+    close.addEventListener("click", function () {
+      if (typeof dialog.close === "function") dialog.close();
+      else finish();
+    });
+    dialog.addEventListener("close", finish);
+    // Clicking the dimmed backdrop is the first thing most people try; a
+    // <dialog> in the top layer reports those against itself.
+    dialog.addEventListener("click", function (event) {
+      if (event && event.target === dialog) dialog.close();
+    });
+
+    document.body.appendChild(dialog);
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+      // Focus goes to the heading so a screen reader starts at the top of the
+      // announcement rather than on the Close button. The visible ring is
+      // suppressed in CSS (.interstitial-title:focus) -- a programmatic focus
+      // on a tabindex="-1" heading drew a black box around the title, which is
+      // what made this dialog look broken.
+      heading.setAttribute("tabindex", "-1");
+      heading.focus();
+    } else {
+      // No <dialog> support: it degrades to a panel in the page rather than
+      // to silence. An announcement nobody can dismiss is worse than one that
+      // is merely not modal.
+      dialog.setAttribute("open", "open");
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // THE BACKGROUND WATCH — because nobody waits on the status tab
+  // -------------------------------------------------------------------------
+  // startPolling() below refreshes the My-requests TABLE, and only while that
+  // card is on screen; polling a hidden table spends the server's time to
+  // update something nobody is looking at, and that reasoning is still right.
+  //
+  // It is also not where a decision is waited for. Someone who has just filed
+  // a request is sitting on the form with the result panel open, on a page
+  // that says of itself "this page will not update by itself" -- which is
+  // exactly the person the answer is FOR. So this watch runs wherever they
+  // are, reads the same route, and announces through the same one-at-a-time
+  // queue that the table's own poll uses.
+  //
+  // SLOWER ON PURPOSE, and it renders nothing. Four seconds is right for a
+  // table someone is reading; a background check that costs a serverless
+  // invocation every four seconds all day is not, so this one is measured in
+  // tens of seconds and touches no DOM but the dialog it may open.
+  var DECISION_WATCH_MS = 20000;
+  var watchTimer = null;
+
+  function startDecisionWatch() {
+    if (watchTimer) return;
+    watchTimer = setInterval(function () {
+      // The table's own poll is the better instrument while it is on screen --
+      // faster, and it redraws what the reader is looking at. Standing down
+      // avoids two requests answering the same question.
+      var card = byId("card-my-requests");
+      if (card && !card.hidden) return;
+      var persona = byId("persona");
+      if (!persona || !persona.value) return;
+      // Captured NOW, and handed to noteDecisions() with the answer. The
+      // picker can move while this is in flight.
+      var askedFor = persona.value;
+      api("api/my-requests?persona=" + encodeURIComponent(askedFor))
+        .then(function (res) {
+          return res.json();
+        })
+        .then(function (payload) {
+          // ANNOUNCE ONLY. No table, no banner, no "last checked" stamp --
+          // this is a watch, and writing to a hidden card would make the two
+          // pollers race to render the same rows.
+          noteDecisions(payload.requests || [], askedFor);
+        })
+        .catch(function () {
+          // Deliberately silent. A background check that cannot reach the API
+          // has nothing to tell the reader that the page they are on does not
+          // already tell them, and an error banner on the intake form for a
+          // poll they never asked for would be noise at the worst moment.
+        });
+    }, DECISION_WATCH_MS);
+  }
+
   function startPolling() {
     stopPolling();
     renderLiveToggle();
@@ -2990,8 +4062,27 @@
     toggle.textContent = liveWanted ? "Live — checking every " + POLL_MS / 1000 + "s" : "Paused";
   }
 
+  /**
+   * True while a "My requests" read is in flight.
+   *
+   * A POLL MUST NOT OVERTAKE THE READ IT IS POLLING. The interval is 4 seconds
+   * and the response on a real account was measured at 21 — so the page issued
+   * 19 requests and received 9 answers in 75 seconds, each one racing the
+   * others to render into the same tbody. The reader sees rows appear, vanish
+   * and reappear as an older, slower response lands after a newer one.
+   *
+   * A QUIET POLL SKIPS; AN EXPLICIT LOAD NEVER DOES. Pressing "Check now" is a
+   * person asking, and a control that silently declines to act is worse than a
+   * slow one — so only the timer defers, and it defers rather than queues,
+   * because the next tick is four seconds away and a queue of stale reads has
+   * nothing to offer that the next fresh one does not.
+   */
+  var myRequestsInFlight = false;
+
   function loadMyRequests(opts) {
     var quiet = Boolean(opts && opts.quiet);
+    if (quiet && myRequestsInFlight) return;
+    myRequestsInFlight = true;
     var rows = byId("my-requests-rows");
     // A poll must not blank the table it is refreshing: emptying rendered rows
     // four times a minute makes a live view unreadable and steals focus from
@@ -3001,9 +4092,28 @@
     if (!quiet) {
       clear(rows);
       setMyRequestsNote("Reading each record's current state…");
+      // AND IN THE TABLE, WHERE THE EYE IS.
+      //
+      // The note above is the line UNDER the table, and this table scrolls
+      // sideways and is tall — so on a real account the reader is looking at an
+      // empty tbody while the only "loading" word on the page sits below the
+      // fold. Reported 2026-09-02 by an employee driving the deployment: "Empty
+      // table. Just column headers. No loading, no error, nothing. I genuinely
+      // concluded my requests had been lost, and switched personas to check
+      // whether I'd filed as the wrong person." Measured at 21 seconds for an
+      // account with 93 records.
+      //
+      // That is the worst possible half-minute on this page: every result
+      // screen in the portal ends by sending the reader here, so a page that
+      // says "you have nothing" is the hand-off story collapsing at the last
+      // step. An empty tbody is indistinguishable from an answer, and it is the
+      // WRONG answer.
+      rows.appendChild(loadingRow());
     }
 
-    api("api/my-requests?persona=" + encodeURIComponent(byId("persona").value))
+    // The persona this read is FOR, captured before it is issued.
+    var askedFor = byId("persona").value;
+    api("api/my-requests?persona=" + encodeURIComponent(askedFor))
       .then(function (res) {
         return res.json();
       })
@@ -3017,14 +4127,22 @@
         var banner = byId("my-requests-decided");
         banner.textContent = decided.summary || "";
         banner.hidden = !decided.summary;
+        // BEFORE the table is redrawn, so the comparison is against what the
+        // reader was last shown rather than against what is about to replace it.
+        noteDecisions(payload.requests || [], askedFor);
         renderMyRequests(payload.requests || []);
         renderMyRequestsUnavailable(payload.notListed || []);
         var stamp = byId("my-requests-checked");
         if (stamp) stamp.textContent = "Last checked " + new Date().toLocaleString();
+        myRequestsInFlight = false;
       })
       .catch(function (err) {
         // A failed POLL leaves the last good rows on screen and says so; a
         // failed explicit load has nothing to preserve.
+        // CLEARED FIRST, ON EVERY PATH. A flag left set by a failed read would
+        // silence the poller permanently, turning one transient error into a
+        // page that never refreshes again and never says why.
+        myRequestsInFlight = false;
         if (quiet) {
           var stamp = byId("my-requests-checked");
           if (stamp) stamp.textContent = "Could not refresh: " + err.message;
@@ -3033,6 +4151,24 @@
         clear(rows);
         setMyRequestsNote("Could not read your requests: " + err.message);
       });
+  }
+
+  /**
+   * A single row saying the table is being read, spanning it.
+   *
+   * IN THE TBODY RATHER THAN ABOVE OR BELOW IT, because "is my data here?" is a
+   * question the reader asks OF THE TABLE, and answers by looking at it. The
+   * column count is read off the rendered header rather than hard-coded — a
+   * literal here would silently stop spanning the day a column is added, which
+   * is the kind of drift a second copy of a fact always produces.
+   */
+  function loadingRow() {
+    var head = document.querySelectorAll("#my-requests th");
+    var tr = el("tr", "my-request-row is-loading");
+    var td = el("td", "muted", "Reading each record's current state…");
+    td.colSpan = head.length || 1;
+    tr.appendChild(td);
+    return tr;
   }
 
   /** The one line under the table: pending, empty, or the reason neither. */
@@ -3268,8 +4404,23 @@
     // from the server's own `state` string — this file never decides what
     // "decided" means, and an unrecognised state keeps the neutral dot rather
     // than being guessed into a colour.
-    var statusCell = el("td");
+    var statusCell = el("td", "status-cell");
     statusCell.appendChild(el("span", "badge state-" + (status.state || "unknown"), status.label || "Unknown"));
+    // THE SECOND DECIDER, IN THE COLUMN THE REQUESTER ACTUALLY SCANS. A UC-04
+    // row has three parties and the badge above is derived from the store row,
+    // which can only see the first two — so a trip the employer had approved
+    // AND Remote's mobility team had cleared showed one word, "Approved by your
+    // manager", above a settled line ending "This is final". The clearance was
+    // on the row the whole time, as prose at the bottom of a tall cell, and the
+    // owner read the page and could not find it. Both badges together are the
+    // fix: the row can no longer look finished while a stage is outstanding,
+    // and it can no longer hide one that is done.
+    //
+    // The wording is the SERVER'S (src/uc04/mobilityReview.js's
+    // MOBILITY_REVIEW_SHORT_LABELS) and it is a state, not a summary of the
+    // honesty notice — that stays below, verbatim, in `stagesBlock`.
+    var stageBadge = stageStatusBadge(request);
+    if (stageBadge) statusCell.appendChild(stageBadge);
     tr.appendChild(statusCell);
 
     // The sentence that actually answers the question, and — when the deciding
@@ -3282,6 +4433,16 @@
       var resolution = resolutionBlock(request);
       if (resolution) happened.appendChild(resolution);
     }
+    // THE STAGE THAT THE STORE ROW CANNOT SEE. UC-04 is decided by three
+    // parties in two systems, and the status word above is derived from the
+    // record, which knows about the first two. `request.stages` is the server's
+    // reading of the third — Remote's own mobility review — and it is drawn
+    // HERE, inside "what happened", because that is the question it answers.
+    // Absent for every other use case, and absent for a UC-04 row whose stage
+    // read failed, in which case nothing is drawn rather than a reassuring
+    // guess. See src/uc04/mobilityReview.js.
+    var stages = stagesBlock(request);
+    if (stages) happened.appendChild(stages);
     tr.appendChild(happened);
 
     // THE DOCUMENT THIS REQUEST PRODUCED, and where to get it. Directly after
@@ -3322,6 +4483,51 @@
   }
 
 
+  /**
+   * Stage 3 as one badge, for the Status column.
+   *
+   * NULL UNLESS THE SERVER SAID SOMETHING. Six of the seven use cases send no
+   * `stages` at all, and a UC-04 row whose stage read failed sends none either
+   * — in which case this draws nothing rather than a reassuring guess, exactly
+   * as `stagesBlock` does.
+   */
+  function stageStatusBadge(request) {
+    var s = request.stages;
+    if (!s || isEmpty(s.shortLabel)) return null;
+    return el("span", "badge stage-" + (s.state || "unknown"), s.shortLabel);
+  }
+
+  /**
+   * The stage a three-party request is at, in the server's own words.
+   *
+   * EVERY STRING HERE IS THE SERVER'S. `label`, `detail` and `notice` are
+   * composed in src/uc04/mobilityReview.js; this function decides which of them
+   * to draw and nothing about what any of them means. In particular it must
+   * never paraphrase `notice` — the sentence that says the review is recorded in
+   * this system and reaches Remote not at all — because every paraphrase of that
+   * anybody writes is shorter and more reassuring than the original.
+   *
+   * NULL WHEN THERE IS NOTHING TO SAY, so six of the seven use cases render
+   * exactly as they did before this existed.
+   */
+  function stagesBlock(request) {
+    var s = request.stages;
+    if (!s || isEmpty(s.detail)) return null;
+    var block = el("div", "stages-block");
+    // NO BADGE HERE ANY MORE — it moved into the Status cell, where a reader
+    // scanning the list will see it. Drawing it in both places would be the
+    // same fact twice, and the copy nobody scrolls to is the one that reads as
+    // the answer. The detail below names the stage itself, so nothing is lost.
+    block.appendChild(el("span", "what-detail", s.detail));
+    // WHO RECORDED IT, once there is somebody. Drawn only for a state that has
+    // one — an empty "Recorded by —" line on an open review would read as a
+    // decision nobody can find.
+    if (s.recorded && !isEmpty(s.recorded.reviewer)) {
+      block.appendChild(el("span", "doc-detail", "Recorded by " + s.recorded.reviewer + "."));
+    }
+    return block;
+  }
+
   // -- the document a request produced, and where to get it ------------------
   //
   // "This should not end here. A travel letter was requested. It should be
@@ -3356,9 +4562,16 @@
     var status = el("p", "action-status");
     status.setAttribute("role", "status");
 
+    // THE NOUN IS THE SERVER'S, and defaults to the word these buttons carried
+    // when a letter was the only thing they could fetch. UC-04's artifact is a
+    // RECORD OF DECISIONS, not a letter (src/uc04/authorizationRecord.js), and
+    // "Open the letter" over it would name a document this system does not
+    // issue.
+    var noun = (doc.collect && doc.collect.noun) || "letter";
+
     var open = el("button", "r-btn r-btn-primary r-btn-small");
     open.type = "button";
-    open.textContent = "Open the letter";
+    open.textContent = "Open the " + noun;
     open.addEventListener("click", function () {
       collectLetter(request, doc, status, function (payload) {
         showLetter(payload);
@@ -3419,10 +4632,17 @@
     var endpoint = doc[endpointKey || "collect"];
     status.className = "action-status";
     status.textContent = "Fetching…";
+    // THE BODY'S ID FIELD IS THE SERVER'S TOO. `caseId` is the default because
+    // it is what UC-01's and UC-03's letter routes have always taken; UC-04's
+    // record is keyed by an AUTHORIZATION id and its route names the field it
+    // wants. Hard-coding `caseId` here would have made that route answer
+    // `authorization_id_required` to a button the same server had just offered.
+    var body = { persona: byId("persona").value };
+    body[endpoint.idField || "caseId"] = request.recordId;
     api(endpoint.path, {
       method: endpoint.method || "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ persona: byId("persona").value, caseId: request.recordId }),
+      body: JSON.stringify(body),
     })
       .then(function (res) {
         return res.json().then(function (payload) {
@@ -3472,6 +4692,12 @@
   var LETTER_TYPE_LABELS = {
     travel_support_letter: "travel letter",
     employment_verification_letter: "employment verification letter",
+    // NOT A LETTER, AND THE WORD MATTERS. UC-04's artifact states which of three
+    // parties decided what and where each decision is recorded — including the
+    // one that is recorded only here (src/uc04/authorizationRecord.js). Calling
+    // it a letter would suggest something addressed to an authority, which is
+    // precisely what its own opening paragraph says it is not.
+    work_authorization_record: "work authorization record",
   };
 
   function letterTypeLabel(payload) {
@@ -4145,13 +5371,41 @@
         // Remember what was sent, and prefill the reuse box with it, so
         // switching to "Reuse" and clicking again is genuinely a repeat of the
         // delivery that just happened rather than a fresh one.
-        if (sentRef) {
-          lastRef[typeId] = sentRef;
+        /* THE REFERENCE THE SERVER ACTUALLY USED, NOT THE ONE THIS FILE
+           GUESSED (2026-08-31). `sentRef` is what the browser put in the body.
+           On the UC-03 → UC-04 continuation the server OVERRIDES it — it files
+           the work authorization under the travel request's own reference, so
+           the two decisions sit side by side under one id
+           (src/portal/server.js, "THE SHARED REFERENCE, RE-DERIVED
+           SERVER-SIDE") — and it publishes what it used as `recordedRef`.
+
+           THE PAGE WAS REPORTING THE ONE IT SENT. Measured on the deployment:
+           two submissions carrying two genuinely DIFFERENT references were both
+           recorded under ticket 64, and the second came back refused as a
+           repeat delivery. The screen then said "Reference sent:
+           uc04-…-4tyos" over "Reference already claimed: 59" — two ids, no
+           relationship between them stated, and the second one never shown to
+           the reader before. The owner's report was "i tried doing it myself,
+           but could not go through", which is exactly right: on that path NO
+           value of this control can produce a new submission, and the control
+           said nothing about it.
+
+           So the effective reference drives everything the control does —
+           what is reported, what "Reuse" repeats, what the result panel shows
+           — and when it differs from what was sent, the difference is stated
+           rather than left for the reader to notice. */
+        var recordedRef =
+          result.payload && typeof result.payload.recordedRef === "string" && result.payload.recordedRef
+            ? result.payload.recordedRef
+            : null;
+        var effectiveRef = recordedRef || sentRef;
+        if (effectiveRef) {
+          lastRef[typeId] = effectiveRef;
           var input = byId(typeId + "-externalRef");
-          if (input && refMode(typeId) !== "reuse") input.value = sentRef;
-          showSentRef(typeId, sentRef);
+          if (input && refMode(typeId) !== "reuse") input.value = effectiveRef;
+          showSentRef(typeId, effectiveRef, recordedRef && sentRef && recordedRef !== sentRef ? sentRef : null);
         }
-        render(box, result.payload, sentRef);
+        render(box, result.payload, effectiveRef);
       })
       .catch(function (err) {
         button.disabled = false;
@@ -4772,12 +6026,18 @@
     //
     // THE REPORT. An employee took this offer as himself and wrote: "i noticed
     // i was chris lee in uc-03 and became admin instantly i was redirected to
-    // uc-04." The switch is real, deliberate and correct — UC-04's identity
-    // gate wants a company session because the assessment is the employer's
-    // stage — and it happened with no warning, so the first thing he learned on
-    // the new form was that he was somebody else. A person who has just been
-    // silently swapped does not trust the rest of the screen, and he then read
-    // every empty box as a puzzle rather than as a question.
+    // uc-04." The switch was real and, at the time, correct — UC-04's identity
+    // gate wanted a company session — and it happened with no warning, so the
+    // first thing he learned on the new form was that he was somebody else.
+    //
+    // THE SENTENCE THAT USED TO SIT HERE IS GONE, BECAUSE THE SWAP IS
+    // (2026-08-30). It read: "Your employer's admin completes this next part,
+    // so the form opens signed in as them. It is still your trip, and your name
+    // is on it." Every word of it was true and it was the right repair for a
+    // year-old constraint that turned out to be a defect — UC-04 had the
+    // employer's identity test applied to the employee's act. The traveller now
+    // stays themselves, so there is nothing to warn them about, and warning
+    // somebody about something that will not happen is its own confusion.
     //
     // ONE SENTENCE, AND ONLY THE HALF HE CAN ACT ON. Not which gate compares
     // what, not why the session object needs a company id — that reasoning is
@@ -4791,14 +6051,6 @@
     // the session. The same one-line server change would move it, and until
     // then a reader learning this from us beats a reader learning it from the
     // persona picker.
-    box.appendChild(
-      el(
-        "p",
-        "small r-secondary",
-        "Your employer's admin completes this next part, so the form opens signed in as them. It is still your trip, and your name is on it."
-      )
-    );
-
     var buttons = el("div", "interstitial-buttons");
     var button = el("button", "r-btn r-btn-primary");
     button.type = "button";
@@ -5617,24 +6869,27 @@
     var manual = document.querySelector("#form-uc04 .manual-fields");
     if (manual) manual.open = true;
 
-    // THE SESSION MOVES, BECAUSE THE ACTOR DOES. UC-04's own identity gate
-    // wants a company session (`session.companyId === employment.company_id`),
-    // and it wants one because the assessment is the EMPLOYER's stage —
-    // Remote's manager approval, which precedes Remote's own review. Leaving
-    // the employee selected would produce `identity_not_verified`, a refusal
-    // describing OUR plumbing while reading as a finding about their trip.
+    // THE SESSION NO LONGER MOVES, BECAUSE THE ACTOR NEVER CHANGED (2026-08-30).
     //
-    // The key is FOUND, never written down here: the first company-admin
-    // persona the server offered. A literal would be a second copy of a
-    // personas.js key, and the roster has already been rebuilt once.
-    var adminPersona = ((context && context.personas) || []).filter(function (p) {
-      return p.kind === "company_admin";
-    })[0];
-    var picker = byId("persona");
-    if (picker && adminPersona) {
-      picker.value = adminPersona.id;
-      renderPersonaNote();
-    }
+    // This used to swap the picker to the first company-admin persona the
+    // moment a traveller continued into UC-04, and the reason was true when it
+    // was written: UC-04's identity gate was `session.companyId ===
+    // employment.company_id`, an admin-only shape, so leaving the employee
+    // selected produced `identity_not_verified` — a refusal describing OUR
+    // plumbing while reading as a finding about their trip.
+    //
+    // THAT WAS A CONSEQUENCE OF A DEFECT, NOT A FACT ABOUT THE FLOW. Remote's
+    // own object has the employee SUBMIT (`user`) and the customer's manager
+    // APPROVE (`employer_approver`) — two parties, two stages. The gate had the
+    // employer's test applied to the employee's act. `submissionIdentity.js`
+    // now accepts either party to the record, so the traveller files their own
+    // request as themselves, which is what they were always doing.
+    //
+    // The swap was reported by the project owner twice — "i was chris lee in
+    // uc-03 and became admin instantly" — and the first fix was a SENTENCE
+    // explaining it, because the swap was correct at the time. It is not any
+    // more, so the sentence went with it: an explanation for something that no
+    // longer happens is worse than none.
 
     renderContinuationBanner(data);
     activate("uc04");
@@ -5666,8 +6921,9 @@
    * disclosure nobody has to open; the engineering evidence behind them lives
    * where engineering evidence belongs and is named below rather than lost:
    *
-   *   - Which stage this is, and why the persona picker moves to the company
-   *     admin: applyContinuation()'s "THE SESSION MOVES" comment above.
+   *   - Which stage this is, and why the persona picker NO LONGER moves to a
+   *     company admin: applyContinuation()'s "THE SESSION NO LONGER MOVES"
+   *     comment above.
    *   - That continuing creates nothing in Remote and submits nothing:
    *     openContinuation()'s header comment, and src/portal/uc03Continuation.js,
    *     which is the code that makes it true.
@@ -5857,6 +7113,23 @@
       if (node.type === "checkbox") node.checked = fields[field] === true;
       else setFieldValue(node, fields[field]);
     });
+
+    /* THE SECOND, WEAKER CHANNEL — see src/portal/uc03Continuation.js's
+       ACTIVITY_SUGGESTIONS. `fields` above writes boxes the server confirmed
+       are still needed, so it may overwrite freely. These are boxes the server
+       never asks about at all, so the only thing that can say whether they are
+       free is the box itself, read HERE, at the moment the button is pressed —
+       a traveller who described their trip and then pressed "Fill the rest"
+       keeps every word of it. Blank means blank after trimming: a box holding
+       three spaces is one nobody has answered. */
+    var suggestions = completion.suggestIfEmpty || {};
+    Object.keys(suggestions).forEach(function (field) {
+      var node = byId(field);
+      if (!node || node.type === "checkbox") return;
+      if (String(node.value || "").trim() !== "") return;
+      setFieldValue(node, suggestions[field]);
+    });
+
     refreshGapMarks();
   }
 
@@ -6010,6 +7283,63 @@
       return p.employmentId === employmentId;
     })[0];
     return match && match.name ? match.name : null;
+  }
+
+  /**
+   * WHO THE TRIP IS ABOUT, IN WORDS, UNDER THE BOX THAT HOLDS THEIR IDENTIFIER.
+   *
+   * THE REPORT, 2026-09-03, from the owner driving the live deployment: signed
+   * in as Chris Lee, pressed "Low-risk Schengen trip", and the Zendesk ticket
+   * named João Silva. Nothing was wrong. That quick-fill files as Jane Doe the
+   * company admin ABOUT João, which is the real shape of a work authorization —
+   * Remote's own model has the employee's MANAGER approve and the EMPLOYEE
+   * travel, so filer and subject being different people is the normal case
+   * rather than the odd one. What was missing is that the page announced only
+   * one of the two switches. The FILER change is stated in a sentence
+   * ("Signed in as X now, not Y"); the SUBJECT change rewrote a raw UUID inside
+   * a collapsed panel, under a hint that went on saying "Chris Lee by default"
+   * after the value had stopped being Chris's.
+   *
+   * DERIVED, NEVER STATED. The name is resolved from the box's OWN value
+   * through the same persona roster the sign-in picker is built from, so it
+   * cannot disagree with what is about to be submitted. The alternative — a
+   * `subjectName` written into each of the fifteen scenarios by hand — is a
+   * second copy of a fact the form already holds, and this file has paid for
+   * that twice already (clearCarriedMarks()'s banner, the persona caption that
+   * printed a session role as an engagement).
+   *
+   * AN UNRECOGNISED ID SAYS SO RATHER THAN GOING BLANK. Blank reads as "this
+   * request has no subject", and it always has one; a hand-typed Sandbox id
+   * that belongs to nobody on the list is legitimate and must not be made to
+   * look like an empty box.
+   */
+  function renderTravellerName() {
+    var out = byId("uc04-traveller-name");
+    var field = byId("uc04-employmentId");
+    if (!out || !field) return;
+    var value = String(field.value || "").trim();
+    if (!value) {
+      out.textContent = "";
+      out.classList.remove("is-unknown");
+      return;
+    }
+    var name = personaNameForEmployment(value);
+    out.textContent = name
+      ? "This request is about " + name + " — who is not necessarily the person filing it."
+      : "This id is not one of the people on the sign-in list; the record behind it will be read from Remote.";
+    out.classList.toggle("is-unknown", !name);
+  }
+
+  /**
+   * One listener covers every way this box changes, because setFieldValue()
+   * dispatches `input` — so quick-fills, the persona sync and a continuation's
+   * prefill all arrive here without any of them having to know this exists.
+   */
+  function wireTravellerName() {
+    var field = byId("uc04-employmentId");
+    if (!field) return;
+    field.addEventListener("input", renderTravellerName);
+    renderTravellerName();
   }
 
   /** Idempotent: applying a second continuation must not stack markers. */

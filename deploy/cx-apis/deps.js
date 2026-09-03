@@ -87,6 +87,7 @@ import { createUc07Handler } from "../../src/uc07/server.js";
 import { createUc08Handler } from "../../src/uc08/server.js";
 import { createUc09Handler } from "../../src/uc09/server.js";
 
+import { portalReceiptReader } from "../../src/portal/wiring.js";
 import { createPortalHandler, PORTAL_SOURCE } from "../../src/portal/server.js";
 import { createThirdPartyDoorHandler } from "../../src/thirdparty/server.js";
 import { createPortalThrottleStore } from "../../src/portal/access.js";
@@ -100,7 +101,11 @@ import { AuditReadStore } from "../../src/auditview/readStore.js";
 import { buildPortalStores, portalLlmDefaults } from "../../src/portal/wiring.js";
 import { isLlmConfigured } from "../../src/shared/llm.js";
 import { portalAccessPosture } from "../../src/portal/access.js";
+import { createRemoteUiHandler, REMOTE_UI_SOURCE } from "../../src/remoteui/server.js";
+import { REMOTE_UI_EMPLOYEES } from "../../src/remoteui/employees.js";
+import { createWorkAuthorizationStandin } from "../../src/remoteui/workAuthStandin.js";
 import { createInProcessFetch } from "../../src/remote/mockServer.js";
+import { createZendeskAttachmentDownloader } from "../../src/uc02/attachmentDownload.js";
 
 /**
  * A Remote client that cannot be used, and says why.
@@ -187,14 +192,25 @@ export function mockRemoteClient() {
  * world they are in.
  *
  * THE MAPPING IS ONE-DIRECTIONAL, and that is the safety property:
- * `forSource(PORTAL_SOURCE)` is the ONLY input that yields the mock, and there
- * is no input that yields the real gateway for a portal record. So the
- * portal's promise — it never writes into a real Remote account — is kept by
- * construction, independent of what any caller passes.
+ * only the two mock-world source tags (`portal`, `remoteui`) yield the mock, and
+ * there is no input that yields the real gateway for a record carrying either.
+ * So both pages' promise — they never write into a real Remote account — is
+ * kept by construction, independent of what any caller passes.
  *
  * @param {object} defaultClient  remoteClient() or unavailableRemote()
  * @returns {object} defaultClient + forSource()
  */
+/**
+ * The two intake surfaces that DECIDE in the mock world, by their own `source`
+ * tag. Both are public pages whose personas are mock fixture ids (a real Sandbox
+ * 404s every one), and both promise never to write into a real Remote account.
+ * `remoteui` joined on 2026-09-02: until then a stand-in-filed amendment was
+ * decided against the mock and then read back — employee card AND freshness
+ * re-check — against the gateway, which reported the employee missing on every
+ * live case and would have blocked every execution at the re-check.
+ */
+const MOCK_WORLD_SOURCES = new Set([PORTAL_SOURCE, REMOTE_UI_SOURCE]);
+
 export function sourceAwareRemote(defaultClient) {
   // A Proxy target must be an object. A caller that deliberately passes null
   // (or a test that passes nothing usable) gets its own value back untouched —
@@ -205,7 +221,7 @@ export function sourceAwareRemote(defaultClient) {
   }
   let mock = null;
   const forSource = (source) => {
-    if (source !== PORTAL_SOURCE) return defaultClient;
+    if (!MOCK_WORLD_SOURCES.has(source)) return defaultClient;
     if (!mock) mock = mockRemoteClient();
     return mock;
   };
@@ -319,6 +335,20 @@ export function readPosture(env = process.env, { pgPool = null } = {}) {
     remoteConfigured: Boolean(config.remote.token),
     remoteBaseUrl: config.remote.token ? config.remote.baseUrl : null,
     zendeskConfigured: isZendeskConfigured(),
+    // WHICH ACCOUNT, not just whether one is configured. A boolean cannot tell
+    // you that a deployment is still talking to a RETIRED Zendesk account, and
+    // on 2026-08-29 that mattered: the account moved from `your-subdomain` to
+    // `your-subdomainhelp`, and the only way to tell from outside which one this
+    // deployment pointed at was to read `portal.employmentIdField.id` and infer
+    // it — using a field id as a proxy for an account identity, which is
+    // exactly the kind of indirect check this file exists to make unnecessary.
+    //
+    // A subdomain is NOT a secret. It appears in every ticket URL, in the ZAF
+    // app's own origin, and in the CORS `Origin` header of every sidebar
+    // request. Nothing is disclosed by naming it that an agent looking at a
+    // ticket does not already see. The credentials themselves stay reported as
+    // booleans, as they were.
+    zendeskSubdomain: isZendeskConfigured() ? config.zendesk.subdomain || null : null,
     // OR, never AND: the platform check can add the requirement but never
     // remove one the shared rule already imposed.
     signedIdentityRequired: signedIdentityRequired(env, { persistent }) || publiclyReachable,
@@ -510,6 +540,14 @@ export function buildHandler(
         audit,
         remote: rc,
         allowedOrigin,
+        // [E-1] the Zendesk receipt path, called by the UC-02 n8n graph.
+        // Every one of these is absent unless configured, and the route answers
+        // 503 rather than pretending — so a deployment missing any of them
+        // behaves exactly as it did before receipts were read.
+        zendesk: zendeskClient(),
+        receiptReader: portalReceiptReader(),
+        downloadAttachment: buildAttachmentDownloader(),
+        receiptTicketToken: env.N8N_WEBHOOK_TOKEN || null,
         identityVerifier: uc02IdentityVerifier(env),
         // The READ gate, under its own name because uc02's
         // `requireSignedIdentity` already names the WRITE gate there and is
@@ -610,6 +648,10 @@ export function portalPosture(env = process.env, { pgPool = null } = {}) {
  */
 export function buildPortalHandler({ pgPool = null, env = process.env, access, remote, llm } = {}) {
   return createPortalHandler({
+    // [E-1] the receipt transport. Absent unless a key is configured, and gate
+    // 8b reads an absent reading as "nobody tried", so an unconfigured
+    // deployment behaves exactly as it did before receipts were read.
+    receiptReader: portalReceiptReader(),
     // The failed-key ceiling's durable counter. Postgres-backed whenever a
     // pool exists, because an in-memory counter on this deployment starts at
     // zero every invocation and would bound nothing — the same "built is not
@@ -831,10 +873,157 @@ export function buildApprovalQueueHandler({ pgPool = null, env = process.env, ac
   });
 }
 
+// ---------------------------------------------------------------------------
+// The Remote-product stand-in (src/remoteui/), mounted at /remoteui
+// ---------------------------------------------------------------------------
+
+/** The path prefix the Remote-product stand-in is served under. */
+export const REMOTEUI_BASE_PATH = "/remoteui";
+
+/**
+ * Build the Remote-product stand-in's request handler for one invocation.
+ *
+ * THE REMOTE CLIENT IS THE MOCK, ALWAYS — the same promise buildPortalHandler()
+ * keeps, for the same reason and with the same mechanism (a transport that
+ * dispatches straight into src/remote/mockServer.js). This surface is publicly
+ * reachable and it WRITES: the amendment path creates a Zendesk ticket, and the
+ * work-authorization path can PATCH a work-authorization record. A public page
+ * must not write into a real Remote account, and pointing this at the gateway
+ * would be exactly that.
+ *
+ * That is not the work-authorization surface refusing to use rung 2. It asks
+ * `GET /v1/work-authorization-requests?employment_id=…&status=pending` on every
+ * load and reports what came back — against this mock here, against the real
+ * Sandbox when `npm run remoteui` is run with a token. What the mount decides
+ * is WHICH Remote answers, and the response says which one it was; what it does
+ * not decide is whether the question gets asked.
+ *
+ * ONE CLIENT FOR BOTH HALVES of that surface. The company-boundary employment
+ * reads and the request list/PATCH must be in the same world: scoping against
+ * one Remote and acting against another is the defect src/shared/remoteWorld.js
+ * exists to close, and it cost a live 404 on every portal-originated expense
+ * release before it was found.
+ *
+ * The gate is the portal's shared key, reused whole and computed by the SAME
+ * portalPosture() — one key, now five surfaces. It is not optional here: this
+ * is the only one of the five that both writes to Remote and creates Zendesk
+ * tickets.
+ *
+ * @param {object} ctx
+ * @param {import("pg").Pool|null} [ctx.pgPool]
+ * @param {NodeJS.ProcessEnv} [ctx.env]
+ * @param {object} [ctx.access]  test seam; defaults to the env-derived posture
+ * @param {object} [ctx.remote]  test seam; defaults to the in-process mock
+ * @param {object} [ctx.zendesk] test seam; defaults to zendeskClient()
+ */
+export function buildRemoteUiHandler({ pgPool = null, env = process.env, access, remote, zendesk } = {}) {
+  const mock = remote ?? mockRemoteClient();
+  return createRemoteUiHandler({
+    remote: mock,
+    // Same client, deliberately: see "ONE CLIENT FOR BOTH HALVES" above.
+    remoteWorkAuth: mock,
+    audit: new AuditLogger(null, { pgPool }),
+    amendmentStore: new AmendmentStore({ pgPool }),
+    // STAGE 2 READS THE REQUESTS THE PORTAL FILED, so the employer surface needs
+    // the same durable store the portal writes to. Passed EXPLICITLY rather than
+    // left to the handler's default, which derives a pool off the audit logger:
+    // that default happens to resolve to the same pool here, and a coincidence
+    // that holds today is exactly the kind of thing that stops holding when
+    // somebody changes how `audit` is built. One line beats one coincidence.
+    authorizationStore: new AuthorizationStore({ pgPool }),
+    // NO MOCK FALLBACK, unlike `npm run remoteui`. A function cannot start a
+    // companion mock server, and a surface pointed at a localhost mock that is
+    // not there fails in a way that reads like the feature being broken. An
+    // unconfigured Zendesk therefore refuses by name — see unavailableZendesk().
+    zendesk: zendesk !== undefined ? zendesk : (zendeskClient() ?? unavailableZendesk()),
+    employees: REMOTE_UI_EMPLOYEES,
+    employmentIdFieldId: config.zendesk.employmentIdFieldId ?? "0",
+    workAuthStandin: createWorkAuthorizationStandin(),
+    // Read off this deployment's environment, never off a request. Left unset
+    // it is the mock's own company, which is the right answer here because the
+    // Remote client above IS the mock.
+    adminCompanyId: env.REMOTEUI_ADMIN_COMPANY_ID || undefined,
+    access: access ?? portalPosture(env, { pgPool }),
+    throttleStore: createPortalThrottleStore(pgPool),
+    basePath: REMOTEUI_BASE_PATH,
+  });
+}
+
+/**
+ * A Zendesk stand-in that refuses by name.
+ *
+ * Same shape and same argument as unavailableRemote() above: a dependency that
+ * is missing must say so when it is USED, not be silently replaced by something
+ * that appears to work. The message is the instruction.
+ */
+function unavailableZendesk() {
+  const refuse = () => {
+    throw new Error(
+      "Zendesk is not configured on this deployment, so no ticket can be created. Set ZENDESK_SUBDOMAIN and " +
+        "the OAuth client pair. The decision itself was still recorded and audited — only the hand-off failed."
+    );
+  };
+  return { createTicket: refuse, updateTicket: refuse };
+}
+
 function queueTicketFacts(env) {
   const subdomain = env.ZENDESK_SUBDOMAIN;
   const clientId = env.ZENDESK_OAUTH_CLIENT_ID;
   const clientSecret = env.ZENDESK_OAUTH_CLIENT_SECRET;
   if (!subdomain || !clientId || !clientSecret) return new TicketFacts();
   return new TicketFacts({ zendesk: new ZendeskClient({ subdomain, clientId, clientSecret }), subdomain });
+}
+
+/**
+ * Fetch a Zendesk attachment and hand back base64.
+ *
+ * The logic lives in src/uc02/attachmentDownload.js, not here. It used to be a
+ * closure in this file — deployment glue no test reaches — and it shipped
+ * unauthenticated on an account that requires sign-in for attachments, so
+ * every download returned HTTP 200 with a LOGIN PAGE and the extractor was
+ * asked to read it. That module's header has the full account.
+ *
+ * Returns null when Zendesk is unconfigured, exactly like every other optional
+ * dependency here: the route then answers with `zendesk_not_configured` rather
+ * than pretending.
+ */
+function buildAttachmentDownloader() {
+  if (!isZendeskConfigured()) return null;
+  // ITS OWN CLIENT, ON A NARROWER SCOPE THAN EVERY OTHER CALLER — and that is
+  // the interesting line in this function.
+  //
+  // The attachment file path (`/attachments/token/<t>/`) is not a ticket API
+  // endpoint, and the routine `tickets:read tickets:write` scope every other
+  // Zendesk call here uses cannot fetch it. Measured against the live account
+  // on 2026-08-29, same client, same shell, one URL:
+  //
+  //     "tickets:read tickets:write" -> 403
+  //     "read"                       -> 200, %PDF-, 20508 bytes
+  //     "read write"                 -> 200, %PDF-, 20508 bytes
+  //
+  // `read` rather than `read write` is deliberate and is a TIGHTENING, not a
+  // widening: this client only ever fetches a file, so the one credential in
+  // this deployment that touches an unvalidated third-party document cannot
+  // write to Zendesk at all. Widening the shared client's scope instead would
+  // have handed `write` to every call site to fix one that needed `read`.
+  //
+  // A 403 here is silent for the same reason the 401 was — see
+  // src/uc02/attachmentDownload.js — so this is exactly the kind of thing that
+  // has to be got right rather than noticed later.
+  const zd = new ZendeskClient({
+    subdomain: config.zendesk.subdomain,
+    email: config.zendesk.email,
+    apiToken: config.zendesk.apiToken,
+    clientId: config.zendesk.oauthClientId,
+    clientSecret: config.zendesk.oauthClientSecret,
+    scope: "read",
+  });
+  return createZendeskAttachmentDownloader({
+    // A FUNCTION, so the client's own token cache and 60s-early refresh are
+    // reused rather than a token being minted per attachment.
+    authorization: () => zd.authorizationHeader(),
+    // The one account whose attachments may be authenticated to. Anything
+    // else is refused rather than fetched anonymously.
+    subdomain: config.zendesk.subdomain,
+  });
 }

@@ -73,6 +73,7 @@
 
 import { evaluate as evaluatePolicy, VALID_VISA_TYPES, VALID_JOB_DUTIES } from "./policyEngine.js";
 import { handleWorkationRequest } from "./workflow.js";
+import { verifySubmissionIdentity } from "./submissionIdentity.js";
 import {
   extractWorkationFactors,
   NEVER_EXTRACTED_FIELDS,
@@ -377,7 +378,13 @@ export async function handleWorkationTextRequest(request, deps = {}) {
   // through, because the decision must be taken on the record as it stands when
   // the decision is taken, not on a copy this function happened to fetch first.
   const employment = await remote.getEmployment(employmentId);
-  const identityVerified = Boolean(session && employment && session.companyId === employment.company_id);
+  // THE SAME RULE THE DECISION WILL USE, imported rather than restated — this
+  // pre-flight and handleWorkationRequest() must never disagree about who is
+  // allowed to file, or the page would ask a requester for more facts and then
+  // refuse them on identity anyway (or worse, the reverse). This line used to
+  // be its own weaker copy — `session.companyId === employment.company_id` with
+  // no presence check on either side, so two nulls compared equal.
+  const identityVerified = verifySubmissionIdentity({ session, employment }).verified;
 
   const { factors, provenance } = assembleFactors({ extraction, supplied, employment });
 

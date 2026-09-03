@@ -40,7 +40,13 @@ const SELECT_COLUMNS = `
   requester,
   changes,
   amendment_type              as "amendmentType",
-  requested_effective_date    as "requestedEffectiveDate",
+  -- ::text, because node-postgres parses a DATE column into a JS Date at
+  -- midnight, which then rendered on the live sidebar as "Wed Jul 15 2026
+  -- 00:00:00 GMT+0000 (Coordinated Universal Time)" inside a sentence and
+  -- "2026-07-15T00:00:00.000Z" in the case record (2026-09-02). The column
+  -- holds a calendar day; the row now carries it as the same "YYYY-MM-DD"
+  -- string an in-memory row holds, so both stores render one way.
+  requested_effective_date::text as "requestedEffectiveDate",
   decision,
   reason,
   flags,

@@ -1,8 +1,11 @@
-# Remote CX AI Automation
+# Gatehouse CX Automation
 
 A CX automation layer for an Employer-of-Record platform, built against
-[Remote](https://remote.com)'s real API. It resolves support requests on one
-principle:
+[Remote](https://remote.com)'s real API. **It is an independent project — not a
+Remote product, not affiliated with Remote and not endorsed by them.** Remote is
+the domain because it publishes a real API, a real Sandbox and real
+documentation, so every integration claim below can be checked by a reader
+rather than taken on trust. It resolves support requests on one principle:
 
 > **AI interprets. Deterministic code decides. Humans control the exceptions.**
 

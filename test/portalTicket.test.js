@@ -484,7 +484,20 @@ test("UC-07 and UC-08 raise no ticket, because linking one would need a mutation
 });
 
 test("every ticket carries the shared marker, its use case, and an outcome tag", () => {
-  assert.deepEqual(ticketTags("uc04", "ready_for_approval"), [MARKER_TAG, "uc04", "uc04_specialist_approval"]);
+  // TWO OUTCOME TAGS, AND BOTH ARE LOAD-BEARING (2026-08-31).
+  // `uc04_specialist_approval` names the wrong actor since the three-stage
+  // correction — a `ready_for_approval` request waits on the customer's own
+  // manager — but it is on twenty live tickets and in this repo's registries,
+  // so it is KEPT and the correct one is ADDED beside it. Asserting both, in
+  // order, so neither can be dropped by someone tidying up: removing the legacy
+  // string strands the existing queue, removing the new one puts the wrong
+  // actor back on every future hand-off.
+  assert.deepEqual(ticketTags("uc04", "ready_for_approval"), [
+    MARKER_TAG,
+    "uc04",
+    "uc04_specialist_approval",
+    "uc04_awaiting_employer_approval",
+  ]);
   // A decision with no named tag still gets one derived from the decision
   // itself — an untagged ticket is one no trigger can route.
   const derived = ticketTags("uc09", "multi_role_approval_required");

@@ -2085,3 +2085,44 @@ test("the seeded dataset is deterministic for a fixed clock", () => {
   const b = buildDemoDataset(NOW);
   assert.deepEqual(a, b);
 });
+
+// ---------------------------------------------------------------------------
+// THE LEDGER KEY MOVED, AND THE BUG-AUDIT TAB SEARCHES BY THE NUMBER ON THE
+// TICKET (2026-08-31). src/shared/claimRef.js qualifies a bare Zendesk ticket
+// number with the account that minted it, because a bare number named two
+// unrelated tickets after the second account move. Old rows keep the bare
+// spelling. A human typing `93` means "the ticket in front of me", and on this
+// screen an absent claim row is read as "the exactly-once ledger did not
+// protect this ticket" — so answering with one spelling would be a confident
+// wrong answer, not a near miss.
+// ---------------------------------------------------------------------------
+test("lookupRef finds a claim filed under the ACCOUNT-QUALIFIED key from the bare number", async () => {
+  const store = seededStore();
+  // Rewrite the seeded ticket-#5 claim to the shape a run today writes.
+  const claim = store.demo.workflowClaims.find((c) => c.externalRef === "5");
+  assert.ok(claim, "the seed must carry ticket #5's claim for this test to mean anything");
+  claim.externalRef = "your-subdomainhelp:5";
+
+  const result = await store.lookupRef("5");
+  assert.equal(result.claims.length, 1, "the bare number a reader holds must still find the qualified row");
+  assert.equal(result.claims[0].externalRef, "your-subdomainhelp:5");
+
+  // And the qualified spelling works typed in directly — the reader may be
+  // copying it out of the ledger rather than off the ticket.
+  const direct = await store.lookupRef("your-subdomainhelp:5");
+  assert.equal(direct.claims.length, 1);
+});
+
+test("lookupRef still finds a claim filed under the BARE key — old rows keep working", async () => {
+  const result = await seededStore().lookupRef("5");
+  assert.equal(result.claims.length, 1);
+  assert.equal(result.claims[0].externalRef, "5");
+});
+
+test("widening the claim search does not widen the DECISION search", async () => {
+  // Only the claim node's key changed. `audit_log.details.externalRef` still
+  // carries the bare ticket number, and matching a qualified spelling there
+  // would imply the audit trail had moved too — it has not.
+  const decisions = (await seededStore().lookupRef("your-subdomainhelp:5")).decisions;
+  assert.deepEqual(decisions, [], "no audit_log row is keyed by a qualified ref");
+});

@@ -1476,6 +1476,20 @@ have, and `UC-05.md` should say so rather than assert it.
 
 **DISPOSITION — 2026-08-21 · `DECIDED · NOT YET BUILT` · `[N-14]` `[N-15]`**
 
+> **BUILT — (a), the portal half, 2026-09-02.** Found still standing on the live
+> deployment by an agent driving `/portal` as the resigning employee (tickets
+> 216–222): the result page printed the end date, day count, payout and article
+> at submission while the dialog, "My requests" and the report route all
+> withheld them. `src/portal/server.js`'s UC-05 intake now returns §11's
+> acknowledgement per state and moves the five figure rows and the deciding
+> gate's sentence to the specialist's internal note (`specialistDetail`).
+> Pinned in both directions by `test/portalUc05EmployeeSeesNoFigures.test.js`.
+> Residual, named: `reason`, `flags` and `gateLadder` still travel on the
+> envelope as slugs the page does not draw. (b) — what sign-off does outwardly —
+> is unchanged: the report route releases on `signed_off`; no public comment
+> is posted at sign-off yet, and the n8n graph's two Zendesk nodes still fire
+> at decision time.
+
 **The owner's ruling, verbatim:** *"the employee should just see the final output
 after everything has been concluded and signed off internally by the
 specialist."* Both halves of the finding are answered by it.

@@ -554,7 +554,7 @@ test("POSITIVE: one approval fills one slot, and the requester is shown WHICH â€
   assert.equal(signed.role, "customer_admin");
   assert.equal(signed.approver, "admin.jane@customer.com");
   assert.equal(tracked.body.status.signaturesCollected, 1);
-  assert.match(tracked.body.status.awaitingRole, /Payroll Specialist/);
+  assert.match(tracked.body.status.awaitingRole, /Remote payroll specialist/);
   assert.equal(tracked.body.settled, false, "one signature is not a decision when the control requires two");
 });
 

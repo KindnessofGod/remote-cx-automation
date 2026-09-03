@@ -352,23 +352,69 @@ const DEMONSTRATIONS = {
       reason: "standard_letter_issued",
     },
   ],
-  alexandre: [
+  david: [
     {
-      what: "his record names no employing entity, so there is no letterhead and the letter stops for a person",
+      // THE RUNG THAT LOST ITS ONLY PERSONA, given one back (2026-09-03). The
+      // engagement gate correctly refuses Alexandre five rungs before the
+      // letterhead check, and he was the only record carrying the absence that
+      // check is about. David is an EOR EMPLOYEE with the same absence, so this
+      // row proves the rung fires on the missing entity and NOT on anything
+      // about the engagement — the pair below is Chris, whose identical request
+      // is issued outright because his record names one.
+      what: "his record names no employing legal entity, so the letter is drafted and stopped for a specialist to release",
       useCase: "UC-03",
-      run: () => travel("alexandre", FORMAL_LETTER_REQUEST, "personas-uc03-alexandre"),
+      run: () => travel("david", FORMAL_LETTER_REQUEST, "personas-uc03-david"),
       decision: "human_review",
       reason: "formal_letter_requested",
-      // Without this flag the case reads as a letter waiting for a signature,
-      // and a specialist goes looking for a document that was never written.
       flags: ["letterhead_unavailable"],
     },
+  ],
+  alexandre: [
     {
-      what: "…and it is the DOCUMENT that stops, not him: the same trip asked about informally is answered",
+      what: "he is engaged as a contractor, so Remote is not his legal employer and the letter is refused outright",
+      useCase: "UC-03",
+      run: () => travel("alexandre", FORMAL_LETTER_REQUEST, "personas-uc03-alexandre"),
+      decision: "blocked",
+      reason: "engagement_not_eor_contractor",
+      // THIS ROW USED TO BE THE LETTERHEAD RUNG (`human_review /
+      // formal_letter_requested`, flag `letterhead_unavailable`) and the change
+      // is a correction, not a swap. His record names no employing entity
+      // BECAUSE he is a contractor — the missing letterhead was the symptom and
+      // the engagement is the cause, and Remote publishes both travel articles
+      // under "This is applicable to EOR customers only". Stopping at the
+      // symptom sent a contractor to a specialist to be told a fact Remote
+      // publishes.
+      flags: ["engagement_contractor"],
+    },
+    {
+      what: "…and it is not only the document: the same trip asked about informally is refused on the same fact",
       useCase: "UC-03",
       run: () => travel("alexandre", INFORMATIONAL_TRAVEL_QUESTION, "personas-uc03-alexandre-info"),
-      decision: "auto_resolve",
-      reason: "all_gates_passed",
+      decision: "blocked",
+      reason: "engagement_not_eor_contractor",
+      flags: ["engagement_contractor"],
+      // A DELIBERATE WIDENING, RECORDED BECAUSE IT IS A JUDGEMENT AND NOT AN
+      // ACCIDENT (2026-09-03). This row used to read `auto_resolve` — the
+      // letterhead rung stopped his DOCUMENT while an informal question about
+      // the same trip was still answered, and that distinction was worth
+      // making while the gate was about letterheads.
+      //
+      // The engagement gate sits ahead of intent classification, so it refuses
+      // the informational answer too. That is BROADER than Remote's published
+      // words strictly require: Remote heads the travel articles "applicable to
+      // EOR customers only", which is about the letter and the work
+      // authorisation, and it publishes nothing saying a contractor's question
+      // must go unanswered. It is the fail-closed direction and it is the one
+      // taken on purpose, for a reason the narrower version does not survive:
+      // UC-03's informational answer is a compliance statement about whether
+      // someone may work from a country, issued under Remote's name, and for a
+      // contractor the answer turns on a client contract Remote has never seen.
+      // Answering anyway would be the same class of false attestation the
+      // letter gate exists to prevent, one register quieter.
+      //
+      // It is reversible in one place — move the gate below the intent routing
+      // in src/uc03/policyEngine.js — and this comment is here so whoever wants
+      // the narrower behaviour knows it was considered rather than missed.
     },
   ],
   amanda: [
@@ -475,22 +521,27 @@ test("every persona in the registry is exercised by at least one demonstrated ou
 // still pass while silently testing something else — so they assert on the
 // shared constant's identity too.
 
-test("PAIR · the travel letter: Chris gets the document, Alexandre gets a person — same words", async () => {
+test("PAIR · the travel letter: Chris gets the document, Alexandre is refused — same words", async () => {
   const text = FORMAL_LETTER_REQUEST;
   const issued = await travel("chris", text, "personas-pair-letter-chris");
   const stopped = await travel("alexandre", text, "personas-pair-letter-alexandre");
 
   assert.equal(issued.decision, "auto_resolve");
   assert.equal(issued.reason, "standard_letter_issued");
-  assert.equal(stopped.decision, "human_review");
-  assert.equal(stopped.reason, "formal_letter_requested");
-  assert.ok(stopped.flags.includes("letterhead_unavailable"));
+  assert.equal(stopped.decision, "blocked");
+  assert.equal(stopped.reason, "engagement_not_eor_contractor");
+  assert.ok(stopped.flags.includes("engagement_contractor"));
 
   // THE DIFFERENCE IS ON THE RECORD, and this is where that is proved rather
-  // than asserted in a comment. Both requests were the same string; the only
-  // thing that differs is the employing entity each employment names.
+  // than asserted in a comment. Both requests were the same string; what
+  // differs is the ENGAGEMENT each employment records — and, downstream of it,
+  // the employing entity, which is null for Alexandre precisely BECAUSE a
+  // contractor has no EOR entity behind them. Both facts are still asserted,
+  // in that order, so the pair says which one decides.
   assert.equal(EMPLOYMENTS[PERSONAS.chris.employmentId].status, "active");
   assert.equal(EMPLOYMENTS[PERSONAS.alexandre.employmentId].status, "active");
+  assert.equal(EMPLOYMENTS[PERSONAS.chris.employmentId].contract_type, "full_time");
+  assert.equal(EMPLOYMENTS[PERSONAS.alexandre.employmentId].contract_type, "contractor");
   assert.ok(EMPLOYMENTS[PERSONAS.chris.employmentId].legal_entity_id);
   assert.equal(EMPLOYMENTS[PERSONAS.alexandre.employmentId].legal_entity_id, null);
 });
@@ -592,7 +643,9 @@ test("the three refusal-carrying records differ from the roster in exactly the f
   assert.ok(lars.legal_entity_id, "Lars must have a letterhead — his refusal is the company gate, not this one");
   assert.equal(lars.custom_fields.workation_permission, true);
 
-  // Alexandre: no entity, and nothing else.
+  // Alexandre: a contractor — and the missing entity is downstream of that, not
+  // a second independent fact. Both are asserted, cause first.
+  assert.equal(alexandre.contract_type, "contractor");
   assert.equal(alexandre.legal_entity_id, null);
   assert.equal(alexandre.status, "active");
   assert.equal(alexandre.company_id, PERSONAS.admin.session.companyId);
@@ -617,11 +670,13 @@ test("no persona is offered whose only reachable outcome is a refusal", () => {
 
   assert.deepEqual(
     refusalOnly.sort(),
-    ["amanda", "carlos", "joao", "thomas"],
-    "a persona whose every demonstration is a refusal needs a stated reason to exist. The four here have " +
+    ["alexandre", "amanda", "carlos", "joao", "thomas"],
+    "a persona whose every demonstration is a refusal needs a stated reason to exist. The five here have " +
       "one: Thomas is archived (refusing everything IS the demonstration), Carlos and João carry a " +
-      "jurisdiction rule, and Amanda carries a withheld permission — and each of those three still files " +
-      "successfully on the use cases their record does not touch. Anyone else on this list is a persona " +
-      "that can only ever be shown failing, which is caution dressed as a demo."
+      "jurisdiction rule, Amanda carries a withheld permission, and Alexandre is engaged as a contractor — " +
+      "and the two products his demonstrations ask for, the employment letter and the travel letter, are " +
+      "both published by Remote for EOR customers only, so being refused IS his demonstration in the same " +
+      "way being archived is Thomas's. Anyone else on this list is a persona that can only ever be shown " +
+      "failing, which is caution dressed as a demo."
   );
 });
